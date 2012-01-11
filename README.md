@@ -13,16 +13,17 @@ releases, so run this only when you want a fresh start.
 
 When the bootscript needs to be regenerated, run `make generate` again.
 
-The system can be started using `rel/exodm/bin/exodm console`
+The system can be started using `rel/exodm/(VSN)/bin/exodm console`
 
 (or `exodm start` followed by `exodm attach` when running embedded).
+
+The (VSN) part is constructed from the git tag, and/or the git version of
+the current commit.
 
 TODO: ensure that multiple nodes can be started, using different node names,
 and becoming aware of each other. This is not something rebar supports out of the box,
 I think.
 
 There is a beginning towards support for upgrade scripts, but this hasn't been tested.
-The idea was to use e.g. `RELVSN=1.0 make save_release`, which copies the current release
-to `rel/exodm-1.0`. Then, running `PREV=1.0 make upgrade`, but this is not the right way
-to go. We should retrieve the release version from the reltool.config file, and use that,
-rather than making up a new version. More thought is required.
+Running e.g. `PREV=1.0 make upgrade`, upgrade scripts should be generated for moving from
+the named previous release to the current one.

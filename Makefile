@@ -6,17 +6,17 @@ RELNAME=exodm
 all: compile
 
 compile:
-	rebar get-deps
-	rebar compile
+	./rebar get-deps
+	./rebar compile
 
 recompile:
-	rebar compile
+	./rebar compile
 
 release: realclean compile
-	cd rel; rebar create-node nodeid=$(RELNAME)
+	cd rel; ../rebar create-node nodeid=$(RELNAME)
 
 generate:
-	rebar generate skip_deps=true
+	./rebar generate -f skip_deps=true
 
 save_release:
 ifneq ($(strip $(RELVSN)),)
@@ -28,15 +28,15 @@ endif
 
 upgrade:
 ifneq ($(strip $(PREV)),)
-	rebar generate-appup previous_version=$(PREV)
+	./rebar generate-appup previous_version=$(PREV)
 else
 	echo "no PREV set"
 	exit 1
 endif
 
 clean:
-	rebar clean
+	./rebar clean
 
 realclean:
-	rebar delete-deps
-	rm -rf rel/files rel/$(RELNAME)*
+	./rebar delete-deps
+	rm -rf rel/files
