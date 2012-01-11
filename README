@@ -1,0 +1,28 @@
+This is a skeleton project for rebar-based packaging and release handling
+
+A good starting point for understanding rebar and reltool is
+
+http://www.metabrew.com/article/erlang-rebar-tutorial-generating-releases-upgrades
+
+The idea is to use rebar dependencies to list which applications are to be part of the
+system. They then need to be added to rel/reltool.config as well.
+
+The make target `make release` followed by `make generate` will create a set of
+files needed to boot a node. NOTE: `make release` actually cleans away any prior
+releases, so run this only when you want a fresh start.
+
+When the bootscript needs to be regenerated, run `make generate` again.
+
+The system can be started using `rel/exodm/bin/exodm console`
+
+(or `exodm start` followed by `exodm attach` when running embedded).
+
+TODO: ensure that multiple nodes can be started, using different node names,
+and becoming aware of each other. This is not something rebar supports out of the box,
+I think.
+
+There is a beginning towards support for upgrade scripts, but this hasn't been tested.
+The idea was to use e.g. `RELVSN=1.0 make save_release`, which copies the current release
+to `rel/exodm-1.0`. Then, running `PREV=1.0 make upgrade`, but this is not the right way
+to go. We should retrieve the release version from the reltool.config file, and use that,
+rather than making up a new version. More thought is required.

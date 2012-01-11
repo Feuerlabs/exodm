@@ -13,20 +13,30 @@ recompile:
 	rebar compile
 
 release: realclean compile
-	cd rel; rebar create-node nodeid=${RELNAME}
+	cd rel; rebar create-node nodeid=$(RELNAME)
 
 generate:
 	rebar generate skip_deps=true
 
 save_release:
-	cp -r rel/${RELNAME} rel/${RELNAME}-${RELVSN}
+ifneq ($(strip $(RELVSN)),)
+	cp -r rel/$(RELNAME) rel/$(RELNAME)-$(RELVSN)
+else
+	echo "no RELVSN set"
+	exit 1
+endif
 
 upgrade:
-	rebar generate-appup
+ifneq ($(strip $(PREV)),)
+	rebar generate-appup previous_version=$(PREV)
+else
+	echo "no PREV set"
+	exit 1
+endif
 
 clean:
 	rebar clean
 
 realclean:
 	rebar delete-deps
-	rm -rf rel/files rel/${RELNAME}*
+	rm -rf rel/files rel/$(RELNAME)*
