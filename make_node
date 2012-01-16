@@ -1,0 +1,103 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+
+-mode(compile).
+
+-record(state, {target, rel, vm_args = []}).
+
+main(Args) ->
+    try begin
+	    St = args(Args, #state{}),
+	    make_node(St)
+	end
+    catch
+	error:E ->
+	    rpt_error(E, erlang:get_stacktrace()),
+	    usage(),
+	    exit(1)
+    end.
+
+rpt_error(E, Stack) ->
+    io:fwrite("ERROR: ~p~n"
+	      "Stack: ~p~n", [E, Stack]).
+
+usage() ->
+    io:fwrite("Usage: ~s -rel RelDir -target TargetDir [ -- VmArgs ]~n",
+	      [escript:script_name()]),
+    %% allow IO time to to through
+    receive after 500 -> ok end.
+
+make_node(#state{target = T, rel = R, vm_args = As}) when T=/=undefined, R=/=undefined ->
+    Vsn = read_start_erl_data(R),
+    RelDir = filename:join([R, "releases", Vsn]),
+    VmArgsF = filename:join(RelDir, "vm.args"),
+    case file:read_file(VmArgsF) of
+	{ok, Bin} ->
+	    Bin1 = substitute_args(As, Bin),
+	    OutF = filename:join(T, "vm.args"),
+	    ok = filelib:ensure_dir(OutF),
+	    io:fwrite("writing to ~s~n", [OutF]),
+	    file:write_file(OutF, Bin1);
+	Error ->
+	    error({vm_args_not_found, Error})
+    end.
+
+read_start_erl_data(R) ->
+    case file:read_file(filename:join(R, "releases/start_erl.data")) of
+	{ok, B} ->
+	    [_, V, []] = re:split(B,"\\s",[{return,list}]),
+	    V;
+	_Error ->
+	    error("start_erl.data not found")
+    end.
+
+substitute_args(Args, B) ->
+    Lines = re:split(B, "\\n", [{return,list}]),
+    case lists:foldl(fun({Flag, Vs}, Acc) ->
+			     sub(Acc, Flag, Vs)
+		     end, Lines, Args) of
+	[] ->
+	    error("empty vm_args");
+	[L|Ls] ->
+	    list_to_binary([L, "\n", [[L1, "\n"] || L1 <- Ls]])
+    end.
+
+sub(["-" ++ _ = L | Ls], Flag, Vs) ->
+    case lists:prefix(Flag, L) of
+	true ->
+	    [[Flag, [[" ", Vs] || Vs =/= []]] | Ls];
+	false ->
+	    [L | sub(Ls, Flag, Vs)]
+    end;
+sub([L | Ls], Flag, Vs) ->
+    [L | sub(Ls, Flag, Vs)];
+sub([], Flag, Vs) ->
+    [[Flag, Vs]].
+
+args(["-target", T | Args], St) ->
+    args(Args, St#state{target = T});
+args(["-rel", R | Args], St) ->
+    args(Args, St#state{rel = R});
+args(["--" | Args], St) ->
+    VmArgs = vm_args(Args),
+    St#state{vm_args = VmArgs};
+args([Other | _], _) ->
+    error({bad_argument, Other});
+args([], St) ->
+    St.
+
+vm_args(["-" ++ _ = Flag, Args]) ->
+    {Vals, Args1} = get_vals(Args),
+    [{Flag, Vals} | vm_args(Args1)];
+vm_args([]) ->
+    [].
+
+get_vals(Args) ->
+    get_vals(Args, []).
+
+get_vals([], Vals) ->
+    {lists:reverse(Vals), []};
+get_vals(["-" ++ _ | _] = Args, Vals) ->
+    {lists:reverse(Vals), Args};
+get_vals([H | T], Vals) ->
+    get_vals(T, [H|Vals]).
