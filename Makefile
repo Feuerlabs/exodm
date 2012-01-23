@@ -13,7 +13,7 @@ recompile:
 	./rebar compile
 
 release: realclean compile
-	cd rel; ../rebar create-node nodeid=$(RELNAME)
+	cd rel; ../rebar create-node skip_deps=true nodeid=$(RELNAME)
 
 generate:
 	./rebar generate -f skip_deps=true
@@ -78,4 +78,5 @@ clean:
 
 realclean:
 	./rebar delete-deps
+	rm rel/reltool.config
 	rm -rf rel/files

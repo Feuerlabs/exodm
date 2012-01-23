@@ -1,0 +1,11 @@
+{application, exodm,
+ [
+  {description, "utility functions for integrating and deploying ExoDM"},
+  {vsn, git},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.
