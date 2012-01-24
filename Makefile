@@ -15,6 +15,9 @@ recompile:
 release: realclean compile
 	cd rel; ../rebar create-node skip_deps=true nodeid=$(RELNAME)
 
+re_release: compile
+	cd rel; ../rebar create-node skip_deps=true nodeid=$(RELNAME)
+
 generate:
 	./rebar generate -f skip_deps=true
 
@@ -41,6 +44,25 @@ ifdef n
 	(cd nodes/$(n); ../../rel/$(RELNAME)/bin/$(RELNAME) attach)
 else
 	echo "no node given (e.g. n=foo make attach)"
+	$(error, no node given)
+	exit 2
+endif
+
+stop:
+ifdef n
+	(cd nodes/$(n); ../../rel/$(RELNAME)/bin/$(RELNAME) stop)
+else
+	echo "no node given (e.g. n=foo make stop)"
+	$(error, no node given)
+	exit 2
+endif
+
+setup:
+ifdef n
+	(cd nodes/$(n); ../../rel/$(RELNAME)/bin/$(RELNAME) \
+	console_boot $(RELNAME)_setup -- -setup is_first false)
+else
+	echo "no node given (e.g. n=foo make setup)"
 	$(error, no node given)
 	exit 2
 endif

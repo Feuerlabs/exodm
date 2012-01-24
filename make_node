@@ -31,15 +31,25 @@ make_node(#state{target = T, rel = R, vm_args = As}) when T=/=undefined, R=/=und
     Vsn = read_start_erl_data(R),
     RelDir = filename:join([R, "releases", Vsn]),
     VmArgsF = filename:join(RelDir, "vm.args"),
+    SysConfigF = filename:join(RelDir, "sys.config"),
     case file:read_file(VmArgsF) of
 	{ok, Bin} ->
 	    Bin1 = substitute_args(As, Bin),
 	    OutF = filename:join(T, "vm.args"),
 	    ok = filelib:ensure_dir(OutF),
-	    io:fwrite("writing to ~s~n", [OutF]),
 	    file:write_file(OutF, Bin1);
 	Error ->
 	    error({vm_args_not_found, Error})
+    end,
+    case file:consult(SysConfigF) of
+	{ok, [Env]} ->
+	    NewEnv = localize_env(T, Env),
+	    {ok, Fd} = file:open(filename:join(T, "sys.config"), [write]),
+	    try
+		io:fwrite(Fd, "~p.~n", [NewEnv])
+	    after
+		file:close(Fd)
+	    end
     end.
 
 read_start_erl_data(R) ->
@@ -65,17 +75,17 @@ substitute_args(Args, B) ->
 sub(["-" ++ _ = L | Ls], Flag, Vs) ->
     case lists:prefix(Flag, L) of
 	true ->
-	    [[Flag, [[" ", Vs] || Vs =/= []]] | Ls];
+	    [[Flag, [[" ", V] || V <- Vs]] | Ls];
 	false ->
 	    [L | sub(Ls, Flag, Vs)]
     end;
 sub([L | Ls], Flag, Vs) ->
     [L | sub(Ls, Flag, Vs)];
 sub([], Flag, Vs) ->
-    [[Flag, Vs]].
+    [[Flag, [[" ", V] || V <- Vs]]].
 
 args(["-target", T | Args], St) ->
-    args(Args, St#state{target = T});
+    args(Args, St#state{target = filename:absname(T)});
 args(["-rel", R | Args], St) ->
     args(Args, St#state{rel = R});
 args(["--" | Args], St) ->
@@ -86,7 +96,7 @@ args([Other | _], _) ->
 args([], St) ->
     St.
 
-vm_args(["-" ++ _ = Flag, Args]) ->
+vm_args(["-" ++ _ = Flag | Args]) ->
     {Vals, Args1} = get_vals(Args),
     [{Flag, Vals} | vm_args(Args1)];
 vm_args([]) ->
@@ -101,3 +111,32 @@ get_vals(["-" ++ _ | _] = Args, Vals) ->
     {lists:reverse(Vals), Args};
 get_vals([H | T], Vals) ->
     get_vals(T, [H|Vals]).
+
+
+localize_env(Dir, Env) ->
+    LogD = filename:join(Dir, "log"),
+    merge_env([
+	       {sasl, [
+		       {sasl_error_logger, {file, filename:join(LogD, "sasl-error.log")}},
+		       {error_logger_mf_dir, filename:join(LogD, "sasl")}
+		      ]},
+	       {setup, [
+			{home, Dir}
+		       ]}
+	      ], Env).
+
+merge_env([{App, Vars}|T], Env) ->
+    case lists:keyfind(App, 1, Env) of
+	{_, Vars0} ->
+	    NewVars =
+		lists:foldl(
+		  fun({K,V}, Acc) ->
+			  lists:keystore(K, 1, Acc, {K, V})
+		  end, Vars0, Vars),
+	    merge_env(T, lists:keyreplace(App, 1, Env, {App, NewVars}));
+	false ->
+	    merge_env(T, Env ++ [{App, Vars}])
+    end;
+merge_env([], Env) ->
+    Env.
+

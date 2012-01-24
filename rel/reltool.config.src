@@ -1,6 +1,6 @@
 %% -*- erlang -*-
 {sys, [
-       {lib_dirs, ["../deps"]},
+       {lib_dirs, ["../deps", "../lib"]},
        {erts, [{mod_cond, derived}, {app_file, strip}]},
        {app_file, strip},
        {rel, "exodm", git,
@@ -51,7 +51,7 @@
            {copy, "files/erl", "\{\{erts_vsn\}\}/bin/erl"},
            {copy, "files/nodetool", "\{\{erts_vsn\}\}/bin/nodetool"},
            {copy, "files/exodm", "bin/exodm"},
-           {copy, "files/sys.config", "releases/\{\{rel_vsn\}\}/sys.config"},
+           {copy, "sys.config", "releases/\{\{rel_vsn\}\}/sys.config"},
            {copy, "files/exodm.cmd", "bin/exodm.cmd"},
            {copy, "files/start_erl.cmd", "bin/start_erl.cmd"},
            {copy, "files/vm.args", "releases/\{\{rel_vsn\}\}/vm.args"}
