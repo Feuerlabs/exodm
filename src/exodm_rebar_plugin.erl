@@ -5,7 +5,6 @@
 
 
 'post_create-node'({config,_,Env}, _File) ->
-    io:fwrite("~p:'post_create-node'(...)~n", [?MODULE]),
     case file:consult("reltool.config.src") of
 	{ok, Terms} ->
 	    New = lists:map(fun(T) -> expand(T, Env) end, Terms),
@@ -16,9 +15,6 @@
     end.
 
 post_generate(Config, File) ->
-    io:fwrite("post_generate()~n"
-	      "Config = ~p.~n"
-	      "File = ~p.~n", [Config, File]),
     ok.
 
 expand({sys, Params}, Env) ->

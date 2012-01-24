@@ -1,0 +1,18 @@
+%% -*- erlang -*-
+{application, exodm_setup,
+ [
+  {description, ""},
+  {vsn, git},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, [
+	 {'$setup_hooks', [
+			   {100, {exodm_setup, create_db, []}},
+			   {200, {exodm_setup, create_tables, []}},
+			   {300, {exodm_setup, initial_data, []}}
+			  ]}
+	 ]}
+ ]}.

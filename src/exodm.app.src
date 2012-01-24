@@ -8,11 +8,5 @@
                   kernel,
                   stdlib
                  ]},
-  {env,	[
-	 {'$setup_hooks', [
-			   {100, {exodm_setup, create_db, []}},
-			   {200, {exodb_setup, create_tables, []}},
-			   {300, {exodb_setup, initial_data, []}}
-			  ]}
-	]}
+  {env,	[]}
  ]}.

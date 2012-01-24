@@ -5,17 +5,6 @@
        {app_file, strip},
        {rel, "exodm", git,
         [
-         kernel,
-         stdlib,
-         sasl,
-	 mnesia,
-	 unsplit,
-	 reactor,
-	 gproc,
-	 bert,
-	 yang,
-	 exo,
-	 setup
         ]},
        {rel, "start_clean", "",
         [
@@ -30,18 +19,7 @@
                            "^erts.*/info", "^erts.*/man",
                            "^erts.*/lib", "^erts.*/include",
                            "^erts.*/bin/(dialyzer|typer)"]},
-       {excl_app_filters, ["\.gitignore"]},
-       {app, bert, [{incl_cond, include}]},
-       {app, exo, [{incl_cond, include}]},
-       {app, gproc, [{incl_cond, include}]},
-       {app, kernel, [{incl_cond, include}]},
-       {app, mnesia, [{incl_cond, include}]},
-       {app, reactor, [{incl_cond, include}]},
-       {app, sasl,   [{incl_cond, include}]},
-       {app, setup,   [{incl_cond, include}]},
-       {app, stdlib, [{incl_cond, include}]},
-       {app, unsplit, [{incl_cond, include}]},
-       {app, yang, [{incl_cond, include}]}
+       {excl_app_filters, ["\.gitignore"]}
       ]}.
 
 %{target_dir, "$(name)/$(vsn)"}.
