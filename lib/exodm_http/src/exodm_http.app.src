@@ -1,0 +1,12 @@
+{application, exodm_http,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { exodm_http_app, []}},
+  {env, []}
+ ]}.

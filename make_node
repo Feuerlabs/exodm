@@ -49,7 +49,9 @@ make_node(#state{target = T, rel = R, vm_args = As}) when T=/=undefined, R=/=und
 		io:fwrite(Fd, "~p.~n", [NewEnv])
 	    after
 		file:close(Fd)
-	    end
+	    end;
+	{error,_} = E ->
+	    error({could_not_consult, [SysConfigF, E]})
     end.
 
 read_start_erl_data(R) ->
