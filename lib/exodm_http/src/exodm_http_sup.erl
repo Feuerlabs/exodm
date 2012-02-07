@@ -38,10 +38,11 @@ init([]) ->
 
 yaws_conf() ->
     Id = env(id, "embedded"),
-    Docroot = env(docroot, filename:join(setup:log_dir(), "http")),
+    Docroot = env(docroot, filename:join(my_priv_dir(), "www")),
     Port = env(port, 8888),
     ServerName = env(servername, "exodm_http"),
     Listen = env(listen, {0,0,0,0}),
+    AppMods = env(appmods, [{"/", exodm_http_yaws}]),
     #conf{
 	   id = Id,
 	   gconf = [{id, Id}],
@@ -49,7 +50,8 @@ yaws_conf() ->
 	   sconf = [{port, Port},
 		    {servername, ServerName},
 		    {listen, Listen},
-		    {docroot, Docroot}]
+		    {docroot, Docroot},
+		    {appmods, AppMods}]
 	 }.
 
 env(K, Def) ->
@@ -58,4 +60,22 @@ env(K, Def) ->
 	    V;
 	_ ->
 	    Def
+    end.
+
+my_priv_dir() ->
+    case application:get_application() of
+	undefined ->
+	    D = filename:join(
+		  filename:dirname(
+		    filename:dirname(code:which(?MODULE))),
+		  "priv"),
+	    case file:read_file_info(D) of
+		{ok, _} ->
+		    D;
+		_ ->
+		    {ok, Cwd} = file:get_cwd(),
+		    Cwd
+	    end;
+	{ok, A} ->
+	    code:priv_dir(A)
     end.
