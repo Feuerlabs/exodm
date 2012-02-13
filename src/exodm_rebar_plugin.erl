@@ -23,7 +23,8 @@ expand({sys, Params}, Env) ->
 	  ],
     Ps2 = replace_rels(Ps1, Env),
     AllApps = lists:usort(lists:concat([As || {rel,_,_,As} <- Ps2])),
-    {sys, Ps2 ++ [{app, app_name(A), [{incl_cond, include}]} || A <- AllApps]};
+    {sys, fix_lib_dirs(AllApps,
+		       Ps2 ++ [{app, app_name(A), [{incl_cond, include}]} || A <- AllApps])};
 expand(T, _) ->
     T.
 
@@ -32,6 +33,47 @@ app_name(A) when is_tuple(A) ->
 app_name(A) when is_atom(A) ->
     A.
 
+fix_lib_dirs(Apps, Ps) ->
+    LibDirs = [filename:absname(D) || D <- proplists:get_value(lib_dirs, Ps, []),
+				      is_legal_dir(D)],
+    io:fwrite("LibDirs = ~p~n", [LibDirs]),
+    AppNames = [app_name(A) || A <- Apps],
+    OldPath = code:get_path(),
+    code:set_path(lists:concat([filelib:wildcard(
+				  filename:join(D,"*/ebin")) || D <- LibDirs]) ++ OldPath),
+    OTPLibD = otp_libdir(),
+    ActualLibs = lists:foldl(fun(A, Acc) ->
+				     case code:lib_dir(A) of
+					 {error, _} ->
+					     error({cannot_find_app, A});
+					 D ->
+					     store(filename:dirname(D), OTPLibD, Acc)
+				     end
+			     end, LibDirs, AppNames),
+    io:fwrite("ActualLibs = ~p~n", [ActualLibs]),
+    lists:keystore(lib_dirs, 1, Ps, {lib_dirs, ActualLibs}).
+
+is_legal_dir(D) ->
+    case file:list_dir(D) of
+	{error, _} ->
+	    io:fwrite("NOTE: Dir can't be read: ~s~n", [D]),
+	    false;
+	{ok,_} ->
+	    true
+    end.
+
+store(X, X, L) ->
+    L;
+store(X, _, L) ->
+    case lists:member(X, L) of
+	true ->
+	    L;
+	false ->
+	    L ++ [X]
+    end.
+
+otp_libdir() ->
+    filename:dirname(code:lib_dir(stdlib)).
 
 replace_rels(Ts, Env) ->
     lists:flatmap(fun({rel,R,V,_} = T) ->
