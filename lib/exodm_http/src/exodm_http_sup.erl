@@ -96,10 +96,6 @@ my_priv_dir() ->
     end.
 
 find_sessions() ->
-    dbg:tracer(),
-    dbg:tpl(?MODULE, expand_env, x),
-    dbg:tp(re, replace, x),
-    dbg:p(all,[c]),
     As = application:loaded_applications(),
     lists:reverse(
       lists:foldl(
