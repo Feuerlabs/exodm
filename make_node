@@ -123,7 +123,9 @@ localize_env(Dir, Env) ->
 		       {error_logger_mf_dir, filename:join(LogD, "sasl")}
 		      ]},
 	       {setup, [
-			{home, Dir}
+			{home, Dir},
+			{data_dir, filename:join(Dir, "db")},
+			{log_dir, LogD}
 		       ]}
 	      ], Env).
 

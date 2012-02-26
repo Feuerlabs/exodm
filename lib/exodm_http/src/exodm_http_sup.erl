@@ -96,6 +96,7 @@ my_priv_dir() ->
     end.
 
 find_sessions() ->
+    %% TODO: Use setup:find_env_vars/1 instead, as it does exactly this, and then some.
     As = application:loaded_applications(),
     lists:reverse(
       lists:foldl(
