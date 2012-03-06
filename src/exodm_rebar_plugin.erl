@@ -3,7 +3,6 @@
 -export(['post_create-node'/2,
 	 post_generate/2]).
 
-
 'post_create-node'({config,_,Env}, _File) ->
     case file:consult("reltool.config.src") of
 	{ok, Terms} ->
@@ -14,8 +13,21 @@
 	    ok
     end.
 
-post_generate(Config, File) ->
+post_generate(_Config, File) ->
+    ReltoolConfig = rebar_rel_utils:load_config(File),
+    TargetDir = rebar_rel_utils:get_target_dir(ReltoolConfig),
+    MakeNodeTgt = filename:join(TargetDir, "make_node"),
+    {ok,_} = file:copy("../make_node", MakeNodeTgt),
+    set_x_bit(MakeNodeTgt),
+    %% io:fwrite("post_generate(~n"
+    %% 	      "   Config = ~p~n"
+    %% 	      "   File = ~p~n"
+    %% 	      "   TargetDir = ~p~n"
+    %% 	      "   Copy Res = ~p~n", [Config, File, TargetDir, _Res]),
     ok.
+
+set_x_bit(F) ->
+    file:change_mode(F, 8#00744).
 
 expand({sys, Params}, Env) ->
     Ps1 = [P || P <- Params,
@@ -105,12 +117,12 @@ setup_conv(As) ->
 	      {A, load, Is}
       end, As).
 
-find(A, [A|_]) -> {ok, A};
-find(A, [H|_]) when element(1,H) == A -> {ok, H};
-find(A, [_|T]) ->
-    find(A, T);
-find(_, []) ->
-    error.
+%% find(A, [A|_]) -> {ok, A};
+%% find(A, [H|_]) when element(1,H) == A -> {ok, H};
+%% find(A, [_|T]) ->
+%%     find(A, T);
+%% find(_, []) ->
+%%     error.
 
 write_to_file(F, Terms) ->
     {ok, Fd} = file:open(F, [write]),
