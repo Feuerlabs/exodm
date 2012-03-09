@@ -8,5 +8,14 @@
                   stdlib
                  ]},
   {mod, { exodm_web_app, []}},
-  {env, []}
+  {env, [
+  	 {yaws_sconf, [
+		       {id, "Exosense"},
+		       {appmods, [{"/", exodm_web_yaws}]},
+		       {xtra_docroots, ["$PRIV_DIR/static"]},
+		       {port, 8383},
+		       {listen, {127,0,0,1}}
+		      ]}
+
+  ]}
  ]}.
