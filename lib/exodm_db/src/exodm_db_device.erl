@@ -33,7 +33,7 @@ new(UID, DID, Options) ->
     insert(Key,msisdn,   binary_opt(msisdn,Options)),
     insert(Key,imsi,     binary_opt(imsi,Options)),
     insert(Key,imei,     binary_opt(imei,Options)),
-    insert(Key,activity, binary_opt(activity,Options)),
+    insert(Key,activity, uint32_opt(activity,Options)),
     insert(Key,longitude,uint32_opt(longitud,Options)),
     insert(Key,latitude, uint32_opt(latitude,Options)),
     insert(Key,timestamp,uint32_opt(timestamp,Options)),
@@ -59,8 +59,8 @@ update(UID, DID, Options) ->
 	      insert(Key,imsi,to_binary(Value));
 	  ({imei,Value}) ->
 	      insert(Key,imei,to_binary(Value));
-	  ({activity,Value}) ->
-	      insert(Key,activity,uint32(Value));
+	  ({activity,Act}) ->
+	      insert(Key,activity,<<Act:32>>);
 	  ({latitude,Lat}) ->
 	      insert(Key,latitude,<<Lat:32>>);
 	  ({longitud,Lon}) ->
@@ -91,7 +91,7 @@ lookup(Key) ->
 	read(Key, imei) ++
 	read(Key, '__ck') ++
 	read(Key, '__sk') ++
-	read(Key, activity) ++
+	read_uint32(Key, activity) ++
 	read_uint32(Key, status) ++
 	read_uint32(Key, longitude) ++
 	read_uint32(Key, latitude) ++
