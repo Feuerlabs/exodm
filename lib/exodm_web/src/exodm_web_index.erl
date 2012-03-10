@@ -4,7 +4,6 @@
 -module(exodm_web_index).
 
 -include_lib("nitrogen_core/include/wf.hrl").
--include("basedir.hrl").
 
 -export([main/0
          , title/0
@@ -13,23 +12,23 @@
 	]).
 
 main() ->
-    exoweb_common:content_type_html(),
-    File = filename:join([code:lib_dir(exodm_web),"templates","grid.html"]),
+    exodm_web_common:content_type_html(),
+    File = filename:join([code:priv_dir(exodm_web),"templates","grid.html"]),
     #template { file=File }.
 
 title() ->
-    exoweb_common:title().
+    exodm_web_common:title().
 
 layout() ->
     #container_12 {
-        body=[#grid_12 { class=header, body=exoweb_common:header(home) },
+        body=[#grid_12 { class=header, body=exodm_web_common:header(home) },
               #grid_clear {},
 
-              #grid_6 { alpha=true, body=exoweb_common:left() },
-              #grid_6 { omega=true, body=exoweb_common:right() },
+              #grid_6 { alpha=true, body=exodm_web_common:left() },
+              #grid_6 { omega=true, body=exodm_web_common:right() },
               #grid_clear {},
               
-              #grid_12 { body=exoweb_common:footer() }
+              #grid_12 { body=exodm_web_common:footer() }
              ]}.
 
 event(Event) ->

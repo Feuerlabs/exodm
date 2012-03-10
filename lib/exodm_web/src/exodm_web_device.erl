@@ -22,7 +22,7 @@
 
 main() ->
     exodm_web_common:content_type_html(),
-    File = filename:join([code:lib_dir(exodm_web),"templates","grid.html"]),
+    File = filename:join([code:priv_dir(exodm_web),"templates","grid.html"]),
     #template { file=File }.
 
 title() ->
