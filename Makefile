@@ -18,6 +18,18 @@ release: compile
 generate:
 	./rebar generate -f skip_deps=true
 
+dev:
+	./devsetup
+
+devrun:
+ifdef n
+	./devrun -name $(n1)
+else
+	echo "no node given (e.g. n=foo make devrun)"
+	$(error, no node given)
+	exit 2
+endif
+
 node:
 ifdef n
 	./make_node -target nodes/$(n) -rel rel/$(RELNAME) -- -name $(n)

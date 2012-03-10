@@ -1,0 +1,17 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+
+-mode(compile).
+
+main([]) ->
+    try setup_gen:run([{name, "exodm"},
+		       {relconf, "rel/reltool.config"},
+		       {sys, "rel/sys.config"},
+		       {outdir, "./devel"},
+		       {install, true}])
+    catch
+	error:E ->
+	    io:fwrite("ERROR: ~p~n", [E]),
+	    timer:sleep(500),
+	    halt(1)
+    end.
