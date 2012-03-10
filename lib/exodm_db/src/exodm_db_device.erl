@@ -8,16 +8,20 @@
 -module(exodm_db_device).
 
 -export([new/3, update/3, lookup/2, lookup/1, exist/2, exist/1]).
+-export([lookup_position/2, lookup_keys/2]).
 
--import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
+-import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).
 
 %%
-%% /<uid>/devices/<did>/name    = string()
-%% /<uid>/devices/<did>/msisdn  = msisdn()
-%% /<uid>/devices/<did>/imsi    = imsi()
-%% /<uid>/devices/<did>/imei    = imei()
-%% /<uid>/devices/<did>/__ck    = uint64()
-%% /<uid>/devices/<did>/__sk    = uint64()
+%% /<uid>/devices/<did>/name      = string()
+%% /<uid>/devices/<did>/msisdn    = msisdn()
+%% /<uid>/devices/<did>/imsi      = imsi()
+%% /<uid>/devices/<did>/imei      = imei()
+%% /<uid>/devices/<did>/longitud  = uint32()
+%% /<uid>/devices/<did>/latitude  = uint32()
+%% /<uid>/devices/<did>/timestamp = uint32()
+%% /<uid>/devices/<did>/__ck      = uint64()
+%% /<uid>/devices/<did>/__sk      = uint64()
 %% /<uid>/devices/<did>/group[<i>]/gid = uint32()
 %%
 
@@ -30,9 +34,12 @@ new(UID, DID, Options) ->
     insert(Key,imsi,     binary_opt(imsi,Options)),
     insert(Key,imei,     binary_opt(imei,Options)),
     insert(Key,activity, binary_opt(activity,Options)),
+    insert(Key,longitude,uint32_opt(longitud,Options)),
+    insert(Key,latitude, uint32_opt(latitude,Options)),
+    insert(Key,timestamp,uint32_opt(timestamp,Options)),
     %% __ck, __sk are device keys and need special attention 
-    insert(Key,'__ck',     binary_opt('__ck',Options)),
-    insert(Key, '__sk',    binary_opt('__sk',Options)),
+    insert(Key, '__ck',  binary_opt('__ck',Options)),
+    insert(Key, '__sk',  binary_opt('__sk',Options)),
     lists:foreach(
       fun({I,GID}) ->
 	      insert_group(Key, I, GID)
@@ -53,7 +60,13 @@ update(UID, DID, Options) ->
 	  ({imei,Value}) ->
 	      insert(Key,imei,to_binary(Value));
 	  ({activity,Value}) ->
-	      insert(Key,activity,to_binary(Value));
+	      insert(Key,activity,uint32(Value));
+	  ({latitude,Lat}) ->
+	      insert(Key,latitude,<<Lat:32>>);
+	  ({longitud,Lon}) ->
+	      insert(Key,longitude,<<Lon:32>>);
+	  ({timestamp,Ts}) ->
+	      insert(Key,timestamp,<<Ts:32>>);
 	  ({'__ck',Value}) when is_integer(Value) ->
 	      insert(Key,'__ck', <<Value:64>>);
 	  ({'__sk',Value}) when is_integer(Value) ->
@@ -79,7 +92,42 @@ lookup(Key) ->
 	read(Key, '__ck') ++
 	read(Key, '__sk') ++
 	read(Key, activity) ++
-	read(Key, status).
+	read_uint32(Key, status) ++
+	read_uint32(Key, longitude) ++
+	read_uint32(Key, latitude) ++
+	read_uint32(Key, timestamp).
+
+
+%% find last known position or {0,0,0} if not found
+lookup_position(UID, DID) ->
+    Key = key(UID, DID),
+    { 
+      case read_uint32(Key,latitude) of
+	  [] -> 0;
+	  [{latitude,Lat}] -> Lat
+      end,
+      case read_uint32(Key,longitude) of
+	  [] -> 0;
+	  [{longitude,Lon}] -> Lon
+      end,
+      case read_uint32(Key,timestamp) of
+	  [] -> 0;
+	  [{timestamp,Ts}] -> Ts
+      end
+    }.
+
+%% find last known position or {0,0,0} if not found
+lookup_keys(UID, DID) ->
+    Key = key(UID, DID),
+    { 
+      case read(Key,'__ck') of
+	  [] -> 0;
+	  [{'__ck',Ck}] -> Ck
+      end,
+      case read(Key, '__sk') of
+	  [] -> 0;
+	  [{'__sk',Sk}] -> Sk
+      end}.
 
 exist(UID, DID) ->
     exist(key(UID, DID)).
@@ -89,7 +137,6 @@ exist(Key) ->
 	{ok, _} -> true;
 	{error, not_found} -> false
     end.
-
 
 %% utils
 
@@ -114,5 +161,11 @@ read(Key,Item) ->
     case exodm_db:read(Key1) of
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []
+    end.
+
+read_uint32(Key,Item) ->
+    case read(Key,Item) of
+	[{Item,<<Value:32>>}] -> [{Item,Value}];
+	[] -> []
     end.
 

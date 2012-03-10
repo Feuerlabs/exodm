@@ -17,7 +17,7 @@
 -export([nc_to_kvdb_key/1]).
 
 -export([to_binary/1]).
--export([binary_opt/2]).
+-export([binary_opt/2, uint32_opt/2, uint64_opt/2]).
 -export([first_child/1, next_child/1]).
 -export([all_children/1]).
 -export([read/1, write/2]).
@@ -284,6 +284,18 @@ binary_opt(Key, Options) ->
 	    <<Value:32>>;
 	{_Key,Value} ->
 	    to_binary(Value)
+    end.
+
+uint32_opt(Key, Options) ->
+    case proplists:lookup(Key,Options) of
+	none -> 0;
+	{Key,Value} -> <<Value:32>>
+    end.
+
+uint64_opt(Key, Options) ->
+    case proplists:lookup(Key,Options) of
+	none -> 0;
+	{Key,Value} -> <<Value:64>>
     end.
 
 
