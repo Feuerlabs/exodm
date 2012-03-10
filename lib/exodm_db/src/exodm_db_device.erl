@@ -12,12 +12,13 @@
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
 %%
-%% /u<UID>/devices/x<DID>/name    = <DeviceName>
-%% /u<UID>/devices/x<DID>/msisdn  = <MSISDN>
-%% /u<UID>/devices/x<DID>/imsi    = <IMSI>
-%% /u<UID>/devices/x<DID>/imei    = <IMEI>
-%% /u<UID>/devices/x<DID>/__ck      = <device-key>  64-bit
-%% /u<UID>/devices/x<DID>/__sk      = <server-key>  64-bit
+%% /<uid>/devices/<did>/name    = string()
+%% /<uid>/devices/<did>/msisdn  = msisdn()
+%% /<uid>/devices/<did>/imsi    = imsi()
+%% /<uid>/devices/<did>/imei    = imei()
+%% /<uid>/devices/<did>/__ck    = uint64()
+%% /<uid>/devices/<did>/__sk    = uint64()
+%% /<uid>/devices/<did>/group[<i>]/gid = uint32()
 %%
 
 %% FIXME option validation
@@ -32,6 +33,10 @@ new(UID, DID, Options) ->
     %% __ck, __sk are device keys and need special attention 
     insert(Key,'__ck',     binary_opt('__ck',Options)),
     insert(Key, '__sk',    binary_opt('__sk',Options)),
+    lists:foreach(
+      fun({I,GID}) ->
+	      insert_group(Key, I, GID)
+      end, proplists:get_all_values(group, Options)),
     ok.
 
 %% FIXME validate every item BEFORE insert!
@@ -56,7 +61,9 @@ update(UID, DID, Options) ->
 	  ({'__ck',Value}) when is_binary(Value), byte_size(Value) =:= 8 ->
 	      insert(Key,'__ck', Value);
 	  ({'__sk',Value}) when is_binary(Value), byte_size(Value) =:= 8 ->
-	      insert(Key,'__sk', Value)
+	      insert(Key,'__sk', Value);
+	  ({group,I,GID}) ->
+	      insert_group(Key,I,GID)
       end, Options).
 
 lookup(UID, DID) ->
@@ -94,6 +101,13 @@ key(UID, DID) ->
 insert(Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
     exodm_db:write(Key1, Value).
+
+insert_group(K0, I, GID) when 
+      is_integer(I), I>=0, 
+      is_integer(GID), GID >= 0 ->
+    K = exodm_db:kvdb_key_join(K0, exodm_db:list_key(groups, I)),
+    insert(K, '__gid',  <<GID:32>>).
+
 
 read(Key,Item) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),

@@ -1,0 +1,168 @@
+module exodm-cfg {
+
+    namespace "http://feuerlabs.com/exodm-cfg";
+    prefix cfg;
+
+    import ietf-inet-types {
+        prefix inet;
+    }
+
+    description "Data model for DM server";
+
+    // INTERNAL INFO!
+    // <uid>/groups/<gid>/name
+    // <uid>/groups/<gid>/url
+    // 
+    list groups {
+	description "Device group information";
+
+	key "gid";
+
+	leaf gid {
+	    description "group id";
+	    type uint32;
+	}
+
+	leaf name {
+	    type string;
+	}
+
+	leaf notification-url {
+	    description "Where to send notifications";
+	    type inet:url;
+	}
+    }
+
+    // INTERNAL INFO!
+    // <uid>/devices/<did>/name    = string()
+    // <uid>/devices/<did>/msisdn  = msisdn()
+    // <uid>/devices/<did>/imsi    = imsi()
+    // <uid>/devices/<did>/imei    = imei()
+    // <uid>/devices/<did>/__ck    = uint64()
+    // <uid>/devices/<did>/__sk    = uint64()
+    // <uid>/devices/<did>/groups[1]/__gid = uint32()
+    //
+    list devices {
+	description "Device information";
+	key "did";
+
+	leaf did {
+	    description "Device identifer";
+	    // internally it must be escaped!
+	    type string;
+	}
+
+	leaf name {
+	    description "Optional device name";
+	    type string;
+	}
+
+	list groups {
+	    description "Device group member ship";
+	    key "id";
+	    
+	    leaf id {
+		description "access index"
+		type uint32;
+	    }
+	    
+	    leaf __gid {
+		description "group id";
+		type uint32;
+	    }
+	}
+	
+	leaf msisdn {
+	    description "phone number used to access device if any";
+	    type string;
+	}
+
+	leaf imsi {
+	    description "simcard identity, used to sign some data";
+	    type string;
+	}
+
+	leaf imei {
+	    description "modem identity number";
+	    type string;
+	}
+
+	leaf __ck {
+	    description "device key";
+	    type uint64;
+	}
+
+	leaf __sk {
+	    description "server key";
+	    type uint64;
+	}
+
+    }
+
+    // INTERNAL INFO!
+    // user/<uname>/fullname      = string()
+    // user/<uname>/phone         = string()
+    // user/<uname>/email         = string()
+    // user/<uname>/skype         = string()
+    // user/<uname>/access[<i>].__uid  = uint32()
+    // user/<uname>/access[<i>].__gid  = uint32()
+    // user/<uname>/access[<i>].__perm = permission()
+    //
+    list users {
+	description "User information";
+	key "name";
+
+
+	leaf name {
+	    description "Login name of user, unique";
+	    type string;
+	}
+
+	leaf fullname {
+	    type string;
+	}
+
+	leaf phone {
+	    type string;
+	}
+
+	leaf email {
+	    type string;
+	}
+
+	leaf skype {
+	    type string;
+	}
+
+	leaf __password {
+	    type string;
+	}
+
+	list access {
+	    description "Device group access";
+	    key "id";
+	    
+	    leaf id {
+		description "access index"
+		type uint32;
+	    }
+
+	    leaf __uid {
+		description "Device owner id";
+		type uint32;
+	    }
+
+	    leaf __gid {
+		description "group name";
+		type uint32;
+	    }
+
+	    leaf __perm {
+		description "group permissions, r,w or rw";
+		type string; 
+	    }
+	}
+
+    }
+    
+}

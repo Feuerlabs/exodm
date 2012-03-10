@@ -9,9 +9,11 @@
 
 -export([user_id_key/1]).
 -export([device_id_key/1]).
+-export([group_id_key/1]).
+-export([list_key/2]).
 
--export([kvdb_key_split/1, kvdb_key_join/1]).
--export([nc_key_split/1, nc_key_join/1]).
+-export([kvdb_key_split/1, kvdb_key_join/1, kvdb_key_join/2]).
+-export([nc_key_split/1, nc_key_join/1, nc_key_join/2]).
 -export([nc_to_kvdb_key/1]).
 
 -export([to_binary/1]).
@@ -53,19 +55,36 @@
 -define(is_id2(X), ?is_set(?bm_id2,(X))).
 -define(is_id3(X), ?is_set(?bm_id3,(X))).
 
+user_id_key(ID) ->
+    list_to_binary([$u|id_key(ID)]).
 
-user_id_key(UID) when is_integer(UID), UID >= 0, UID =< 16#ffffffff ->
-    list_to_binary([$u|tl(integer_to_list(16#100000000+UID,16))]).
+group_id_key(ID) ->
+    list_to_binary([$g|id_key(ID)]).
 
-device_id_key(DID) when is_integer(DID), DID >= 0, DID =< 16#ffffffff ->
-    list_to_binary([$x|tl(integer_to_list(16#100000000+DID,16))]).
+device_id_key(ID) ->
+    list_to_binary([$x|id_key(ID)]).
+
+%% fixme add list keys with predicate access
+list_key(Name, Pos) when is_integer(Pos), Pos >= 0 ->
+    IX = list_to_binary(integer_to_list(Pos)),
+    NM = to_binary(Name),
+    <<NM/binary, "[", IX/binary, "]">>.
+    
+
+id_key(ID) when is_integer(ID), ID >= 0, ID =< 16#ffffffff ->
+    tl(integer_to_list(16#100000000+ID,16)).
 
 kvdb_key_split(Key) when is_binary(Key) ->
     binary:split(Key, <<"*">>, [global]).
 
+kvdb_key_join(A,B) ->
+    join_parts(A,B,<<"*">>).
+
 kvdb_key_join(Parts) ->
     join_parts(Parts, <<"*">>).
 
+nc_key_join(A,B) ->
+    join_parts(A,B,<<"/">>).
 nc_key_join(Parts) ->
     join_parts(Parts, <<"/">>).
 
