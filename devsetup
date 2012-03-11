@@ -8,10 +8,12 @@ main([]) ->
 		       {relconf, "rel/reltool.config"},
 		       {sys, "rel/sys.config"},
 		       {outdir, "./devel"},
-		       {install, true}])
+		       {install, true},
+		       {verbose, false}])
     catch
 	error:E ->
-	    io:fwrite("ERROR: ~p~n", [E]),
+	    io:fwrite("ERROR: ~p~n"
+		      "Trace: ~p~n", [E, erlang:get_stacktrace()]),
 	    timer:sleep(500),
 	    halt(1)
     end.
