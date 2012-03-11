@@ -8,6 +8,7 @@
 -module(exodm_db_device).
 
 -export([new/3, update/3, lookup/2, lookup/1, exist/2, exist/1]).
+-export([key/2]).
 -export([lookup_position/2, lookup_keys/2]).
 
 -import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).
@@ -133,9 +134,9 @@ exist(UID, DID) ->
     exist(key(UID, DID)).
 
 exist(Key) ->
-    case exodm_db:read(Key) of
-	{ok, _} -> true;
-	{error, not_found} -> false
+    case read(Key, name) of
+	[] -> false;
+	[_] -> true
     end.
 
 %% utils

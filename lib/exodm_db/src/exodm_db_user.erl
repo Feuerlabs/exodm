@@ -69,9 +69,9 @@ exist(UID, UName) ->
     exist(key(UID,UName)).
 
 exist(Key) ->
-    case exodm_db:read(Key) of
-	{ok, _} -> true;
-	{error, not_found} -> false
+    case read(Key,name) of
+	[] -> false;
+	[_] -> true
     end.
 
 key(_UID, UName) ->

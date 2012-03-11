@@ -9,14 +9,33 @@
 
 -compile(export_all).
 -import(lists, [reverse/1]).
-%%
-%% Setup typical test data
-%%
-%%
-%%
-run() ->
-    %% add users
 
+-define(GA_CUSTOMER_ID, 16#00000001).
+
+
+run_ga() ->
+    exodm_db_group:new(?GA_CUSTOMER_ID, 1, [{name, "default"},{url,  ""}]),
+    exodm_db_group:new(?GA_CUSTOMER_ID, 2, [{name, "group1"},
+			       {url, "http://localhost:8384/exodm_client/group1_reading"}]),
+    exodm_db_user:new(?GA_CUSTOMER_ID, <<"ga">>,
+		      [{name,"ga"},
+		       {fullname, "Get Around"},
+		       {access, {1,?GA_CUSTOMER_ID,1,rw}},
+		       {access, {2,?GA_CUSTOMER_ID,2,rw}}
+		      ]),
+    lists:foreach(
+      fun(DID) ->
+	      exodm_db_device:new(?GA_CUSTOMER_ID, DID, 
+				  [{ck,<<2,0,0,0,0,0,0,0>>},
+				   {sk,<<1,0,0,0,0,0,0,0>>},
+				   {msisdn,"0701"++integer_to_list(DID)},
+				   {group, {1,2}}
+				  ]),
+	      exodm_db_config:new(?GA_CUSTOMER_ID, DID, candidate, []),
+	      exodm_db_config:new(?GA_CUSTOMER_ID, DID, running, [])
+      end, lists:seq(100, 123)).
+
+run_tony() ->
     exodm_db_group:new(12, 1, [{name, "default"},{url,  ""}]),
     exodm_db_group:new(12, 2, [{name, "temp"},
 			       {url, "http://www.rogvall.se/exodm_client/temp_reading"}]),
@@ -38,7 +57,7 @@ run() ->
 				  ]),
 	      exodm_db_config:new(12, DID, candidate, []),
 	      exodm_db_config:new(12, DID, running, [])
-      end, lists:seq(1000, 1099)),
+      end, lists:seq(1000, 1099)),   
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(12, DID, 
@@ -62,9 +81,9 @@ run() ->
 	      exodm_db_config:new(12, DID, candidate, []),
 	      exodm_db_config:new(12, DID, running, [])
       end, lists:seq(1151, 1199)),
+    ok.
 
-
-
+run_love() ->
     exodm_db_group:new(13, 1, [{name, "default"},{url,  ""}]),
     exodm_db_user:new(13, <<"love">>,
 		      [{name,"love"},
@@ -85,8 +104,9 @@ run() ->
 				  ]),
 	      exodm_db_config:new(13, DID, candidate, []),
 	      exodm_db_config:new(13, DID, running, [])
-      end, lists:seq(2000, 2099)),
+      end, lists:seq(2000, 2099)).
 
+run_ulf() ->    
     exodm_db_group:new(14, 1, [{name, "default"},{url,  ""}]),
     exodm_db_user:new(14, <<"ulf">>,
 		      [{name,"ulf"}, 
@@ -105,9 +125,9 @@ run() ->
 				  ]),
 	      exodm_db_config:new(14, DID, candidate, []),
 	      exodm_db_config:new(14, DID, running, [])
-      end, lists:seq(1000, 1049)),
+      end, lists:seq(1000, 1049)).
 
-
+run_marcus() ->    
     exodm_db_group:new(15, 1, [{name, "default"},{url,  ""}]),
     exodm_db_user:new(15, <<"marcus">>,
 		      [{name,"marcus"},
@@ -126,8 +146,23 @@ run() ->
 				  ]),
 	      exodm_db_config:new(15, DID, candidate, []),
 	      exodm_db_config:new(15, DID, running, [])
-      end, lists:seq(10000, 10009)),
+      end, lists:seq(10000, 10009)).
     
+    
+%%
+%% Setup typical test data
+%%
+%%
+%%
+run() ->
+    %% add users
+    run_ga(),
+
+    run_tony(),
+    run_love(),
+    run_ulf(),
+    run_marcus(),
+
     ok.
     
 

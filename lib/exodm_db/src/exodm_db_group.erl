@@ -48,11 +48,10 @@ exist(UID, GID) ->
     exist(key(UID, GID)).
 
 exist(Key) ->
-    case exodm_db:read(Key) of
-	{ok, _} -> true;
-	{error, not_found} -> false
+    case read(Key,name) of
+	[] -> false;
+	[_] -> true
     end.
-
 
 %% utils
 
