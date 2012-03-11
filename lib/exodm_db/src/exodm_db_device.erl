@@ -10,9 +10,11 @@
 -export([new/3, update/3, lookup/2, lookup/1, exist/2, exist/1]).
 -export([key/2]).
 -export([lookup_position/2, lookup_keys/2]).
+-export([lookup_groups/2]).
+-export([lookup_group_notifications/2]).
 
 -import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).
-
+-import(lists, [reverse/1]).
 %%
 %% /<uid>/devices/<did>/name      = string()
 %% /<uid>/devices/<did>/msisdn    = msisdn()
@@ -23,7 +25,7 @@
 %% /<uid>/devices/<did>/timestamp = uint32()
 %% /<uid>/devices/<did>/__ck      = uint64()
 %% /<uid>/devices/<did>/__sk      = uint64()
-%% /<uid>/devices/<did>/group[<i>]/gid = uint32()
+%% /<uid>/devices/<did>/groups[<i>]/__gid = uint32()
 %%
 
 %% FIXME option validation
@@ -76,7 +78,7 @@ update(UID, DID, Options) ->
 	      insert(Key,'__ck', Value);
 	  ({'__sk',Value}) when is_binary(Value), byte_size(Value) =:= 8 ->
 	      insert(Key,'__sk', Value);
-	  ({group,I,GID}) ->
+	  ({group,{I,GID}}) ->
 	      insert_group(Key,I,GID)
       end, Options).
 
@@ -98,6 +100,42 @@ lookup(Key) ->
 	read_uint32(Key, latitude) ++
 	read_uint32(Key, timestamp).
 
+lookup_groups(UID, DID) ->
+    Key0 = key(UID, DID),
+    Key  = <<Key0/binary,"*groups">>,
+    lookup_groups(Key, exodm_db:next_child(Key), []).
+
+lookup_groups(Key, {ok,Key1}, Acc) ->
+    N = byte_size(Key),
+    N1 = byte_size(Key1),
+    N2 = (N1-N)-2,
+    case Key1 of
+	<<Key:N/binary,"[",Pos:N2/binary,"]">> ->
+	    I = list_to_integer(binary_to_list(Pos)),
+	    case read_uint32(Key1, '__gid') of
+		[{_,GID}] ->
+		    lookup_groups(Key, exodm_db:next_child(Key1),
+				  [{group,{I, GID}}|Acc]);
+		[] ->
+		    lookup_groups(Key, exodm_db:next_child(Key1),
+				  Acc)
+	    end;
+	_ ->
+	    reverse(Acc)
+    end;
+lookup_groups(_Key, done, Acc) ->
+    reverse(Acc).
+
+
+lookup_group_notifications(UID, DID) ->
+    lists:foldl(
+      fun({group,{_I,GID}},Acc) ->
+	      Props = exodm_db_group:lookup(UID, GID),
+	      case proplists:get_value(url, Props, <<>>) of
+		  <<>> -> Acc;
+		  Url -> [Url | Acc]
+		       end
+      end,[],lookup_groups(UID, DID)).
 
 %% find last known position or {0,0,0} if not found
 lookup_position(UID, DID) ->

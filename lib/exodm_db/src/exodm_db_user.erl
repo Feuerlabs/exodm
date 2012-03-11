@@ -55,8 +55,8 @@ update(UID, UName, Options) ->
 	      insert_access(Key, I, AUID, AGID, Perm)
       end, Options).
 
-lookup(UID, GID) ->
-    lookup(key(UID, GID)).
+lookup(UID, UName) ->
+    lookup(key(UID, UName)).
 
 lookup(Key) ->
     read(Key,name) ++
