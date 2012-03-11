@@ -121,11 +121,11 @@ lookup_keys(UID, DID) ->
     Key = key(UID, DID),
     { 
       case read(Key,'__ck') of
-	  [] -> 0;
+	  [] -> <<0,0,0,0,0,0,0,0>>;
 	  [{'__ck',Ck}] -> Ck
       end,
       case read(Key, '__sk') of
-	  [] -> 0;
+	  [] ->  <<0,0,0,0,0,0,0,0>>;
 	  [{'__sk',Sk}] -> Sk
       end}.
 

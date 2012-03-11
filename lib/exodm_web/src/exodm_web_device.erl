@@ -18,6 +18,7 @@
 -export([row_selected/2]).
 -export([format_row/1]).
 
+-define(GA_CUSTOMER_ID, 16#00000001).
 -define(CURRENT_USER, 12).
 
 main() ->
