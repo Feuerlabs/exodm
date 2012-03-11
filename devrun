@@ -2,4 +2,4 @@
 
 DIR=$(cd ${0%/*} && pwd)
 
-erl -boot $DIR/devel/start -sys $DIR/devel/sys $*
+erl -boot $DIR/devel/start -config $DIR/devel/sys $*
