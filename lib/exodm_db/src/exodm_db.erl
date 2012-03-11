@@ -288,7 +288,7 @@ binary_opt(Key, Options) ->
 
 uint32_opt(Key, Options) ->
     case proplists:lookup(Key,Options) of
-	none -> 0;
+	none -> <<0:32>>;
 	{Key,Value} -> <<Value:32>>
     end.
 
