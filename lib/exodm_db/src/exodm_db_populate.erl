@@ -18,7 +18,7 @@ run_ga() ->
 		       [{name, "default"},{url,  ""}]),
     exodm_db_group:new(?GA_CUSTOMER_ID, 2, 
 		       [{name, "group1"},
-			{url, "http://localhost:8080/ck3/test_call"}]),
+			{url, "http://localhost:8080/ck3/test_callback"}]),
     exodm_db_user:new(?GA_CUSTOMER_ID, <<"ga">>,
 		      [{name,"ga"},
 		       {fullname, "Get Around"},
