@@ -66,7 +66,7 @@ update(UID, DID, Options) ->
 	      insert(Key,activity,<<Act:32>>);
 	  ({latitude,Lat}) ->
 	      insert(Key,latitude,<<Lat:32>>);
-	  ({longitud,Lon}) ->
+	  ({longitude,Lon}) ->
 	      insert(Key,longitude,<<Lon:32>>);
 	  ({timestamp,Ts}) ->
 	      insert(Key,timestamp,<<Ts:32>>);
