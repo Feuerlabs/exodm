@@ -102,29 +102,14 @@ lookup(Key) ->
 
 lookup_groups(UID, DID) ->
     Key0 = key(UID, DID),
-    Key  = <<Key0/binary,"*groups">>,
-    lookup_groups(Key, exodm_db:next_child(Key), []).
-
-lookup_groups(Key, {ok,Key1}, Acc) ->
-    N = byte_size(Key),
-    N1 = byte_size(Key1),
-    N2 = (N1-N)-2,
-    case Key1 of
-	<<Key:N/binary,"[",Pos:N2/binary,"]">> ->
-	    I = list_to_integer(binary_to_list(Pos)),
-	    case read_uint32(Key1, '__gid') of
-		[{_,GID}] ->
-		    lookup_groups(Key, exodm_db:next_child(Key1),
-				  [{group,{I, GID}}|Acc]);
-		[] ->
-		    lookup_groups(Key, exodm_db:next_child(Key1),
-				  Acc)
-	    end;
-	_ ->
-	    reverse(Acc)
-    end;
-lookup_groups(_Key, done, Acc) ->
-    reverse(Acc).
+    exodm_db:fold_list(
+      fun(I,Acc) ->
+	      Key1 = exodm_db:kvdb_key_join(Key0, exodm_db:list_key(groups,I)),
+	      case read_uint32(Key1, '__gid') of
+		  [{_,GID}] -> [{group,{I,GID}} | Acc];
+		  [] -> Acc
+	      end
+      end, [], Key0, groups).
 
 
 lookup_group_notifications(UID, DID) ->

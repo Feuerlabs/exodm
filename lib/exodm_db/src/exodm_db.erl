@@ -19,7 +19,10 @@
 -export([to_binary/1]).
 -export([binary_opt/2, uint32_opt/2, uint64_opt/2]).
 -export([first_child/1, next_child/1]).
+-export([fold_children/3]).
+-export([fold_list/3, fold_list/4]).
 -export([all_children/1]).
+
 -export([read/1, write/2]).
 
 -import(lists, [reverse/1]).
@@ -61,6 +64,8 @@ user_id_key(ID) ->
 group_id_key(ID) ->
     list_to_binary([$g|id_key(ID)]).
 
+device_id_key(IDBin) when is_binary(IDBin) ->
+    device_id_key(list_to_integer(binary_to_list(IDBin)));
 device_id_key(ID) ->
     list_to_binary([$x|id_key(ID)]).
 
@@ -231,18 +236,45 @@ next_child(K) ->
 	done ->
 	    done
     end.
-    
-all_children(K) ->
-    case first_child(K) of
-	{ok,C} -> all_children(C, [C]);
-	done -> []
-    end.
 
-all_children(K, Acc) ->
-    case next_child(K) of
-	{ok,C} -> all_children(C, [C|Acc]);
-	done -> reverse(Acc)
-    end.
+all_children(K) ->
+    reverse(fold_children(fun(Child,Acc) -> [Child|Acc] end, [], K)).
+
+fold_children(Fun, Acc, K) ->
+    fold_children_(Fun, Acc, first_child(K)).
+
+fold_children_(Fun, Acc, {ok,K}) ->
+    Acc1 = Fun(K, Acc),
+    fold_children_(Fun, Acc1, next_child(K));
+fold_children_(_Fun, Acc, done) ->
+    Acc.
+
+%% Fold over list items, Item is given with base name
+fold_list(Fun, Acc, Key, ListItem) ->
+    fold_list(Fun, Acc, kvdb_key_join(Key, to_binary(ListItem))).
+
+fold_list(Fun, Acc, Key) ->
+    %% assume the Key is refereing to the list basename without []
+    fold_list_(Fun, Acc, Key, next_child(Key)).
+
+fold_list_(Fun, Acc, Key, {ok,Key1}) ->
+    N = byte_size(Key),
+    N1 = byte_size(Key1),
+    N2 = (N1-N)-2,
+    case Key1 of
+	<<Key:N/binary,"[",Pos:N2/binary,"]">> ->
+	    %% FIXME: this assumes simple lists with position,
+	    %% make this work for predicate items as well.
+	    I = list_to_integer(binary_to_list(Pos)),
+	    Acc1 = Fun(I, Acc),
+	    fold_list_(Fun, Acc1, Key, next_child(Key1));
+	_ ->
+	    reverse(Acc)
+    end;
+fold_list_(_Fun, Acc, _Key, done) ->
+    reverse(Acc).
+
+
 
 to_binary(Value) when is_atom(Value) ->
     erlang:atom_to_binary(Value, latin1);
