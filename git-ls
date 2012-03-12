@@ -1,0 +1,113 @@
+#!/bin/sh
+# scan all subdirectories under .
+#
+#  fetch git-utils (git-outgoing & git-incomint) 
+#     from https://github.com/ddollar/git-utils.git
+#
+#
+TMP_ST=/tmp/gitit.st.$$
+TMP_FROM=/tmp/gitit.from.$$
+TMP_TO=/tmp/gitit.to.$$
+
+FETCH=no
+PULL=no
+CWD=`pwd`
+
+trap "cd $CWD; rm -f $TMP_ST $TMP_FROM $TMP_TO; exit" SIGHUP SIGINT SIGTERM
+
+args=`getopt fp $*`
+
+if [ $? != 0 ]; then
+    echo "usage: get-ls [-f] [dir .. ]"
+    exit 2
+fi
+set -- $args
+
+for i;  do
+    case "$i" in
+        -f)
+	    FETCH=yes
+	    shift;;
+	-p)
+	    PULL=yes
+	    shift;;
+	--)
+	    shift; break;;
+    esac
+done
+
+DIR_LIST="$*"
+if [ -z "$DIR_LIST" ]; then
+    DIR_LIST=`ls`
+    DIR_LIST=". $DIR_LIST"
+fi
+
+for rep in $DIR_LIST
+do
+    cd $CWD
+    if [ -d $rep -a -d $rep/.git ]
+    then
+	if [ "$rep" == "." ]; then
+	    rep=`basename $CWD`
+	else
+	    cd $rep
+	fi
+	git status --short -uno > $TMP_ST
+
+	CURRENT_BRANCH=$(git branch &>/dev/null; if [ $? -eq 0 ]; then echo "$(git branch | grep '^*' |sed s/\*\ //)"; fi)
+	if [ "${CURRENT_BRANCH}" != "" ]; then
+	    TARGET=""  # fixme pass a speical target|branch?
+	    if [ "${TARGET}" == "" ]; then
+		TRACKING_REPOSITORY="$(git config branch.${CURRENT_BRANCH}.remote)"
+                # there is a tracking repository
+		if [ "${TRACKING_REPOSITORY}" != "" ]; then
+		    REMOTE_REPOSITORY="${TRACKING_REPOSITORY}"
+		    REMOTE_BRANCH="$(git config branch.${CURRENT_BRANCH}.merge | sed -e 's#^[^/]*/[^/]*/##')"
+		    TARGET="${REMOTE_REPOSITORY}/${REMOTE_BRANCH}"
+		fi
+	    fi
+
+	    if [ $FETCH == "yes" ]; then
+		git remote update -p
+	    fi
+  
+	    git log -n 5 ..${TARGET} | sed -n -e "s/Date: \(.*\)/\1/p" -e "s/Author: \(.*\)/\1/p" | sed -n 'N;s/\n/,/p' > $TMP_FROM
+
+	    git log -n 5 ${TARGET}.. | sed -n -e "s/Date: \(.*\)/\1/p" -e "s/Author: \(.*\)/\1/p" | sed -n 'N;s/\n/,/p' > $TMP_TO
+	fi
+	
+	if [ -s $TMP_ST -o -s $TMP_FROM -o -s $TMP_TO ]; then
+	    status=""
+	    if [ -s $TMP_ST ]; then
+		if cat $TMP_ST | grep -v "^[ ]." > /dev/null; then
+		    status="COMMIT $status"
+		fi
+		if cat $TMP_ST | grep -v "^.[ ]" > /dev/null; then
+		    status="ADD $status"
+		fi
+		# cat $TMP_ST
+	    fi
+	    if [ -s $TMP_FROM ]; then
+		if [ $PULL == "yes" ]; then  
+		    # FIXME: this is a bit simplistic, but practical
+		    git pull
+		    status="PULLED $status"
+		else
+		    status="MERGE $status"
+		fi
+		# echo "From: ${TARGET}"
+		# cat $TMP_FROM
+	    fi
+	    if [ -s $TMP_TO ]; then
+		status="PUSH $status"
+		# echo "To: ${TARGET}"
+		# cat $TMP_TO
+	    fi
+	    echo "$rep: $status"
+	fi
+    fi
+done
+
+rm -f $TMP_ST
+rm -f $TMP_FROM
+rm -f $TMP_TO
