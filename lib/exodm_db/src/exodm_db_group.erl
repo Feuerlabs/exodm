@@ -8,7 +8,7 @@
 -module(exodm_db_group).
 
 -export([new/3, update/3, lookup/2, lookup/1, exist/2, exist/1]).
-
+-export([key/2]).
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
 %%

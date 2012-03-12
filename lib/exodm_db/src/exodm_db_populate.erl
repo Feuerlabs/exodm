@@ -14,9 +14,11 @@
 
 
 run_ga() ->
-    exodm_db_group:new(?GA_CUSTOMER_ID, 1, [{name, "default"},{url,  ""}]),
-    exodm_db_group:new(?GA_CUSTOMER_ID, 2, [{name, "group1"},
-			       {url, "http://localhost:8384/exodm_client/group1_reading"}]),
+    exodm_db_group:new(?GA_CUSTOMER_ID, 1, 
+		       [{name, "default"},{url,  ""}]),
+    exodm_db_group:new(?GA_CUSTOMER_ID, 2, 
+		       [{name, "group1"},
+			{url, "http://localhost:8080/ck3/test_call"}]),
     exodm_db_user:new(?GA_CUSTOMER_ID, <<"ga">>,
 		      [{name,"ga"},
 		       {fullname, "Get Around"},
