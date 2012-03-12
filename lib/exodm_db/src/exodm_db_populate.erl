@@ -28,8 +28,8 @@ run_ga() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(?GA_CUSTOMER_ID, DID, 
-				  [{ck,<<2,0,0,0,0,0,0,0>>},
-				   {sk,<<1,0,0,0,0,0,0,0>>},
+				  [{'__ck',<<2,0,0,0,0,0,0,0>>},
+				   {'__sk',<<1,0,0,0,0,0,0,0>>},
 				   {msisdn,"0701"++integer_to_list(DID)},
 				   {group, {1,2}}
 				  ]),
@@ -52,8 +52,8 @@ run_tony() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(12, DID, 
-				  [{ck,<<1:32, DID:32>>},
-				   {sk,<<2:32, DID:32>>},
+				  [{'__ck',<<1:32, DID:32>>},
+				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
@@ -63,8 +63,8 @@ run_tony() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(12, DID, 
-				  [{ck,<<1:32, DID:32>>},
-				   {sk,<<2:32, DID:32>>},
+				  [{'__ck',<<1:32, DID:32>>},
+				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {2, 2}}
 				  ]),
@@ -74,8 +74,8 @@ run_tony() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(12, DID, 
-				  [{ck,<<1:32, DID:32>>},
-				   {sk,<<2:32, DID:32>>},
+				  [{'__ck',<<1:32, DID:32>>},
+				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {1, 1}},
 				   {group, {2, 2}}
@@ -99,8 +99,8 @@ run_love() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(13, DID, 
-				  [{ck,<<1:32, DID:32>>},
-				   {sk,<<2:32, DID:32>>},
+				  [{'__ck',<<1:32, DID:32>>},
+				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07013"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
@@ -120,8 +120,8 @@ run_ulf() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(14, DID, 
-				  [{ck,<<1:32, DID:32>>},
-				   {sk,<<2:32, DID:32>>},
+				  [{'__ck',<<1:32, DID:32>>},
+				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07014"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
@@ -141,8 +141,8 @@ run_marcus() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(15, DID,
-				  [{ck,<<1:32, DID:32>>},
-				   {sk,<<2:32, DID:32>>},
+				  [{'__ck',<<1:32, DID:32>>},
+				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07015"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),

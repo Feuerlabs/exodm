@@ -70,10 +70,6 @@ update(UID, DID, Options) ->
 	      insert(Key,longitude,<<Lon:32>>);
 	  ({timestamp,Ts}) ->
 	      insert(Key,timestamp,<<Ts:32>>);
-	  ({'__ck',Value}) when is_integer(Value) ->
-	      insert(Key,'__ck', <<Value:64>>);
-	  ({'__sk',Value}) when is_integer(Value) ->
-	      insert(Key,'__sk', <<Value:64>>);
 	  ({'__ck',Value}) when is_binary(Value), byte_size(Value) =:= 8 ->
 	      insert(Key,'__ck', Value);
 	  ({'__sk',Value}) when is_binary(Value), byte_size(Value) =:= 8 ->

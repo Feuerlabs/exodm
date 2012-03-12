@@ -306,14 +306,6 @@ binary_opt(Key, Options) ->
     case proplists:lookup(Key,Options) of
 	none -> 
 	    <<>>;
-	{Key,Value} when Key =:= ck; Key =:= sk ->
-	    if is_integer(Value) ->
-		    <<Value:64>>;
-	       is_binary(Value), byte_size(Value) =:= 8 ->
-		    Value
-	    end;
-	{activity,Value} when is_integer(Value) ->
-	    <<Value:32>>;
 	{_Key,Value} ->
 	    to_binary(Value)
     end.
