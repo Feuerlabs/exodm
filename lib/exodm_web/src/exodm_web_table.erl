@@ -135,15 +135,17 @@ delete_selected(Table) ->
 %% click on a table row
 event({row_selected,Table,Module,I,ID}) ->
     RowID = row_id(Table, I),
-    %% io:format("exodm_web_table: clicked ID=~s\n", [RowID]),
-    %% io:format("            : element ID=~s\n", [ID]),
+    io:format("exodm_web_table: clicked ID=~s\n", [RowID]),
+    io:format("            : element ID=~s\n", [ID]),
     select(Table, RowID),
     %% dialog callback - to read and fill in dialog data from table
     Module:row_selected(I, ID),
     ok;
 event({next_page,_Table}) ->
+    io:format("NEXT_PAGE"),
     ok;
 event({prev_page,_Table}) ->
+    io:format("PREV_PAGE"),
     ok;
 event(_Other) ->
     %% io:format("exodm_web_table: event = ~p\n", [Other]),
