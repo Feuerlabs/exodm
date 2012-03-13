@@ -19,7 +19,7 @@
 -export([format_row/1]).
 
 -define(GA_CUSTOMER_ID, 16#00000001).
--define(CURRENT_USER, 12).
+-define(CURRENT_USER, ?GA_CUSTOMER_ID).
 
 main() ->
     exodm_web_common:content_type_html(),
@@ -38,7 +38,8 @@ layout() ->
               #grid_6 { omega=true, body=
 			    [#panel { class=dialog,body=device_id_entry()},
 			     #br{},
-			     #panel { class=dialog,body=device_dialog()}
+			     #panel { class=dialog,body=device_dialog() },
+			     #panel { class=dialog,body=device_location() }
 			    ]},
               #grid_clear {},
               #grid_12 { body=exodm_web_common:footer() }
@@ -64,9 +65,9 @@ device_id_entry() ->
     [
      #grid_clear {},
      #grid_2 { body=[#label    { text=?TXT("Activity ID")},
-		     #hidden   { id=last_rfid_value },
+		     #hidden   { id=last_device_id_value },
 		     #singlerow { cells=
-				      [#tablecell { id=last_rfid,
+				      [#tablecell { id=last_device_id,
 						    actions=Actions,
 						    html_encode=false,
 						    text="&nbsp;"}]}
@@ -98,6 +99,7 @@ device_status(Value) ->
 				 text=?TXT("Missing") }
 		       ]}. 
 
+
 device_dialog() ->
     [
      #label { text=?TXT("Device") },
@@ -120,52 +122,95 @@ device_dialog() ->
      #grid_clear {}
     ].
 
+get_current_id() ->
+    case wf:state(current_id) of
+	undefined ->
+	    io:format("current_id: DEMO: 111\n"),
+	    111;
+	DID ->
+	    io:format("current_id: ~w\n", [DID]),
+	    DID
+    end.
+
+get_location_url(DID) ->
+    case exodm_db_device:lookup_position(?CURRENT_USER, DID) of
+	{0,0,0} ->
+	    <<"">>;
+	{Lat,Lon,_Ts} ->
+	    LatF = io_lib:format("~.6.0f",[(Lat/100000.0) - 90]),
+	    LonF = io_lib:format("~.6.0f",[(Lon/100000.0) - 180]),
+	    list_to_binary(
+	      ["http://maps.googleapis.com/maps/api/staticmap?"
+	       "center=",LatF,",",LonF,
+	       "&markers=color:red%7C",LatF,",",LonF,
+	       "&zoom=14"
+	       "&size=400x200"
+	       "&sensor=true"
+	      ])
+    end.
+
+%% experimental !
+device_location() ->
+    URL =
+	case get_current_id() of
+	    undefined -> 
+		<<"">>;
+	    DID ->
+		get_location_url(DID)
+	end,
+    io:format("URL='~s'\n", [URL]),
+    #image { id=device_map_url, image=URL }.
+%%    [
+%%     "<div>",
+%%     "<iframe width='400' height='200' frameborder='0' scrolling='no' marginheight='0' marginwidth='0' src='", URL, "'>",
+%%     "</iframe></div>"].
+
+
 device_id(Value) ->
     #textbox { id=device_id, text=Value,
 	       postback={update,device_id} }.
 
 device_msisdn(Value) ->
-    #textbox { id=device_employee, text=Value, 
+    #textbox { id=device_msisdn, text=Value, 
 	       postback={update,device_msisdn} }.
 
-fill_dialog(ID, Status, MSISDN) ->
-    wf:set(device_id, if ID =:= undefined -> ""; true -> ID end),
+fill_dialog(ID, Status, MSISDN, URL) ->
+    wf:set(device_id, if ID =:= undefined -> <<"">>; true -> ID end),
     wf:set(device_msisdn, MSISDN),
+    wf:set(device_map_url, URL),
     wf:set(device_status_value, Status),
     wf:wire("Nitrogen.$check('device_status_active'," ++
-		atom_to_list(Status=:="active") ++");"),
+		atom_to_list(Status=:=<<"active">>) ++");"),
     wf:wire("Nitrogen.$check('device_status_inactive'," ++
-		atom_to_list(Status=:="inactive") ++ ");"),	    
+		atom_to_list(Status=:=<<"inactive">>) ++ ");"),	    
     wf:wire("Nitrogen.$check('device_status_broken'," ++
-		atom_to_list(Status=:="broken") ++ ");"),
+		atom_to_list(Status=:=<<"broken">>) ++ ");"),
     wf:wire("Nitrogen.$check('device_status_missing'," ++
-		atom_to_list(Status=:="missing") ++ ");").
+		atom_to_list(Status=:=<<"missing">>) ++ ");").
 
 clear_dialog() ->
     wf:state(current_id, undefined),
-    fill_dialog(undefined, "", "").
-
-set_dialog(ID, Status, MSISDN) ->
-    wf:state(current_id, ID),
-    fill_dialog(ID, Status, MSISDN).
-
+    fill_dialog(undefined, <<"">>, <<"">>, <<"">>).
 
 %% exodm_web_table callback
 row_selected(I, ID) ->
     io:format("row_selected: row=~w, id=~p\n", [I, ID]),
-    case exodm_db_device:read(?CURRENT_USER, ID) of
-	{ok,Rec} ->
-	    [{_,ID},{_,Status},{_,MSISDN}] = 
-		maximus_db:format_record(Rec,[id,status,employee_id]),
-	    io:format("update: id=~p, status=~p\n", [ID,Status]),
-	    set_dialog(ID, Status, MSISDN);
-	{error,Reason} ->
-	    io:format("read error: card=~p : reason=~p\n", [ID,Reason]),
-	    ok
+    DID = list_to_integer(binary_to_list(ID), 16),
+    case exodm_db_device:lookup(?CURRENT_USER, DID) of
+	[] ->
+	    io:format("could not find device (~w, ~w)\n", 
+		      [?CURRENT_USER, DID]),
+	    ok;
+	DeviceData ->
+	    MSISDN = proplists:get_value(msisdn,DeviceData,<<"">>),
+	    Status = <<"active">>,  %% fixme add to model
+	    Url = get_location_url(DID),
+	    wf:state(current_id, DID),
+	    fill_dialog(ID,Status,MSISDN,Url)
     end.
 
-event(copy) ->  %% create a new card from ID
-    case wf:q(last_rfid_value) of
+event(copy) ->  %% create a new device from ID
+    case wf:q(last_device_id_value) of
 	undefined ->
 	    io:format("COPY: ~p\n", [undefined]),
 	    ok;
@@ -173,7 +218,7 @@ event(copy) ->  %% create a new card from ID
 	    io:format("COPY: ~p\n", [ID]),
 	    exodm_web_table:deselect(device),
 	    wf:state(current_id, undefined),
-	    fill_dialog(ID, "", "")
+	    fill_dialog(ID, <<"">>, <<"">>, <<"">>)
     end;
 event({update,Element}) ->
     io:format("update: id=~w\n", [Element]),
@@ -221,7 +266,7 @@ add_or_update(Operation) ->
 		false ->
 		    throw({invalid,id,"update error"})
 	    end;
-	_ -> %% no card was loaded
+	_ -> %% no device was loaded
 	    case exodm_db_device:exist(?CURRENT_USER, ID) of
 		true ->
 		    exodm_db_device:update(?CURRENT_USER, ID,
@@ -280,11 +325,11 @@ background_update_loop() ->
     end.
 
 background_set("") ->
-    wf:set(last_rfid, "--------"),
-    wf:set(last_rfid_value, undefined),
+    wf:set(last_device_id, "--------"),
+    wf:set(last_device_id_value, undefined),
     wf:flush();
 background_set(Value) ->
-    wf:set(last_rfid, Value),
-    wf:set(last_rfid_value, Value),
-    wf:wire(last_rfid, [#fade{}, #appear{}]),
+    wf:set(last_device_id, Value),
+    wf:set(last_device_id_value, Value),
+    wf:wire(last_device_id, [#fade{}, #appear{}]),
     wf:flush().
