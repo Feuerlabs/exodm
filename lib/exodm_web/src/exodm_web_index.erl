@@ -13,8 +13,17 @@
 
 main() ->
     exodm_web_common:content_type_html(),
-    File = filename:join([code:priv_dir(exodm_web),"templates","grid.html"]),
-    #template { file=File }.
+    Res = wf:role(managers),
+    io:format("wf:role(managers) = ~p\n", [Res]),
+    case Res of
+	true ->
+	    exodm_web_common:content_type_html(),
+	    File = filename:join([code:priv_dir(exodm_web),
+				  "templates","grid.html"]),
+	    #template { file=File };
+	false ->
+	    wf:redirect_to_login("/login")
+    end.
 
 title() ->
     exodm_web_common:title().

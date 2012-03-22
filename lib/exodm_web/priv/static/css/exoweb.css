@@ -26,6 +26,7 @@ body {
     font-size: 13px;
     line-height: 1.5385em;
     color: #222;
+    background-image: url(/images/lab_fire.jpg);
     background-color: #008ec0;
 }
 
@@ -62,9 +63,13 @@ body {
 /***** DIALOG ****/
 
 .dialog {
-    padding: 5px;
-    border: 2px solid #ccc;
-    background:#eee;
+    padding: 10px;
+    border: 2px solid #fff;
+//    background-color: #f00;
+    opacity: 0.8;
+    filter: alpha(opacity=80);  // IE8 
+    background:#fff;
+    color: #fff;
 }
 
 /***** TABLE *****/

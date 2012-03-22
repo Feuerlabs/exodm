@@ -89,7 +89,9 @@ fetch_records(Table, {ok,Key}, I) ->
 
 %% FIXME: we should pass UUID here to allow for consistency check
 read_record(device, Key) ->
-    exodm_db_device:lookup(Key).
+    exodm_db_device:lookup(Key);
+read_record(group, Key) ->
+    exodm_db_group:lookup(Key).
 	    
 
 

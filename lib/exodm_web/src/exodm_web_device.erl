@@ -18,13 +18,17 @@
 -export([row_selected/2]).
 -export([format_row/1]).
 
--define(GA_CUSTOMER_ID, 16#00000001).
--define(CURRENT_USER, ?GA_CUSTOMER_ID).
 
 main() ->
     exodm_web_common:content_type_html(),
-    File = filename:join([code:priv_dir(exodm_web),"templates","grid.html"]),
-    #template { file=File }.
+    case wf:role(managers) of
+	true ->
+	    File = filename:join([code:priv_dir(exodm_web),
+				  "templates","grid.html"]),
+	    #template { file=File };
+	false ->
+	    wf:redirect_to_login("/login")
+    end.
 
 title() ->
     exodm_web_common:title().
@@ -55,8 +59,8 @@ format_row(Row) ->
 
 device_table() ->
     wf:state(current_id, undefined),
-    U = ck3_db:user_id_key(?CURRENT_USER),
-    Key = <<U/binary, "*devices">>,
+    AID = wf:session(account_id),
+    Key = exodm_db:kvdb_key_join([exodm_db:user_id_key(AID), <<"devices">>]),
     exodm_web_table:layout(device, Key, ?MODULE).
 
 device_id_entry() ->
@@ -133,7 +137,8 @@ get_current_id() ->
     end.
 
 get_location_url(DID) ->
-    case exodm_db_device:lookup_position(?CURRENT_USER, DID) of
+    AID = wf:session(account_id),    
+    case exodm_db_device:lookup_position(AID, DID) of
 	{0,0,0} ->
 	    <<"">>;
 	{Lat,Lon,_Ts} ->
@@ -196,10 +201,11 @@ clear_dialog() ->
 row_selected(I, ID) ->
     io:format("row_selected: row=~w, id=~p\n", [I, ID]),
     DID = list_to_integer(binary_to_list(ID), 16),
-    case exodm_db_device:lookup(?CURRENT_USER, DID) of
+    AID = wf:session(account_id),
+    case exodm_db_device:lookup(AID, DID) of
 	[] ->
 	    io:format("could not find device (~w, ~w)\n", 
-		      [?CURRENT_USER, DID]),
+		      [AID, DID]),
 	    ok;
 	DeviceData ->
 	    MSISDN = proplists:get_value(msisdn,DeviceData,<<"">>),
@@ -258,23 +264,25 @@ add_or_update(Operation) ->
 
     case wf:state(current_id) of
 	ID ->
-	    case exodm_db_device:exist(?CURRENT_USER, ID) of
+	    AID = wf:session(account_id),
+	    case exodm_db_device:exist(AID, ID) of
 		true ->
-		    exdm_db_device:update(?CURRENT_USER, ID,
-					   [{status,Status},
-					    {msisdn,MSISDN}]);
+		    exdm_db_device:update(AID, ID,
+					  [{status,Status},
+					   {msisdn,MSISDN}]);
 		false ->
 		    throw({invalid,id,"update error"})
 	    end;
 	_ -> %% no device was loaded
-	    case exodm_db_device:exist(?CURRENT_USER, ID) of
+	    AID = wf:session(account_id),
+	    case exodm_db_device:exist(AID, ID) of
 		true ->
-		    exodm_db_device:update(?CURRENT_USER, ID,
+		    exodm_db_device:update(AID, ID,
 					   [{status,Status},
 					    {msisdn,MSISDN}]),
 		    wf:state(current_id, undefined);
 		false ->
-		    exodm_db_device:new(?CURRENT_USER, ID,
+		    exodm_db_device:new(AID, ID,
 					[{status,Status},
 					 {msisdn,MSISDN}]),
 		    wf:state(current_id, undefined);
@@ -290,10 +298,11 @@ delete_current() ->
 	    ok;  %% nothing to do
 	ID ->
 	    io:format("DELETE: ID=~p\n", [ID]),
-	    case exodm_db_device:exist(ID) of
+	    AID = wf:session(account_id),
+	    case exodm_db_device:exist(AID,ID) of
 		true ->
 		    %% confirm dialog? if modified? FIXME!!!
-		    exodm_db_device:delete(ID),
+		    exodm_db_device:delete(AID,ID),
 		    exodm_web_table:delete_selected(device),
 		    clear_dialog();
 		_ ->

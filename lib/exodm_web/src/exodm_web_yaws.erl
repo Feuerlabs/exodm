@@ -40,8 +40,10 @@ out(Info) ->
 		    case Info#arg.clidata of
 			{partial,Data} ->
 			    case Info#arg.state of
-				undefined -> {get_more, undefined, [Data]};
-				Ds -> {get_more, undefined, [Data|Ds]}
+				undefined -> 
+				    {get_more, undefined, [Data]};
+				Ds ->
+				    {get_more, undefined, [Data|Ds]}
 			    end;
 			Data ->
 			    case Info#arg.state of
