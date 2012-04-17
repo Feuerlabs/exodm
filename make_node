@@ -1,6 +1,10 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
 
+%% Copyright 2011-12 Feuerlabs Inc.
+%% License: "BSD New" (http://www.opensource.org/licenses/BSD-3-Clause)
+%% Author: Ulf Wiger <ulf@feuerlabs.com>
+
 -mode(compile).
 
 -record(state, {target, rel, vm_args = []}).
