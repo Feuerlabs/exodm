@@ -3,15 +3,15 @@
        {lib_dirs, ["../deps", "../lib"]},
        {erts, [{mod_cond, derived}, {app_file, strip}]},
        {app_file, strip},
-       {rel, "exodm", git,
+       {rel, "$TARGET", "$VSN",
         [
         ]},
-       {rel, "start_clean", "",
+       {rel, "start_clean", "$VSN",
         [
          kernel,
          stdlib
         ]},
-       {boot_rel, "exodm"},
+       {boot_rel, "$TARGET"},
        {profile, embedded},
        {incl_cond, exclude},
        {excl_archive_filters, [".*"]}, %% Do not archive built libs
@@ -22,7 +22,7 @@
        {excl_app_filters, ["\.gitignore"]}
       ]}.
 
-%{target_dir, "$(name)/$(vsn)"}.
+{target_dir, "lib/$TARGET_$VSN"}.
 
 {overlay, [
            {mkdir, "log/sasl"},

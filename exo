@@ -1,0 +1,164 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+
+-mode(compile).
+-compile({no_auto_import,[nodes/1]}).
+
+-define(TARGET, "exodm").
+
+main([]) -> help();
+main([F|Args] = _A) ->
+    %% this insanity with 're' is because my terminal sometimes passes
+    %% a non-space space character appended to the command.
+    try list_to_existing_atom(
+	   re:replace(F, "[^a-z_]", "", [global,{return,list}])) of
+	git_vsn  -> git_vsn(Args);
+	nodes    -> nodes(Args);
+	versions -> versions(Args);
+	current  -> current(Args);
+	last_build -> last_build(Args);
+	_ -> help()
+    catch
+	_:_ ->
+	    help()
+    end.
+
+help() ->
+    io:fwrite(
+"Usage: ~s Cmd [Opts]~n"
+"Valid commands and options:~n"
+"  git_vsn    : prints the git version of the repos top directory.~n"
+"  nodes      : prints the names of the currently defined nodes.~n"
+"  versions   : prints all currently installed versions.~n"
+"  current    : prints the version set as 'current', if there is one;~n"
+"               otherwise, marks the latest installed verision as current.~n"
+"  current V  : marks the installed version (matching) V as current.~n"
+"  last_build : prints the version of the system most recently generated.~n",
+      [filename:basename(escript:script_name())]),
+    halt(1).
+
+
+git_vsn([V]) -> io:fwrite("~s~n", [V]);
+git_vsn(Opts) ->
+    case os:getenv("EXO_VSN") of
+	[_|_] = Vsn ->
+	    io:fwrite("~s~n", [Vsn]);
+	_ ->
+	    {ok, Cwd} = file:get_cwd(),
+	    Dir = case Opts of
+		      [] -> root_dir();
+		      [D|_] -> D
+		  end,
+	    ok = file:set_cwd(Dir),
+	    Res = os:cmd("git describe --always --tags "
+			 "`git log -n 1 --pretty=format:%h .`"),
+	    file:set_cwd(Cwd),
+	    io:fwrite("~s~n", [re:replace(Res,"\\n","",[{return,list}])])
+    end.
+
+nodes([]) ->
+    case file:list_dir(Dir = filename:join(root_dir(), "nodes")) of
+	{ok, Fs} ->
+	    list_files(Fs, Dir);
+	_ ->
+	    nothing
+    end.
+
+versions([]) ->
+    case file:list_dir(Dir = rel_lib_dir()) of
+	{ok, Fs} ->
+	    list_files(Fs, Dir);
+	_ ->
+	    nothing
+    end.
+
+current([]) ->
+    case file:read_link(filename:join(rel_dir(), ?TARGET)) of
+	{ok, Vsn} ->
+	    io:fwrite("~s~n", [vsn_part(Vsn)]);
+	{error, enoent} ->
+	    case file:list_dir(rel_lib_dir()) of
+		{ok, []} -> nothing;
+		{ok, Fs} ->
+		    [Latest|_] = lists:reverse(lists:sort(Fs)),
+		    make_current(Latest),
+		    io:fwrite("~s~n", [vsn_part(Latest)]);
+		_ ->
+		    nothing
+	    end
+    end;
+current([Vsn]) ->
+    case file:list_dir(Dir = rel_lib_dir()) of
+	{ok, Fs} ->
+	    case [F || F <- Fs, vsn_matches(Vsn, F)] of
+		[ActualVsn] ->
+		    file:delete(filename:join(rel_dir(), ?TARGET)),
+		    make_current(filename:join(Dir, ActualVsn)),
+		    io:fwrite("~s~n", [vsn_part(ActualVsn)]);
+		[] ->
+		    io:fwrite("error: no such version~n", []),
+		    halt(1);
+		[_|_] ->
+		    io:fwrite("error: ambiguous~n", []),
+		    halt(1)
+	    end;
+	_ ->
+	    io:fwrite("error: no such version~n", []),
+	    halt(1)
+    end.
+
+vsn_part(F) ->
+    case re:split(Base = filename:basename(F), "_", [{return,list}]) of
+	[_, V] ->
+	    V;
+	_ ->
+	    Base
+    end.
+
+last_build(_) ->
+    case file:consult(filename:join(rel_dir(), "reltool.config")) of
+	{ok, Terms} ->
+	    case [Sys || {sys, Sys} <- Terms] of
+		[Items|_] ->
+		    [Version] = [V || {rel,T,V,_} <- Items, T == ?TARGET],
+		    io:fwrite("~s~n", [Version]);
+		_ ->
+		    nothing
+	    end;
+	_ ->
+	    nothing
+    end.
+
+vsn_matches(V, FullV) ->
+    case re:run(FullV, V) of
+	{match,_} -> true;
+	nomatch   -> false
+    end.
+
+make_current(F) ->
+    {ok, Cwd} = file:get_cwd(),
+    file:set_cwd(rel_dir()),
+    io:fwrite("-- now in ~p~n", [file:get_cwd()]),
+    Res = file:make_symlink(A = filename:join("lib", filename:basename(F)),
+			    B = ?TARGET),
+    io:fwrite("make_symlink(~p, ~p) -> ~p~n", [A, B, Res]),
+    file:set_cwd(Cwd).
+    %% file:set_cwd(filename:dirname(filename:absname(F))),
+    %% file:make_symlink(filename:basename(F), filename:join("..", ?TARGET)),
+    %% file:set_cwd(Cwd).
+
+list_files(Fs0, Dir) ->
+    case [F1 || F1 <- lists:sort(Fs0),
+	       filelib:is_dir(filename:join(Dir, F1))] of
+	[F|Fs] ->
+	    io:fwrite("~s~n", [F ++ lists:concat(["," ++ F1 || F1 <- Fs])])
+    end.
+
+root_dir() ->
+    filename:dirname(escript:script_name()).
+
+rel_dir() ->
+    filename:join(root_dir(), "rel").
+
+rel_lib_dir() ->
+    filename:join(rel_dir(), "lib").

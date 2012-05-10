@@ -3,14 +3,36 @@
 -export(['post_create-node'/2,
 	 post_generate/2]).
 
-'post_create-node'({config,_,Env}, _File) ->
+'post_create-node'({config,_,Env,_}, _File) ->
     case file:consult("reltool.config.src") of
 	{ok, Terms} ->
-	    New = lists:map(fun(T) -> expand(T, Env) end, Terms),
+	    Vars = [{"TARGET", get_target(Env)},
+		    {"VSN", get_vsn(Env)}],
+	    New = expand_env(
+		    Vars, lists:map(fun(T) -> expand(T, Env) end, Terms)),
 	    write_to_file("reltool.config", New),
 	    ok;
 	_ ->
 	    ok
+    end.
+
+get_target(Env) ->
+    case lists:keyfind(target, 1, Env) of
+	{_, T} ->
+	    lists:last(filename:split(T));
+	false ->
+	    io:fwrite("No target specified~n"
+		      "Rebar globals = ~p~n", [application:get_all_env(rebar)]),
+	    "exodm"
+    end.
+
+get_vsn(Env) ->
+    case lists:keyfind(vsn, 1, Env) of
+	{_, V} ->
+	    V;
+	false ->
+	    io:fwrite("No version specified~n", []),
+	    "1"
     end.
 
 post_generate(_Config, File) ->
@@ -88,18 +110,20 @@ otp_libdir() ->
     filename:dirname(code:lib_dir(stdlib)).
 
 replace_rels(Ts, Env) ->
-    lists:flatmap(fun({rel,R,V,_} = T) ->
-		      case [As || {rel_apps,Rx,As} <- Env,
-				  Rx == R] of
-			  [] ->
-			      [T];
-			  [As1] ->
-			      [{rel,R,V,As1},
-			       {rel,R++"_setup",V,setup_conv(As1)}]
-		      end;
-		 (T) ->
-		      [T]
-	      end, Ts).
+    lists:flatmap(
+      fun({rel,R,V,_} = T) ->
+	      case [As || {rel_apps,Rx,As} <- Env,
+			  Rx == R] of
+		  [] ->
+		      [T];
+		  [As1] ->
+		      [{rel,R,V,As1},
+		       {rel,R++"_setup",V,setup_conv(As1)}]
+	      end;
+	 (T) ->
+	      [T]
+      end, Ts).
+
 
 setup_conv(As) ->
     lists:map(
@@ -117,13 +141,6 @@ setup_conv(As) ->
 	      {A, load, Is}
       end, As).
 
-%% find(A, [A|_]) -> {ok, A};
-%% find(A, [H|_]) when element(1,H) == A -> {ok, H};
-%% find(A, [_|T]) ->
-%%     find(A, T);
-%% find(_, []) ->
-%%     error.
-
 write_to_file(F, Terms) ->
     {ok, Fd} = file:open(F, [write]),
     try
@@ -133,3 +150,28 @@ write_to_file(F, Terms) ->
     end.
 
 
+%% Copied from http://github.com/uwiger/setup
+%%
+expand_env(Vs, T) when is_tuple(T) ->
+    list_to_tuple([expand_env(Vs, X) || X <- tuple_to_list(T)]);
+expand_env(Vs, L) when is_list(L) ->
+    case is_string(L) of
+        true ->
+            do_expand_env(L, Vs, list);
+	false ->
+	    [expand_env(Vs, X) || X <- L]
+    end;
+expand_env(Vs, B) when is_binary(B) ->
+    do_expand_env(B, Vs, binary);
+expand_env(_, X) ->
+    X.
+
+do_expand_env(X, Vs, Type) ->
+    lists:foldl(fun({K, Val}, Xx) ->
+			re:replace(Xx, [$\\, $$ | K], Val, [{return,Type}])
+		end, X, Vs).
+
+is_string(S) ->
+    lists:all(fun(C) when 0 < C, C =< 255 -> true;
+		 (_) -> false
+	      end, S).
