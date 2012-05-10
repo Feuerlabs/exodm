@@ -80,7 +80,7 @@ current([]) ->
 	    case file:list_dir(rel_lib_dir()) of
 		{ok, []} -> nothing;
 		{ok, Fs} ->
-		    [Latest|_] = lists:reverse(lists:sort(Fs)),
+		    [Latest|_] = lists:reverse(sort_vsns(Fs)),
 		    make_current(Latest),
 		    io:fwrite("~s~n", [vsn_part(Latest)]);
 		_ ->
@@ -109,10 +109,8 @@ current([Vsn]) ->
 
 vsn_part(F) ->
     case re:split(Base = filename:basename(F), "_", [{return,list}]) of
-	[_, V] ->
-	    V;
-	_ ->
-	    Base
+	[_, V] -> V;
+	_ -> Base
     end.
 
 last_build(_) ->
@@ -142,6 +140,7 @@ make_current(F) ->
     Res = file:make_symlink(A = filename:join("lib", filename:basename(F)),
 			    B = ?TARGET),
     io:fwrite("make_symlink(~p, ~p) -> ~p~n", [A, B, Res]),
+    file:copy(A, filename:join(rel_dir(), "reltool.config")),
     file:set_cwd(Cwd).
     %% file:set_cwd(filename:dirname(filename:absname(F))),
     %% file:make_symlink(filename:basename(F), filename:join("..", ?TARGET)),
@@ -162,3 +161,34 @@ rel_dir() ->
 
 rel_lib_dir() ->
     filename:join(rel_dir(), "lib").
+
+%% modified version of setup:sort_vsns/2
+sort_vsns(Rels) ->
+    lists:sort(fun(Ra, Rb) ->
+                       compare_vsns(take_vsn(Ra), take_vsn(Rb))
+               end,
+               Rels).
+
+take_vsn(R) ->
+    case re:split(R, "_", [{return,list}]) of
+	[_, V] ->
+	    V;
+	_ ->
+	    R
+    end.
+
+compare_vsns(V1, V2) ->
+    ToS = fun(V) ->
+                  [pad_x(X) || X <- string:tokens(V, ".")]
+          end,
+    ToS(V1) < ToS(V2).
+
+pad_x(X) ->
+    S = if is_integer(X) -> integer_to_list(X);
+           true -> X
+        end,
+    lists:duplicate(30 - length(S), $0) ++ [flip(C) || C <- S].
+
+flip(C) when $a =< C, C =< $z -> $A + (C - $a);
+flip(C) when $A =< C, C =< $Z -> $a + (C - $A);
+flip(C) -> C.

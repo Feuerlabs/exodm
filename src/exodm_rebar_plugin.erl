@@ -8,8 +8,8 @@
 	{ok, Terms} ->
 	    Vars = [{"TARGET", get_target(Env)},
 		    {"VSN", get_vsn(Env)}],
-	    New = expand_env(
-		    Vars, lists:map(fun(T) -> expand(T, Env) end, Terms)),
+	    New = lists:map(fun(T) -> expand(T, Env) end,
+			    expand_env(Vars, Terms)),
 	    write_to_file("reltool.config", New),
 	    ok;
 	_ ->
@@ -41,6 +41,7 @@ post_generate(_Config, File) ->
     MakeNodeTgt = filename:join(TargetDir, "make_node"),
     {ok,_} = file:copy("../make_node", MakeNodeTgt),
     set_x_bit(MakeNodeTgt),
+    {ok,_} = file:copy(File, filename:join(TargetDir, filename:basename(File))),
     %% io:fwrite("post_generate(~n"
     %% 	      "   Config = ~p~n"
     %% 	      "   File = ~p~n"
@@ -70,7 +71,6 @@ app_name(A) when is_atom(A) ->
 fix_lib_dirs(Apps, Ps) ->
     LibDirs = [filename:absname(D) || D <- proplists:get_value(lib_dirs, Ps, []),
 				      is_legal_dir(D)],
-    io:fwrite("LibDirs = ~p~n", [LibDirs]),
     AppNames = [app_name(A) || A <- Apps],
     OldPath = code:get_path(),
     code:set_path(lists:concat([filelib:wildcard(
@@ -84,7 +84,6 @@ fix_lib_dirs(Apps, Ps) ->
 					     store(filename:dirname(D), OTPLibD, Acc)
 				     end
 			     end, LibDirs, AppNames),
-    io:fwrite("ActualLibs = ~p~n", [ActualLibs]),
     lists:keystore(lib_dirs, 1, Ps, {lib_dirs, ActualLibs}).
 
 is_legal_dir(D) ->
