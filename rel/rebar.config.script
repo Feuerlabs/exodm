@@ -1,4 +1,4 @@
 %% -*- erlang -*-
-VSN = [_|_] = os:cmd("../exo git_vsn $EXO_VSN").
+VSN = [_|_] = os:cmd("../exorel git_vsn $EXO_VSN").
 io:fwrite("VSN = ~s~n", [VSN]).
 lists:keystore(vsn, 1, CONFIG, {vsn, [C || C <- VSN, C=/=$\n]}).
