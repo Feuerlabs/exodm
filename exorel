@@ -31,7 +31,7 @@ help() ->
 "  nodes      : prints the names of the currently defined nodes.~n"
 "  versions   : prints all currently installed versions.~n"
 "  current    : prints the version set as 'current', if there is one;~n"
-"               otherwise, marks the latest installed verision as current.~n"
+"               otherwise, marks the latest installed version as current.~n"
 "  current V  : marks the installed version (matching) V as current.~n"
 "  last_build : prints the version of the system most recently generated.~n",
       [filename:basename(escript:script_name())]),
