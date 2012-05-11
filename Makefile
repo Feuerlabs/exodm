@@ -17,7 +17,7 @@ release: compile
 
 generate:
 	./rebar generate -f skip_deps=true
-	./exorel current
+	./exorel current `./exorel last_build`
 
 dev:
 	./devsetup
