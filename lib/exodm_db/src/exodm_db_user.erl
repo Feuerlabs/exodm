@@ -7,7 +7,8 @@
 
 -module(exodm_db_user).
 
--export([new/3, update/3, lookup/2, lookup/1, exist/2, exist/1]).
+-export([new/3, update/3, lookup/2, lookup/1, lookup_attr/3,
+	 exist/2, exist/1]).
 
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
@@ -30,7 +31,7 @@ new(UID, UName, Options) ->
     insert(Key,phone,         binary_opt(phone,Options)),
     insert(Key,email,         binary_opt(email,Options)),
     insert(Key,skype,         binary_opt(skype,Options)),
-    insert_password(Key,'__password',  binary_opt('__password',Options)),
+    insert_password(Key, '__password', binary_opt('__password', Options)),
     lists:foreach(
       fun({I,AUID,AGID,Perm}) ->
 	      insert_access(Key, I, AUID, AGID, Perm)
@@ -50,7 +51,7 @@ update(UID, UName, Options) ->
 	  ({skype,Value}) ->
 	      insert(Key,skype,    to_binary(Value));
 	  ({'__password',Value}) ->
-	      insert_password(Key,'__password', to_binary(Value));
+	      insert_password(Key, '__password', to_binary(Value));
 	  ({access, {I,AUID,AGID,Perm}}) ->
 	      insert_access(Key, I, AUID, AGID, Perm)
       end, Options).
@@ -64,6 +65,10 @@ lookup(Key) ->
 	read(Key,phone) ++
 	read(Key,email) ++
 	read(Key,skype).
+
+lookup_attr(UID, UName, Attr) ->
+    Key = key(UID, UName),
+    read(Key, Attr).
 
 exist(UID, UName) ->
     exist(key(UID,UName)).
@@ -93,8 +98,10 @@ insert_access(K0, I, UID, GID, Perm) when
     insert(K, '__perm', to_binary(Perm)).
 
 insert_password(Key, Item, Value) ->
-    %% FIXME encrypt before insert
-    insert(Key, Item, Value).
+    {ok, Salt} = bcrypt:gen_salt(),
+    %% Expensive hash; expensive to create, expensive to check against
+    {ok, Hash} = bcrypt:hashpw(Value, Salt),
+    insert(Key, Item, to_binary(Hash)).
 
 read(Key,Item) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
