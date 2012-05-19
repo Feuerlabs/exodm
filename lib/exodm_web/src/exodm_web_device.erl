@@ -92,7 +92,7 @@ device_status(Value) ->
 			#radio { id=device_status_inactive,
 				 checked=(Value=:="inactive"),
 				 postback={update,device_status_inactive},
-				 text=?TXT("Inacctive") },
+				 text=?TXT("Inactive") },
 			#radio { id=device_status_broken,
 				 checked=(Value=:="broken"),
 				 postback={update,device_status_broken},

@@ -204,7 +204,7 @@ kvdb_key_drop(K) ->
 
 first_child(K) ->
     case kvdb_conf:next(<<K/binary,"*+">>) of
-	{ok,{K1,_As,_Data}} ->
+	{ok,{K1,_As,_Data}} when byte_size(K1) > byte_size(K) ->
 	    N = byte_size(K),
 	    case erlang:split_binary(K1, N) of
 		{K, <<$*,K2/binary>>} ->
@@ -213,7 +213,7 @@ first_child(K) ->
 		{_, _} ->
 		    done
 	    end;
-	done ->
+	_ ->
 	    done
     end.
 

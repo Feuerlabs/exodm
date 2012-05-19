@@ -31,7 +31,7 @@ layout() ->
         body=[
         %%    #grid_12 { class=header,body=exodm_web_common:header(login) },
 	%%      #grid_clear {},
-	      #image { image="/images/fl_small.png", alt="Fuerlabs" },
+	      #image { image="/images/fl_small.png", alt="Feuerlabs" },
               #grid_4 { body=[] },
               #grid_4 { class=dialog, body=login_form()},
               #grid_4 { body=[] },
