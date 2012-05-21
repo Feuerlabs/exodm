@@ -7,7 +7,8 @@
 
 -module(exodm_db_user).
 
--export([new/3, update/3, lookup/2, lookup/1, lookup_attr/3,
+-export([new/2, new/3, update/3, lookup/2, lookup/1, lookup_attr/3,
+	 new_uid/0,
 	 exist/2, exist/1]).
 
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
@@ -23,10 +24,15 @@
 %% /user/<uname>/access[<u>]/__gid  = Device group ID
 %% /user/<uname>/access[<u>]/__perm = Device group access
 %%
+new(Name, Options) ->
+    new(new_uid(), Name, Options).
+
 new(UID, UName, Options) ->
     [_] = exodm_db:nc_key_split(UName),  %% validation!
     Key = key(UID, UName),
     insert(Key,name,UName),
+    insert(Key,'__uid',UID),
+    exodm_db_system:set_uid_user(UID, UName),
     insert(Key,fullname,      binary_opt(fullname,Options)),
     insert(Key,phone,         binary_opt(phone,Options)),
     insert(Key,email,         binary_opt(email,Options)),
@@ -37,6 +43,9 @@ new(UID, UName, Options) ->
 	      insert_access(Key, I, AUID, AGID, Perm)
       end, proplists:get_all_values(access, Options)),
     ok.
+
+new_uid() ->
+    exodm_db_system:new_uid().
 
 update(UID, UName, Options) ->
     Key = key(UID, UName),

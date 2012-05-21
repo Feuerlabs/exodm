@@ -23,7 +23,7 @@
 -export([fold_list/3, fold_list/4]).
 -export([all_children/1]).
 
--export([read/1, write/2]).
+-export([read/1, write/2, update_counter/2]).
 
 -import(lists, [reverse/1]).
 %%
@@ -329,3 +329,5 @@ write(Key,Value) ->
 read(Key) ->
     kvdb_conf:read(Key).
 
+update_counter(Key, Incr) ->
+    kvdb_conf:update_counter(Key, Incr).

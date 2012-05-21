@@ -7,6 +7,7 @@
 %%% @doc This is the routing table.
 routes() ->
     [{"/",            exodm_web_index}
+     , {"/register",  exodm_web_register}
      , {"/login",     exodm_web_login}
      , {"/logout",    exodm_web_logout}
      , {"/location",  exodm_web_location}

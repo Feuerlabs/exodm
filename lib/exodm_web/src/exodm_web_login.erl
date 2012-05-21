@@ -57,7 +57,8 @@ login_form() ->
 	       #label { text="Password" },
 	       #password { id=passTextBox, next=okButton },
 	       #p{},
-	       #button { id=okButton, text="OK", postback=ok }
+	       #button { id=okButton, text="OK", postback=ok },
+	       #link { id=register, url='/register', text=?TXT("Register") }
 	      ]}.
 
     
@@ -68,21 +69,18 @@ login_form() ->
 event(ok) ->
     User = wf:q(userTextBox),
     Password = wf:q(passTextBox),
-    io:format("user=~p, password=~p\n", [User, Password]),
-    case User of
-	"admin" ->
-	    if Password =:= "tesla" ->
-		    wf:user(admin),
-		    wf:role(managers, true),
-		    wf:session(account_id, ?GA_ACCOUNT_ID),
-		    wf:redirect_from_login("/");
-	       true ->
-		    wf:flash(?TXT("Invalid user or password."))
-	    end;
-	_ ->
+    case exodm_db_session:authenticate(User, Password) of
+	true ->
+	    wf:user(User),
+	    wf:role(get_role(User), true),
+	    wf:session(account_id, ?GA_ACCOUNT_ID),
+	    wf:redirect_from_login("/");
+	false ->
 	    wf:flash(?TXT("Invalid user or password."))
     end;
 event(_Event) ->
     io:format("Event = ~p\n", [_Event]).
 
 
+get_role(_User) ->
+    managers.
