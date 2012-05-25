@@ -5,6 +5,7 @@
 
 
 start(_Type, _Arg) ->
+    exodm_db_system:init(),
     exodm_db_sup:start_link().
 
 stop(_State) ->

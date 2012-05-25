@@ -13,6 +13,37 @@
 -define(GA_CUSTOMER_ID, 16#00000001).
 
 
+run_euc() ->
+    {ok, AID} = exodm_db_account:new(<<"feuerlabs">>, []),
+    {ok, GID} = exodm_db_group:new(
+		  AID, [{name, <<"euc">>},
+			{url, "http://localhost:8000/exodm/test_callback"}]),
+    {ok, _UID} = exodm_db_user:new(
+		   AID, <<"euc">>,
+		   [
+		    {fullname, <<"EUC Demo 2012">>},
+		    {'__password', <<"exosense">>},
+		    {access, {1,AID,GID,rw}}
+		   ]),
+    store_rfzone_yang(),
+    exodm_db_device:new(AID,
+			[
+			 {'__ck', <<2,0,0,0,0,0,0,0>>},
+			 {'__sk', <<1,0,0,0,0,0,0,0>>},
+			 {misdn, <<"0701$DID">>},
+			 {group, {1, GID}},
+			 {yang, <<"rfzone.yang">>}
+			]).
+
+store_rfzone_yang() ->
+    exodm_db_session:set_auth_as_user(<<"euc">>),
+    {ok, UART} = file:read_file(
+		   filename:join(code:priv_dir(nmea_0183), "uart.yang")),
+    exodm_db_yang:write("uart.yang", UART),
+    {ok, Bin} = file:read_file(
+		  filename:join(code:priv_dir(rfzone), "rfzone.yang")),
+    exodm_db_yang:write("rfzone.yang", Bin).
+
 run_ga() ->
     exodm_db_group:new(?GA_CUSTOMER_ID, 1, 
 		       [{name, "default"},{url,  ""}]),
@@ -21,6 +52,7 @@ run_ga() ->
 			{url, "http://localhost:8080/ck3/test_callback"}]),
     exodm_db_user:new(?GA_CUSTOMER_ID, <<"ga">>,
 		      [{name,"ga"},
+		       {'__password', <<"ga">>},
 		       {fullname, "Get Around"},
 		       {access, {1,?GA_CUSTOMER_ID,1,rw}},
 		       {access, {2,?GA_CUSTOMER_ID,2,rw}}
@@ -43,6 +75,7 @@ run_tony() ->
 			       {url, "http://www.rogvall.se/exodm_client/temp_reading"}]),
     exodm_db_user:new(12, <<"tony">>,
 		      [{name,"tony"},
+		       {'__password', <<"tony">>},
 		       {fullname, "Tony Rogvall"},
 		       {phone,"+46702575687"},
 		       {email,"tony@rogvall.se"},
@@ -89,6 +122,7 @@ run_love() ->
     exodm_db_group:new(13, 1, [{name, "default"},{url,  ""}]),
     exodm_db_user:new(13, <<"love">>,
 		      [{name,"love"},
+		       {'__password', <<"love">>},
 		       {fullname, "Magnus Feuer"},
 		       {phone,"+19492947871"},
 		       {email, "magnus@feuerlabs.com"},
@@ -111,7 +145,8 @@ run_love() ->
 run_ulf() ->    
     exodm_db_group:new(14, 1, [{name, "default"},{url,  ""}]),
     exodm_db_user:new(14, <<"ulf">>,
-		      [{name,"ulf"}, 
+		      [{name,"ulf"},
+		       {'__password', <<"ulf">>},
 		       {fullname, "Ulf Wiger"},
 		       {phone,"+46761966190"},
 		       {email, "ulf@feuerlabs.com"},
@@ -133,6 +168,7 @@ run_marcus() ->
     exodm_db_group:new(15, 1, [{name, "default"},{url,  ""}]),
     exodm_db_user:new(15, <<"marcus">>,
 		      [{name,"marcus"},
+		       {'__password', <<"marcus">>},
 		       {fullname, "Marcus Taylor"},
 		       {phone,"+447736180404"},
 		       {email, "marcus@feuerlabs.com"},
