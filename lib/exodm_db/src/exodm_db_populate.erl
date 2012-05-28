@@ -14,6 +14,9 @@
 
 
 run_euc() ->
+    %% Don't know why this is needed...
+    BCryptRes = bcrypt:start(),
+    io:fwrite("bcrypt:start() -> ~p~n", [BCryptRes]),
     {ok, AID} = exodm_db_account:new(<<"feuerlabs">>, []),
     {ok, GID} = exodm_db_group:new(
 		  AID, [{name, <<"euc">>},
