@@ -29,14 +29,17 @@ title() ->
 layout() ->
     #container_12 { 
         body=[
+              #grid_clear {},
         %%    #grid_12 { class=header,body=exodm_web_common:header(login) },
 	%%      #grid_clear {},
+              #grid_4 { body=[] },
+              #grid_4 { body=[] },
 	      #image { image="/images/fl_small.png", alt="Fuerlabs" },
               #grid_4 { body=[] },
               #grid_4 { class=dialog, body=login_form()},
-              #grid_4 { body=[] },
-              #grid_clear {},
-              #grid_4 { body=exodm_web_common:footer() }
+              #grid_4 { body=[] }
+              %% #grid_clear {},
+              %% #grid_4 { body=exodm_web_common:footer() }
              ]}.
 
 

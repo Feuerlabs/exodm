@@ -50,10 +50,10 @@ layout() ->
              ]}.
 
 format_row(header) ->
-    [?TXT("Device"), ?TXT("Status"), ?TXT("MSISDN")];
+    [?TXT("Device"), ?TXT("Name"), ?TXT("MSISDN")];
 format_row(Row) ->
     [{id,proplists:get_value(id,Row,"?")},
-     {status,proplists:get_value(status,Row,"?")},
+     {name,proplists:get_value(name,Row,"?")},
      {msisdn,proplists:get_value(msisdn,Row,"")}
     ].
 
@@ -106,10 +106,13 @@ device_status(Value) ->
 
 device_dialog() ->
     [
-     #label { text=?TXT("Device") },
-     device_id(""),
-     #label { text=?TXT("MSISDN") },
-     device_msisdn(""),
+     #label { text=?TXT("Device") }, device_id(""),
+     #label { text=?TXT("Name") },   device_name(""),
+     #label { text=?TXT("MSISDN") }, device_msisdn(""),
+     #label { text=?TXT("IMSI") },   device_imsi(""),
+     #label { text=?TXT("LAT") },    device_lat(""),
+     #label { text=?TXT("LONG") },   device_long(""),
+     %% Show group dropdown?
      #p{},
      device_status(""),
      #grid_1 { alpha=true, body=
@@ -175,15 +178,36 @@ device_id(Value) ->
     #textbox { id=device_id, text=Value,
 	       postback={update,device_id} }.
 
+device_name(Value) ->
+    #textbox { id=device_name, text=Value,
+	       postback={update,device_name} }.
+
 device_msisdn(Value) ->
     #textbox { id=device_msisdn, text=Value, 
 	       postback={update,device_msisdn} }.
 
-fill_dialog(ID, Status, MSISDN, URL) ->
+device_imsi(Value) ->
+    #textbox { id=device_imsi, text=Value, 
+	       postback={update,device_imsi} }.
+
+device_long(Value) ->
+    #textbox { id=device_long, text=Value, 
+	       postback={update,device_long} }.
+
+device_lat(Value) ->
+    #textbox { id=device_lat, text=Value, 
+	       postback={update,device_lat} }.
+
+fill_dialog(ID, Data) ->
     wf:set(device_id, if ID =:= undefined -> <<"">>; true -> ID end),
-    wf:set(device_msisdn, MSISDN),
-    wf:set(device_map_url, URL),
-    wf:set(device_status_value, Status),
+    wf:set(device_name, proplists:get_value(name, Data, <<"">>)),
+    wf:set(device_msisdn,proplists:get_value(msisdn, Data, <<"">>)),
+    wf:set(device_imsi,proplists:get_value(imsi,Data, <<"">>)),
+    wf:set(device_long,proplists:get_value(longitude,Data, <<"">>)),
+    wf:set(device_lat,proplists:get_value(latitude,Data,<<"">>)),
+    wf:set(device_map_url, proplists:get_value(url,Data,<<"">>)),
+    Status = proplists:get_value(status,Data,<<"active">>),
+    wf:set(device_status_value,Status),
     wf:wire("Nitrogen.$check('device_status_active'," ++
 		atom_to_list(Status=:=<<"active">>) ++");"),
     wf:wire("Nitrogen.$check('device_status_inactive'," ++
@@ -195,7 +219,8 @@ fill_dialog(ID, Status, MSISDN, URL) ->
 
 clear_dialog() ->
     wf:state(current_id, undefined),
-    fill_dialog(undefined, <<"">>, <<"">>, <<"">>).
+    fill_dialog(undefined, []).
+
 
 %% exodm_web_table callback
 row_selected(I, ID) ->
@@ -208,12 +233,11 @@ row_selected(I, ID) ->
 		      [AID, DID]),
 	    ok;
 	DeviceData ->
-	    MSISDN = proplists:get_value(msisdn,DeviceData,<<"">>),
-	    Status = <<"active">>,  %% fixme add to model
 	    Url = get_location_url(DID),
 	    wf:state(current_id, DID),
-	    fill_dialog(ID,Status,MSISDN,Url)
+	    fill_dialog(ID,[{url,Url}|DeviceData])
     end.
+
 
 event(copy) ->  %% create a new device from ID
     case wf:q(last_device_id_value) of
@@ -224,9 +248,10 @@ event(copy) ->  %% create a new device from ID
 	    io:format("COPY: ~p\n", [ID]),
 	    exodm_web_table:deselect(device),
 	    wf:state(current_id, undefined),
-	    fill_dialog(ID, <<"">>, <<"">>, <<"">>)
+	    fill_dialog(ID, [])
     end;
 event({update,Element}) ->
+    %% FIXME: refresh 
     io:format("update: id=~w\n", [Element]),
     case Element of
 	device_status_active ->
@@ -255,21 +280,20 @@ event(Event) ->
 %% add / update item or current item
 %% FIXME: update table entry - if visible
 add_or_update(Operation) ->
-    ID = wf:q(device_id),
-    Status = wf:q(device_status_value),
+    ID     = list_to_integer(wf:q(device_id)),
     MSISDN = wf:q(device_msisdn),
-
-    io:format("~p: ID:~p, Status:~p, Msisdn:~p\n", 
-	      [Operation,ID,Status, MSISDN]),
+    Long   = list_to_integer(wf:q(device_long)),
+    Lat    = list_to_integer(wf:q(device_lat)),
+    %% FIXME: add rest of the data in correct format!
+    Data   = [{msisdn,MSISDN},{longitude,Long},{latitude,Lat}],
+    io:format("~p: ID=~p, Data:~p\n", [ID, Operation,Data]),
 
     case wf:state(current_id) of
 	ID ->
 	    AID = wf:session(account_id),
 	    case exodm_db_device:exist(AID, ID) of
 		true ->
-		    exdm_db_device:update(AID, ID,
-					  [{status,Status},
-					   {msisdn,MSISDN}]);
+		    exdm_db_device:update(AID, ID, Data);
 		false ->
 		    throw({invalid,id,"update error"})
 	    end;
@@ -277,14 +301,10 @@ add_or_update(Operation) ->
 	    AID = wf:session(account_id),
 	    case exodm_db_device:exist(AID, ID) of
 		true ->
-		    exodm_db_device:update(AID, ID,
-					   [{status,Status},
-					    {msisdn,MSISDN}]),
+		    exodm_db_device:update(AID, ID, Data),
 		    wf:state(current_id, undefined);
 		false ->
-		    exodm_db_device:new(AID, ID,
-					[{status,Status},
-					 {msisdn,MSISDN}]),
+		    exodm_db_device:new(AID, ID, Data),
 		    wf:state(current_id, undefined);
 		_Error ->
 		    throw({invalid,id,"update error"})
@@ -324,8 +344,8 @@ background_update_loop() ->
 	    %% Nothing to do right now
 	    background_update_loop();
 
-	{maximus_event, rfid, _Ts, ID} ->
-	    io:format("Got event: rfid, value=~p\n", [ID]),
+	{device_event, id, _Ts, ID} ->
+	    io:format("Got event: id, value=~p\n", [ID]),
 	    background_set(ID),
 	    background_update_loop();
 	Other ->
