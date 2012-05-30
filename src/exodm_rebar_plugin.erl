@@ -69,12 +69,14 @@ app_name(A) when is_atom(A) ->
     A.
 
 fix_lib_dirs(Apps, Ps) ->
-    LibDirs = [filename:absname(D) || D <- proplists:get_value(lib_dirs, Ps, []),
-				      is_legal_dir(D)],
+    LibDirs = [normalize_fname(filename:absname(D)) ||
+		  D <- proplists:get_value(lib_dirs, Ps, []),
+		  is_legal_dir(D)],
     AppNames = [app_name(A) || A <- Apps],
     OldPath = code:get_path(),
-    code:set_path(lists:concat([filelib:wildcard(
-				  filename:join(D,"*/ebin")) || D <- LibDirs]) ++ OldPath),
+    code:set_path(
+      lists:concat([filelib:wildcard(
+		      filename:join(D,"*/ebin")) || D <- LibDirs]) ++ OldPath),
     OTPLibD = otp_libdir(),
     ActualLibs = lists:foldl(fun(A, Acc) ->
 				     case code:lib_dir(A) of
@@ -85,6 +87,18 @@ fix_lib_dirs(Apps, Ps) ->
 				     end
 			     end, LibDirs, AppNames),
     lists:keystore(lib_dirs, 1, Ps, {lib_dirs, ActualLibs}).
+
+normalize_fname(F) ->
+    filename:join(normalize_fname_(filename:split(F))).
+
+normalize_fname_([D, ".."|T]) ->
+    normalize_fname_(T);
+normalize_fname_([H|T]) ->
+    [H|normalize_fname_(T)];
+normalize_fname_([]) ->
+    [].
+
+
 
 is_legal_dir(D) ->
     case file:list_dir(D) of

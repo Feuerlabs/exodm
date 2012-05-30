@@ -10,6 +10,7 @@
 -export([user_id_key/1]).
 -export([device_id_key/1]).
 -export([group_id_key/1]).
+-export([account_id_key/1]).
 -export([list_key/2]).
 
 -export([kvdb_key_split/1, kvdb_key_join/1, kvdb_key_join/2]).
@@ -23,7 +24,7 @@
 -export([fold_list/3, fold_list/4]).
 -export([all_children/1]).
 
--export([read/1, write/2]).
+-export([read/1, write/2, update_counter/2]).
 
 -import(lists, [reverse/1]).
 %%
@@ -58,14 +59,21 @@
 -define(is_id2(X), ?is_set(?bm_id2,(X))).
 -define(is_id3(X), ?is_set(?bm_id3,(X))).
 
+user_id_key(<<$u, _/binary>> = UID) -> UID;
 user_id_key(ID) ->
     list_to_binary([$u|id_key(ID)]).
 
+group_id_key(<<$g, _/binary>> = GID) -> GID;
 group_id_key(ID) ->
     list_to_binary([$g|id_key(ID)]).
 
-device_id_key(IDBin) when is_binary(IDBin) ->
-    device_id_key(list_to_integer(binary_to_list(IDBin)));
+account_id_key(<<$a, _/binary>> = AID) -> AID;
+account_id_key(ID) ->
+    list_to_binary([$a|id_key(ID)]).
+
+device_id_key(<<$x, _/binary>> = DID) -> DID;
+device_id_key(ID) when is_binary(ID) ->
+    list_to_binary([$x|id_key(ID)]);
 device_id_key(ID) ->
     list_to_binary([$x|id_key(ID)]).
 
@@ -77,7 +85,10 @@ list_key(Name, Pos) when is_integer(Pos), Pos >= 0 ->
     
 
 id_key(ID) when is_integer(ID), ID >= 0, ID =< 16#ffffffff ->
+    tl(integer_to_list(16#100000000+ID,16));
+id_key(<<ID:32/integer>>) ->
     tl(integer_to_list(16#100000000+ID,16)).
+
 
 kvdb_key_split(Key) when is_binary(Key) ->
     binary:split(Key, <<"*">>, [global]).
@@ -204,7 +215,7 @@ kvdb_key_drop(K) ->
 
 first_child(K) ->
     case kvdb_conf:next(<<K/binary,"*+">>) of
-	{ok,{K1,_As,_Data}} ->
+	{ok,{K1,_As,_Data}} when byte_size(K1) > byte_size(K) ->
 	    N = byte_size(K),
 	    case erlang:split_binary(K1, N) of
 		{K, <<$*,K2/binary>>} ->
@@ -213,7 +224,7 @@ first_child(K) ->
 		{_, _} ->
 		    done
 	    end;
-	done ->
+	_ ->
 	    done
     end.
 
@@ -329,3 +340,5 @@ write(Key,Value) ->
 read(Key) ->
     kvdb_conf:read(Key).
 
+update_counter(Key, Incr) ->
+    kvdb_conf:update_counter(Key, Incr).
