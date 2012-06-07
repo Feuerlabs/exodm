@@ -70,10 +70,10 @@ event(ok) ->
     User = wf:q(userTextBox),
     Password = wf:q(passTextBox),
     case exodm_db_session:authenticate(User, Password) of
-	{true,_,_} ->
+	{true,_UID,AID} ->
 	    wf:user(User),
 	    wf:role(get_role(User), true),
-	    wf:session(account_id, ?GA_ACCOUNT_ID),
+	    wf:session(account_id, AID),
 	    wf:redirect_from_login("/");
 	false ->
 	    wf:flash(?TXT("Invalid user or password."))

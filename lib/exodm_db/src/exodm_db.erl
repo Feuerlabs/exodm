@@ -12,19 +12,22 @@
 -export([group_id_key/1]).
 -export([account_id_key/1]).
 -export([list_key/2]).
+-export([table/2]).
 
 -export([kvdb_key_split/1, kvdb_key_join/1, kvdb_key_join/2]).
 -export([nc_key_split/1, nc_key_join/1, nc_key_join/2]).
 -export([nc_to_kvdb_key/1]).
 
 -export([to_binary/1]).
--export([binary_opt/2, uint32_opt/2, uint64_opt/2]).
+-export([binary_opt/2, binary_opt/3, uint32_opt/2, uint64_opt/2]).
 -export([first_child/1, next_child/1]).
 -export([fold_children/3]).
 -export([fold_list/3, fold_list/4]).
 -export([all_children/1]).
 
--export([read/1, write/2, update_counter/2]).
+-export([read/1, read/2,
+	 write/2, write/3,
+	 update_counter/2]).
 
 -import(lists, [reverse/1]).
 %%
@@ -59,9 +62,14 @@
 -define(is_id2(X), ?is_set(?bm_id2,(X))).
 -define(is_id3(X), ?is_set(?bm_id3,(X))).
 
-user_id_key(<<$u, _/binary>> = UID) -> UID;
-user_id_key(ID) ->
-    list_to_binary([$u|id_key(ID)]).
+user_id_key(<<$u,$$, _/binary>> = UID) -> UID;
+user_id_key(ID) when is_binary(ID) ->
+    case binary:match(ID, <<$$>>) of
+	nomatch ->
+	    <<$u,$$, ID/binary>>;
+	_ ->
+	    error(invalid_uid)
+    end.
 
 group_id_key(<<$g, _/binary>> = GID) -> GID;
 group_id_key(ID) ->
@@ -82,13 +90,11 @@ list_key(Name, Pos) when is_integer(Pos), Pos >= 0 ->
     IX = list_to_binary(integer_to_list(Pos)),
     NM = to_binary(Name),
     <<NM/binary, "[", IX/binary, "]">>.
-    
 
 id_key(ID) when is_integer(ID), ID >= 0, ID =< 16#ffffffff ->
     tl(integer_to_list(16#100000000+ID,16));
 id_key(<<ID:32/integer>>) ->
     tl(integer_to_list(16#100000000+ID,16)).
-
 
 kvdb_key_split(Key) when is_binary(Key) ->
     binary:split(Key, <<"*">>, [global]).
@@ -109,6 +115,9 @@ nc_to_kvdb_key(Key) ->
 	[<<>> | Parts] -> kvdb_key_join(Parts);  %% kvdb does not use leading *
 	Parts -> kvdb_key_join(Parts)
     end.
+
+table(AID, Type) ->
+    join_parts(account_id_key(AID), Type, <<"_">>).
 
 %%
 %% nc
@@ -314,12 +323,10 @@ to_hex(C) ->
 
 %% FIXME: validation must be in each model!!!
 binary_opt(Key, Options) ->
-    case proplists:lookup(Key,Options) of
-	none -> 
-	    <<>>;
-	{_Key,Value} ->
-	    to_binary(Value)
-    end.
+    binary_opt(Key, Options, <<>>).
+
+binary_opt(Key, Options, Default) ->
+    to_binary(proplists:get_value(Key,Options,Default)).
 
 uint32_opt(Key, Options) ->
     case proplists:lookup(Key,Options) of
@@ -337,8 +344,14 @@ uint64_opt(Key, Options) ->
 write(Key,Value) ->
     kvdb_conf:write({Key,[],Value}).
 
+write(Tab, Key,Value) ->
+    kvdb_conf:write(Tab, {Key,[],Value}).
+
 read(Key) ->
     kvdb_conf:read(Key).
+
+read(Tab, Key) ->
+    kvdb_conf:read(Tab, Key).
 
 update_counter(Key, Incr) ->
     kvdb_conf:update_counter(Key, Incr).

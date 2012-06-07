@@ -13,22 +13,31 @@
 -define(GA_CUSTOMER_ID, 16#00000001).
 
 
+init() ->
+    exodm_db_user:init(),
+    exodm_db_system:init().
+
 run_euc() ->
+    init(),
     %% Don't know why this is needed...
-    BCryptRes = bcrypt:start(),
-    io:fwrite("bcrypt:start() -> ~p~n", [BCryptRes]),
-    {ok, AID} = exodm_db_account:new(<<"feuerlabs">>, []),
+    {ok, AID} = exodm_db_account:new(
+		  <<"feuerlabs">>,
+		  [{admin, [
+			    {uid, <<"euc">>},
+			    {fullname, <<"EUC Demo 2012">>},
+			    {'__password', <<"exosense">>}
+			   ]}]),
     {ok, GID} = exodm_db_group:new(
 		  AID, [{name, <<"euc">>},
 			{url, "http://localhost:8000/exodm/test_callback"}]),
-    {ok, _UID} = exodm_db_user:new(
-		   AID, <<"euc">>,
-		   [
-		    {fullname, <<"EUC Demo 2012">>},
-		    {'__password', <<"exosense">>},
-		    {access, {1,AID,GID,rw}}
-		   ]),
-    store_rfzone_yang(),
+    %% {ok, _UID} = exodm_db_user:new(
+    %% 		   AID, <<"euc">>,
+    %% 		   [
+    %% 		    {fullname, <<"EUC Demo 2012">>},
+    %% 		    {'__password', <<"exosense">>},
+    %% 		    {access, {1,AID,GID,rw}}
+    %% 		   ]),
+    %% store_rfzone_yang(),
     exodm_db_device:new(AID,
 			[
 			 {'__ck', <<2,0,0,0,0,0,0,0>>},
@@ -48,6 +57,7 @@ store_rfzone_yang() ->
     exodm_db_yang:write("rfzone.yang", Bin).
 
 run_ga() ->
+    init(),
     exodm_db_group:new(?GA_CUSTOMER_ID, 1, 
 		       [{name, "default"},{url,  ""}]),
     exodm_db_group:new(?GA_CUSTOMER_ID, 2, 

@@ -24,12 +24,20 @@ new(Name, Options) ->
 	false ->
 	    AID = exodm_db_system:new_aid(),
 	    Key = key(Name),
-	    Admin = binary_opt(admin, Options),
+	    UserOpts = case lists:keyfind(admin, 1, Options) of
+			    false ->
+				error(no_admin_user);
+			    {_, Os} when is_list(Os) ->
+				Os
+			end,
+	    {_, AdminUID} = lists:keyfind(uid, 1, UserOpts),
 	    insert(Key, name, Name),
 	    insert(Key,'__aid', AID),
-	    insert(Key,admin,     Admin),
+	    insert(Key,admin,     AdminUID),
 	    exodm_db_system:set_aid_user(AID, Name),
 	    exodm_db_yang:init(AID),
+	    exodm_db_user:init(AID),
+	    exodm_db_user:new(AID, AdminUID, UserOpts),
 	    {ok, AID}
     end.
 
@@ -102,6 +110,11 @@ exist_(Key) ->
 
 key(AName) ->
     exodm_db:kvdb_key_join(<<"account">>, AName).
+
+%% table(AID, users) ->
+%%     exodm_db:kvdb_key_join(AID, <<"u">>);
+%% table(AID, devices) ->
+%%     exodm_db:kvdb_key_join(AID, <<"d">>).
 
 insert(Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),

@@ -55,7 +55,7 @@ format_row(Row) ->
 group_table() ->
     wf:state(current_id, undefined),
     AID = wf:session(account_id),
-    Key = exodm_db:kvdb_key_join([exodm_db:user_id_key(AID), <<"groups">>]),
+    Key = exodm_db:kvdb_key_join([exodm_db:account_id_key(AID), <<"groups">>]),
     exodm_web_table:layout(group, Key, ?MODULE).
 
 %% Dialog elements 
@@ -114,7 +114,7 @@ clear_dialog() ->
 %% callback from exodm_web_table - when selected
 row_selected(_I, ID) ->
     io:format("row_selected: row=~w, id=~p\n", [_I, ID]),
-    GID = list_to_integer(binary_to_list(ID), 10),
+    GID = exodm_db:group_id_key(ID),
     AID = wf:session(account_id),
     case exodm_db_group:lookup(AID, GID) of
 	[] ->

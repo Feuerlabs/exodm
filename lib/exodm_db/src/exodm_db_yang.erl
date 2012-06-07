@@ -18,8 +18,7 @@ init(AID) ->
 		    {index, ix_attrs()}]).
 
 tab_name(AID) ->
-    K = exodm_db:account_id_key(AID),
-    <<"yang_", K/binary>>.
+    exodm_db:table(AID, <<"yang">>).
 
 ix_attrs() ->
     [{K, ix_type(K)} || K <- [module, revision, grouping, namespace, uses,

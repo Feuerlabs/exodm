@@ -33,6 +33,7 @@
 
 -define(INACTIVITY_TIMER, 60000).  % should be configurable?
 
+%% @spec authenticate(Username, Password) -> {true, UID, AID} | false
 authenticate(User, Pwd) ->
     UName = to_binary(User),
     check_auth_(
