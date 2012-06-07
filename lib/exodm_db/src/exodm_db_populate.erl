@@ -38,11 +38,11 @@ run_euc() ->
     %% 		    {access, {1,AID,GID,rw}}
     %% 		   ]),
     %% store_rfzone_yang(),
-    exodm_db_device:new(AID,
+    exodm_db_device:new(AID,<<"uffes device">>,
 			[
 			 {'__ck', <<2,0,0,0,0,0,0,0>>},
 			 {'__sk', <<1,0,0,0,0,0,0,0>>},
-			 {msisdn, <<"0701$DID">>},
+			 {msisdn, <<"070100000000000">>},
 			 {group, {1, GID}},
 			 {yang, <<"rfzone.yang">>}
 			]).

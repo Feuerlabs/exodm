@@ -7,14 +7,13 @@
 
 -module(exodm_db_device).
 
--export([new/2, update/3, lookup/2, lookup/1, lookup_attr/3,
+-export([new/3, update/3, lookup/2, lookup/1, lookup_attr/3,
 	 exist/2, exist/1]).
 -export([key/2]).
 -export([enc_ext_key/2, dec_ext_key/1]).
 -export([lookup_position/2, lookup_keys/2]).
 -export([lookup_groups/2]).
 -export([lookup_group_notifications/2]).
--export([mk_msisdn/2]).
 
 -export([client_auth_config/2]).
 
@@ -23,26 +22,29 @@
 -import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).
 -import(lists, [reverse/1]).
 %%
-%% /<uid>/devices/<did>/name      = string()
-%% /<uid>/devices/<did>/msisdn    = msisdn()
-%% /<uid>/devices/<did>/imsi      = imsi()
-%% /<uid>/devices/<did>/imei      = imei()
-%% /<uid>/devices/<did>/longitud  = uint32()
-%% /<uid>/devices/<did>/latitude  = uint32()
-%% /<uid>/devices/<did>/timestamp = uint32()
-%% /<uid>/devices/<did>/__ck      = uint64()
-%% /<uid>/devices/<did>/__sk      = uint64()
-%% /<uid>/devices/<did>/groups[<i>]/__gid = uint32()
+%% /<aid>/devices/<did>/name      = string()
+%% /<aid>/devices/<did>/msisdn    = msisdn()
+%% /<aid>/devices/<did>/imsi      = imsi()
+%% /<aid>/devices/<did>/imei      = imei()
+%% /<aid>/devices/<did>/longitud  = uint32()
+%% /<aid>/devices/<did>/latitude  = uint32()
+%% /<aid>/devices/<did>/timestamp = uint32()
+%% /<aid>/devices/<did>/__ck      = uint64()
+%% /<aid>/devices/<did>/__did     = string()
+%% /<aid>/devices/<did>/__sk      = uint64()
+%% /<aid>/devices/<did>/groups[<i>]/__gid = uint32()
 %%
 
 %% FIXME option validation
 
-new(AID, Options) ->
+new(AID, ID, Options) ->
     ?info("new(~p, ~p)~n", [AID, Options]),
-    DID = exodm_db_system:new_did(),
+%%    DID = exodm_db_system:new_did(),
+    DID = exodm_db:device_id_key(ID),
     Key = key(AID, DID),
+    insert(Key,'__did',  DID),
     insert(Key,name,     binary_opt(name, Options)),
-    insert(Key,msisdn,   mk_msisdn(binary_opt(msisdn,Options), DID)),
+    insert(Key,msisdn,   binary_opt(msisdn,Options)),
     insert(Key,imsi,     binary_opt(imsi,Options)),
     insert(Key,imei,     binary_opt(imei,Options)),
     insert(Key,activity, uint32_opt(activity,Options)),
@@ -67,7 +69,7 @@ update(AID, DID, Options) ->
 	  ({name,Value}) ->
 	      insert(Key,name,to_binary(Value));
 	  ({msisdn,Value}) ->
-	      insert(Key,msisdn,mk_msisdn(to_binary(Value), DID));
+	      insert(Key,msisdn, to_binary(Value));
 	  ({imsi,Value}) ->
 	      insert(Key,imsi,to_binary(Value));
 	  ({imei,Value}) ->
@@ -181,16 +183,6 @@ client_auth_config(AID0, DID0) ->
 	    end
     end.
 
-
-mk_msisdn(<<>>, _) ->
-    <<>>;
-mk_msisdn(Bin, <<$x, ID/binary>>) ->
-    DID_len = 19 - byte_size(Bin),  % 15 + length("$DID") -> 19
-    N = pad(integer_to_list(list_to_integer(binary_to_list(ID), 16)), DID_len),
-    re:replace(Bin, "\\$DID", N, [{return, binary}]).
-
-pad(S, N) ->
-    lists:duplicate(N - length(S), $0) ++ S.
 
 
 %% find last known position or {0,0,0} if not found

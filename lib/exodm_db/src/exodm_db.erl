@@ -64,11 +64,11 @@
 
 user_id_key(<<$u,$$, _/binary>> = UID) -> UID;
 user_id_key(ID) when is_binary(ID) ->
-    case binary:match(ID, <<$$>>) of
-	nomatch ->
-	    <<$u,$$, ID/binary>>;
+    case ID of
+	<<$$, _/binary>> ->
+	    error(invalid_uid);
 	_ ->
-	    error(invalid_uid)
+	    <<$u,$$, ID/binary>>
     end.
 
 group_id_key(<<$g, _/binary>> = GID) -> GID;
@@ -79,11 +79,17 @@ account_id_key(<<$a, _/binary>> = AID) -> AID;
 account_id_key(ID) ->
     list_to_binary([$a|id_key(ID)]).
 
-device_id_key(<<$x, _/binary>> = DID) -> DID;
+device_id_key(<<$x, $$, _/binary>> = DID) -> DID;
 device_id_key(ID) when is_binary(ID) ->
-    list_to_binary([$x|id_key(ID)]);
-device_id_key(ID) ->
-    list_to_binary([$x|id_key(ID)]).
+    case ID of
+	<<$$, _/binary>> ->
+	    error(invalid_did);
+	_ ->
+	    <<$x, $$, ID/binary>>
+    end.
+%%     list_to_binary([$x|id_key(ID)]);
+%% device_id_key(ID) ->
+%%     list_to_binary([$x|id_key(ID)]).
 
 %% fixme add list keys with predicate access
 list_key(Name, Pos) when is_integer(Pos), Pos >= 0 ->
