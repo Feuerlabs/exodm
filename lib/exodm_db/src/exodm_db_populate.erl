@@ -17,19 +17,19 @@ init() ->
     exodm_db_user:init(),
     exodm_db_system:init().
 
-run_euc() ->
+run_ga() ->
     init(),
     %% Don't know why this is needed...
     {ok, AID} = exodm_db_account:new(
-		  <<"feuerlabs">>,
+		  <<"getaround">>,
 		  [{admin, [
-			    {uid, <<"euc">>},
-			    {fullname, <<"EUC Demo 2012">>},
-			    {'__password', <<"exosense">>}
+			    {uid, <<"ga">>},
+			    {fullname, <<"Getaround">>},
+			    {'__password', <<"wewontechcrunch2011">>}
 			   ]}]),
     {ok, GID} = exodm_db_group:new(
-		  AID, [{name, <<"euc">>},
-			{url, "http://localhost:8000/exodm/test_callback"}]),
+		  AID, [{name, <<"gagroup">>},
+			{url, "http://gacallback:8080/exodm/callback"}]),
     %% {ok, _UID} = exodm_db_user:new(
     %% 		   AID, <<"euc">>,
     %% 		   [
@@ -38,7 +38,8 @@ run_euc() ->
     %% 		    {access, {1,AID,GID,rw}}
     %% 		   ]),
     %% store_rfzone_yang(),
-    exodm_db_device:new(AID,<<"uffes device">>,
+    exodm_db_device:new(AID,
+                        <<"4711">>, 
 			[
 			 {'__ck', <<2,0,0,0,0,0,0,0>>},
 			 {'__sk', <<1,0,0,0,0,0,0,0>>},
@@ -48,7 +49,7 @@ run_euc() ->
 			]).
 
 store_rfzone_yang() ->
-    exodm_db_session:set_auth_as_user(<<"euc">>),
+    exodm_db_session:set_auth_as_user(<<"ga">>),
     {ok, UART} = file:read_file(
 		   filename:join(code:priv_dir(nmea_0183), "uart.yang")),
     exodm_db_yang:write("uart.yang", UART),
@@ -56,7 +57,7 @@ store_rfzone_yang() ->
 		  filename:join(code:priv_dir(rfzone), "rfzone.yang")),
     exodm_db_yang:write("rfzone.yang", Bin).
 
-run_ga() ->
+run_ga_old() ->
     init(),
     exodm_db_group:new(?GA_CUSTOMER_ID, 1, 
 		       [{name, "default"},{url,  ""}]),
