@@ -8,6 +8,8 @@
 -module(exodm_db_group).
 
 -export([new/2, update/3, lookup/2, lookup/1, exist/2, exist/1]).
+-export([list_group_keys/1, list_group_keys/2]).
+-export([fold_groups/3, fold_groups/4]).
 -export([key/2]).
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
@@ -28,7 +30,7 @@ new(AID, GID, Options) ->
 	    insert(Key,name,     Name),
 	    insert(Key,url,      binary_opt(url,  Options)),
 	    exodm_db_system:set_gid_user(GID, Name),
-	    {ok, GID};
+	    {ok, gid_value(GID)};
 	_ ->
 	    {error, exists}
     end.
@@ -59,7 +61,7 @@ lookup(AID, GID) ->
 
 lookup(Key) ->
     <<_,ID/binary>> = lists:last(exodm_db:kvdb_key_split(Key)),
-    [{id,ID}] ++
+    [{id,gid_value(ID)}] ++
 	read(Key,name) ++
 	read(Key, url).
 
@@ -71,6 +73,27 @@ exist(Key) ->
 	[] -> false;
 	[_] -> true
     end.
+
+list_group_keys(AID) ->
+    list_group_keys(AID, 30).
+
+list_group_keys(AID, Limit) ->
+    fold_groups(fun(GID, Acc) ->
+			[GID|Acc]
+		end, [], AID, Limit).
+
+fold_groups(F, Acc, AID) ->
+    fold_groups(F, Acc, AID, 30).
+
+fold_groups(F, Acc, AID0, Limit) when
+      Limit==infinity; is_integer(Limit), Limit > 0 ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:fold_keys(
+      <<"data">>,
+      exodm_db:kvdb_key_join(AID, <<"groups">>),
+      fun([_AID,<<"groups">>,GID|_], Acc1) ->
+	      {next, GID, F(GID,Acc1)}
+      end, Acc, Limit).
 
 %% utils
 
@@ -89,3 +112,6 @@ read(Key,Item) ->
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []
     end.
+
+gid_value(GID) ->
+    <<(exodm_db:group_id_num(GID)):32>>.

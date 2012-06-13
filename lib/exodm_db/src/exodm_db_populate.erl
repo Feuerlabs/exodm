@@ -13,12 +13,44 @@
 -define(GA_CUSTOMER_ID, 16#00000001).
 
 
-init() ->
-    exodm_db_user:init(),
-    exodm_db_system:init().
+%% each entity has a unique system-generated id:
+%% account: ANNNNNNNN
+%% group  : GNNNNNNNN
+%% device : DNNNNNNNN
+%% user   : UNNNNNNNN
+
+test1() ->
+    {ok, _AID} = exodm_db_account:new(
+		   [
+		    {name, <<"feuer">>},
+		    {admin, [{uname, <<"ulf">>},
+			     {fullname, <<"Ulf Wiger">>},
+			     {password, <<"feuerlabs">>}]}
+		   ]).
+
+run_rfzone() ->
+    {ok, AID} = exodm_db_account:new(
+		  [{name, <<"seazone">>},
+		   {admin, [
+			    {uname, <<"seazone">>},
+			    {fullname, <<"Seazone">>},
+			    {'__password', <<"seazone">>}
+			   ]}]),
+    {ok, GID} = exodm_db_group:new(
+		  AID, [{name, <<"seazone">>},
+			{url, "http://localhost:8080/exodm/callback"}]),
+    store_rfzone_yang(),
+    exodm_db_device:new(AID,
+			<<"x00000001">>,
+			[
+			 {'__ck', <<2,0,0,0,0,0,0,0>>},
+			 {'__sk', <<1,0,0,0,0,0,0,0>>},
+			 {msisdn, <<"070100000000000">>},
+			 {group, {1, GID}},
+			 {yang, <<"rfzone.yang">>}
+			]).
 
 run_ga() ->
-    init(),
     %% Don't know why this is needed...
     {ok, AID} = exodm_db_account:new(
 		  <<"getaround">>,
@@ -49,7 +81,7 @@ run_ga() ->
 			]).
 
 store_rfzone_yang() ->
-    exodm_db_session:set_auth_as_user(<<"ga">>),
+    exodm_db_session:set_auth_as_user(<<"seazone">>),
     {ok, UART} = file:read_file(
 		   filename:join(code:priv_dir(nmea_0183), "uart.yang")),
     exodm_db_yang:write("uart.yang", UART),
@@ -58,7 +90,6 @@ store_rfzone_yang() ->
     exodm_db_yang:write("rfzone.yang", Bin).
 
 run_ga_old() ->
-    init(),
     exodm_db_group:new(?GA_CUSTOMER_ID, 1, 
 		       [{name, "default"},{url,  ""}]),
     exodm_db_group:new(?GA_CUSTOMER_ID, 2, 

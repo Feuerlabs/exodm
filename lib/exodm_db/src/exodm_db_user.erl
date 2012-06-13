@@ -8,14 +8,17 @@
 
 -module(exodm_db_user).
 
--export([init/0, init/1]).
--export([new/3, update/2, lookup/1, lookup/2, lookup_attr/2,
-	 list_access/1, list_access/2, exist/1, exist/2]).
+-export([init/0]).
+-export([new/4, update/2, lookup/1, lookup_attr/2,
+	 list_user_keys/0, list_user_keys/1,
+	 fold_users/2, fold_users/3,
+	 list_access/1, exist/1]).
+-export([add_alias/2,
+	 lookup_by_alias/1]).
 -export([ix_alias/1]).
 -import(exodm_db, [write/2, binary_opt/2, binary_opt/3, to_binary/1]).
 
--record(user, {aid, uid}).
-
+-define(TAB, <<"user">>).
 %%
 %% /account/<AID>/user/<UID>
 %% /account/<AID>/user/<UID>/'__uid'    = User ID
@@ -31,54 +34,82 @@
 %% /account/<AID>/user/<UID>/access[<u>]/__perm = Device group access
 %%
 init() ->
-    kvdb_conf:add_table(<<"user">>, [{index, [{alias, each,
-					       {?MODULE, ix_alias}}]}]).
+    exodm_db:add_table(<<"user">>, [alias]).
 
-init(AID) ->
-    kvdb_conf:add_table(table(AID), []).
-
-table(AID) ->
-    exodm_db:table(AID, <<"user">>).
-
-
-new(AID0, UID, Options) ->
-    [_] = exodm_db:nc_key_split(UID),  %% validation!
-    Key = exodm_db:user_id_key(UID),
-    IUID = exodm_db_system:new_uid(),
+new(AID0, UName, Role, Options) ->
+    [_] = exodm_db:nc_key_split(exodm_db:decode_id(UName)),  %% validation!
+    Key = exodm_db:encode_id(UName),
     AID = exodm_db:account_id_key(AID0),
-    UTab = <<"user">>,
-    ATab = table(AID),
-    Name = binary_opt(name, Options, UID),
-    case exist_(UTab, Key) of
+    Name = binary_opt(name, Options, UName),
+    case exist_(?TAB, Key) of
 	true ->
 	    {error, exists};
 	false ->
-	    insert(ATab, Key,name, UID),
-	    %%
-	    insert(UTab, Key,name, Name),
-	    insert(UTab, Key,'__uid', IUID),
-	    insert(UTab, Key,'__aid', AID),
-	    insert(UTab, Key,fullname,      binary_opt(fullname,Options)),
-	    insert(UTab, Key,phone,         binary_opt(phone,Options)),
-	    insert(UTab, Key,email,         binary_opt(email,Options)),
-	    insert(UTab, Key,skype,         binary_opt(skype,Options)),
-	    insert_password(UTab, Key, '__password',
+	    insert(?TAB, Key,name, Name),
+	    insert(?TAB, Key,'__aid', aid_value(AID)),
+	    insert(?TAB, Key,fullname,      binary_opt(fullname,Options)),
+	    insert(?TAB, Key,phone,         binary_opt(phone,Options)),
+	    insert(?TAB, Key,email,         binary_opt(email,Options)),
+	    insert(?TAB, Key,skype,         binary_opt(skype,Options)),
+	    insert_password(?TAB, Key, '__password',
 			    binary_opt('__password', Options)),
-	    lists:foreach(
-	      fun({I,AAID,AGID,Perm}) ->
-		      insert_access(UTab, Key, I, AAID, AGID, Perm)
-	      end, proplists:get_all_values(access, Options)),
-	    {ok, UID}
+	    lists:foldl(
+	      fun({AAID,ARole}, I) ->
+		      insert_access(?TAB, Key, I, AAID, ARole)
+	      end, 1, [{AID, Role}|proplists:get_all_values(access, Options)]),
+	    lists:foldl(
+	      fun(Al, I) when is_binary(Al) ->
+		      K = exodm_db:kvdb_key_join(
+			    Key, exodm_db:list_key(alias, I)),
+		      insert(?TAB, K, '__alias', to_binary(Al))
+	      end, 1, proplists:get_all_values(alias, Options)),
+	    {ok, UName}
     end.
 
-ix_alias({K, _, _V}) ->
-    case exodm_db:kvdb_key_split(K) of
-	Split ->
-	    io:fwrite("Split = ~p~n", [Split]);
+add_alias(UID0, Alias) ->
+    UID = exodm_db:encode_id(UID0),
+    case exist(UID) of
+	true ->
+	    case alias_exists(Alias) of
+		false ->
+		    exodm_db:append_to_list(
+		      <<"user">>, exodm_db:kvdb_key_join(UID, <<"alias">>),
+		      '__alias', to_binary(Alias));
+		true ->
+		    error(alias_exists, [UID0, Alias])
+	    end;
+	false ->
+	    error(unknown_user, [UID0, Alias])
+    end.
+
+alias_exists(Alias) ->
+    case exist(exodm_db:encode_id(Alias)) of
+	true ->
+	    true;
+	false ->
+	    case kvdb:index_get(kvdb_conf, ?TAB, alias, Alias) of
+		[]  -> false;
+		[_] -> true
+	    end
+    end.
+
+lookup_by_alias(Alias) ->
+    case kvdb:index_get(kvdb_conf, ?TAB, alias, Alias) of
+	[] ->
+	    [];
+	[{K, _, _}] ->
+	    [UID|_] = exodm_db:kvdb_key_split(K),
+	    lookup(UID)
+    end.
+
+ix_alias({K, _, V}) ->
+    case lists:reverse(exodm_db:kvdb_key_split(K)) of
+	[<<"__alias">>,<<"alias[",_/binary>>|_] ->
+	    io:fwrite("alias (~p): ~p~n", [K, V]),
+	    [V];
 	_ ->
-	    ok
-    end,
-    [].
+	    []
+    end.
 
 %% new_uid() ->
 %%     exodm_db_system:new_uid().
@@ -110,24 +141,30 @@ update(UID, Options) ->
 			  insert_password(Tab,Key, '__password',
 					  to_binary(Value))
 		  end;
-	      ({access, {I,AUID,AGID,Perm}}) ->
-		  fun() -> insert_access(Tab, Key, I, AUID, AGID, Perm) end
+	      ({access, {I,AUID,ARole}}) ->
+		  fun() -> insert_access(Tab, Key, I, AUID, ARole) end;
+	      ({alias, {I,Al}}) ->
+		  fun() -> K = exodm_db:kvdb_key_join(
+				 Key, exodm_db:list_key(alias, I)),
+			   insert(Tab, K, '__alias', to_binary(Al))
+		  end
 	  end, Options),
     lists:foreach(fun(Op) -> Op() end, Ops).
 
 lookup(UID) ->
     lookup_(<<"user">>, key(UID)).
 
-lookup(AID, UID) ->
-    case exist(AID, UID) of
-	true ->
-	    lookup(UID);
-	false ->
-	    []
-    end.
+%% lookup(AID, UID) ->
+%%     case exist(AID, UID) of
+%% 	true ->
+%% 	    lookup(UID);
+%% 	false ->
+%% 	    []
+%%     end.
 
 lookup_(Tab, Key) ->
     read(Tab, Key,name) ++
+	read_uint32(Tab, Key,'__aid') ++
 	read(Tab, Key,fullname) ++
 	read(Tab, Key,phone) ++
 	read(Tab, Key,email) ++
@@ -135,16 +172,11 @@ lookup_(Tab, Key) ->
 
 lookup_attr(UName, Attr) ->
     Tab = <<"user">>,
-    Key = exodm_db:user_id_key(UName),
+    Key = exodm_db:encode_id(UName),
     read(Tab, Key, Attr).
 
 exist(UID) ->
-    Tab = <<"user">>,
-    exist_(Tab, exodm_db:user_id_key(UID)).
-
-exist(AID, UID) ->
-    Tab = table(AID),
-    exist_(Tab, exodm_db:user_id_key(UID)).
+    exist_(?TAB, exodm_db:encode_id(UID)).
 
 exist_(Tab, Key) ->
     case read(Tab, Key,name) of
@@ -152,72 +184,57 @@ exist_(Tab, Key) ->
 	[_] -> true
     end.
 
+
+list_user_keys() ->
+    list_user_keys(30).
+
+list_user_keys(Limit) ->
+    fold_users(fun(UID, Acc) ->
+			  [UID|Acc]
+		  end, [], Limit).
+
+fold_users(F, Acc) ->
+    fold_users(F, Acc, 30).
+
+fold_users(F, Acc, Limit) when
+      Limit==infinity; is_integer(Limit), Limit > 0 ->
+    exodm_db:fold_keys(
+      <<"user">>,
+      <<>>,
+      fun([UID|_], Acc1) ->
+	      {next, UID, F(UID,Acc1)}
+      end, Acc, Limit).
+
+
 key(UID) ->
-    exodm_db:user_id_key(UID).
+    exodm_db:encode_id(UID).
+
+aid_value(AID) ->
+    <<(exodm_db:account_id_num(AID)):32>>.
 
 insert(Tab, Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
     exodm_db:write(Tab, Key1, Value).
 
-insert_access(Tab, K0, I, AID0, GID0, Perm) when 
-      is_integer(I), I>=0,
-      (Perm =:= r orelse Perm =:= w orelse Perm =:= rw ) ->
+insert_access(Tab, K0, I, AID0, ARole) when is_integer(I), I>=0 ->
     AID = exodm_db:account_id_key(AID0),
-    GID = exodm_db:group_id_key(GID0),
-    %% {AID, GID} = case {AID0, GID0} of
-    %% 		     _ when is_integer(AID0), AID0 >= 0,
-    %% 			    is_integer(GID0), GID0 >= 0 ->
-    %% 			 {<<AID0:32>>, <<GID0:32>>};
-    %% 		     {<<$a,_/binary>>, <<$g,_/binary>>} = Bins ->
-    %% 			 Bins;
-    %% 		     {<<_:32>>, <<_:32>>} = Bins ->
-    %% 			 Bins;
-    %% 		     Other ->
-    %% 			 erlang:error({bad_type, Other})
-    %% 		 end,
+    %% ARole = exodm_db:encode_id(ARole0),
     K = exodm_db:kvdb_key_join(K0, exodm_db:list_key(access, I)),
-    insert(Tab, K, '__aid', exodm_db:account_id_key(AID)),
-    insert(Tab, K, '__gid', exodm_db:group_id_key(GID)),
-    insert(Tab, K, '__perm', to_binary(Perm)).
+    insert(Tab, K, '__aid', aid_value(AID)),
+    insert(Tab, K, '__role', ARole).
 
 list_access(UID0) when is_binary(UID0) ->
-    UID = exodm_db:user_id_key(UID0),
-    case read(<<"user">>, UID, '__aid') of
-	[] -> [];
-	[{_, AID}] ->
-	    list_access(AID, UID)
-    end;
-list_access(#user{aid = AID, uid = UID}) ->
-    list_access(AID, UID).
-
-list_access(AID, UID0) ->
-    Tab = table(AID),
-    UID = exodm_db:user_id_key(UID0),
-    Key = exodm_db:kvdb_key_join(UID, <<"access">>),
-    group_access(Key, pfx_match_(
-			kvdb:prefix_match(kvdb_conf,Tab,Key, infinity))).
-
-group_access(K, A) ->
-    Sz = byte_size(K),
-    Split = [{exodm_db:kvdb_key_split(Rest), Data} ||
-		{<<K1:Sz/binary, Rest/binary>>,[],Data} <- A, K=:=K1],
-    lists:foldl(fun({[X,Y], Z}, Acc) ->
-			orddict:append(x_to_int(X),
-				       {binary_to_atom(Y, latin1),Z}, Acc)
-		end, orddict:new(), Split).
-
-x_to_int(Bin) ->
-    {match, [S]} = re:run(Bin,<<"[0-9]+">>, [{capture,first,list}]),
-    list_to_integer(S).
-
-pfx_match_({L, Cont}) ->
-    case Cont() of
-	done -> L;
-	Other -> pfx_match_(Other)
-    end;
-pfx_match_(done) ->
-    [].
-
+    UID = exodm_db:encode_id(UID0),
+    exodm_db:fold_list(
+      ?TAB,
+      fun(I, Key, Acc) ->
+	      case {read_uint32(?TAB, Key, '__aid'),
+		    read(?TAB, Key, '__role')} of
+		  {[{_, AID}], [{_, Role}]} ->
+		      [{I, {AID, Role}}|Acc];
+		  _ -> Acc
+	      end
+      end, [], exodm_db:kvdb_key_join(UID, <<"access">>)).
 
 insert_password(Tab, Key, Item, Value) ->
     {ok, Salt} = bcrypt:gen_salt(),
@@ -228,8 +245,13 @@ insert_password(Tab, Key, Item, Value) ->
 read(Tab, Key,Item) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
     case exodm_db:read(Tab, Key1) of
-	{ok,{_,_,Value}} -> 
+	{ok,{_,_,Value}} ->
 	    [{Item,Value}];
 	{error,not_found} -> []
     end.
 
+read_uint32(Tab, Key,Item) ->
+    case read(Tab, Key,Item) of
+	[{Item,<<Value:32>>}] -> [{Item,Value}];
+	[] -> []
+    end.

@@ -18,7 +18,7 @@ init(AID) ->
 		    {index, ix_attrs()}]).
 
 tab_name(AID) ->
-    exodm_db:table(AID, <<"yang">>).
+    exodm_db:table(exodm_db:account_id_key(AID), <<"yang">>).
 
 ix_attrs() ->
     [{K, ix_type(K)} || K <- [module, revision, grouping, namespace, uses,
@@ -49,19 +49,21 @@ attrs_([], Acc) ->
 
 read(Y) -> read(get_aid(), Y).
 
-read(User, Y) ->
+read(AID0, Y) ->
+    AID = exodm_db:account_id_key(AID0),
     yang_parser:parse(Y, [{open_hook, fun(F, Opts) ->
-					      open_file_hook(User, F, Opts)
+					      open_file_hook(AID, F, Opts)
 				      end}]).
 
 write(File, YangSpec) ->
     write(get_aid(), File, YangSpec).
 
-write(User, File, Y) ->
+write(AID0, File, Y) ->
+    AID = exodm_db:account_id_key(AID0),
     Opts = [{open_hook, fun(F, Os) when F == File ->
-				open_bin_hook(User, F, [{data,Y}|Os]);
+				open_bin_hook(AID, F, [{data,Y}|Os]);
 			   (F, Os) ->
-				open_file_hook(User, F, Os)
+				open_file_hook(AID, F, Os)
 			end}],
     case yang_parser:parse(File, Opts) of
 	{ok, [Module]} ->
@@ -69,7 +71,7 @@ write(User, File, Y) ->
 		       [{module,_,RPCs1}] -> RPCs1;
 		       _ -> []
 		   end,
-	    store(User, File, Module, RPCs, Y);
+	    store(AID, File, Module, RPCs, Y);
 	{error,_} = Error ->
 	    Error
     end.
@@ -77,20 +79,20 @@ write(User, File, Y) ->
 delete(File) ->
     delete(get_aid(), File).
 
-delete(User, File) ->
-    kvdb:delete(?DB, tab_name(User), File).
+delete(AID, File) ->
+    kvdb:delete(?DB, tab_name(AID), File).
 
 rpcs(File) ->
     rpcs(get_aid(), File).
 
-rpcs(User, File) ->
-    kvdb:get_attrs(?DB, tab_name(User), file_key(File), [rpcs]).
+rpcs(AID, File) ->
+    kvdb:get_attrs(?DB, tab_name(AID), file_key(File), [rpcs]).
 
-store(User, File, {module, _, M, L} = Mod, RPCs, Src) ->
+store(AID, File, {module, _, M, L} = Mod, RPCs, Src) ->
     Checksum = compute_checksum(Mod),
     io:fwrite("Specs with same checksum: ~p~n",
-	      [find(User, '__checksum', Checksum)]),
-    kvdb:put(?DB, tab_name(User),
+	      [find(AID, '__checksum', Checksum)]),
+    kvdb:put(?DB, tab_name(AID),
 	     {file_key(File),
 	      [{'__checksum', Checksum},
 	       {rpcs, RPCs}
@@ -109,14 +111,14 @@ compute_checksum(Term) ->
 find(Ix, V) ->
     find(get_aid(), Ix, V).
 
-find(User, Ix, V) ->
-    kvdb:index_keys(?DB, tab_name(User), Ix, V).
+find(AID, Ix, V) ->
+    kvdb:index_keys(?DB, tab_name(AID), Ix, V).
 
-open_file_hook(User, File, Opts) ->
-    try case kvdb:get(?DB, tab_name(User),
+open_file_hook(AID, File, Opts) ->
+    try case kvdb:get(?DB, tab_name(AID),
 		      to_binary(filename:basename(File))) of
 	    {ok, {_, _, Bin}} ->
-		open_bin_hook(User, File, [{data,Bin}|Opts]);
+		open_bin_hook(AID, File, [{data,Bin}|Opts]);
 	    {error, _} ->
 		{error, enoent}
 	end
@@ -125,9 +127,10 @@ open_file_hook(User, File, Opts) ->
 	    {error, einval}
     end.
 
-open_bin_hook(User, File, Opts) ->
+open_bin_hook(AID0, File, Opts) ->
+    AID = exodm_db:account_id_key(AID0),
     Bin = proplists:get_value(data, Opts, <<>>),
-    case file:open(filename:join(User, File), [read, write, ram, binary]) of
+    case file:open(filename:join(AID, File), [read, write, ram, binary]) of
 	{ok, Fd} ->
 	    ok = file:write(Fd, to_binary(Bin)),
 	    {ok,0} = file:position(Fd,bof),
