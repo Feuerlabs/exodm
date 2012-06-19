@@ -23,10 +23,17 @@ test1() ->
     {ok, _AID} = exodm_db_account:new(
 		   [
 		    {name, <<"feuer">>},
-		    {admin, [{uname, <<"ulf">>},
-			     {fullname, <<"Ulf Wiger">>},
+		    {admin, [{uname, <<"magnus">>},
+			     {fullname, <<"Magnus Feuer">>},
 			     {password, <<"feuerlabs">>}]}
-		   ]).
+		   ]),
+    {ok, _AID2} = exodm_db_account:new(
+		    [
+		     {name, <<"wiger">>},
+		     {admin, [{uname, <<"ulf">>},
+			      {fullname, <<"Ulf Wiger">>},
+			      {password, <<"wiger">>}]}
+		     ]).
 
 run_rfzone() ->
     {ok, AID} = exodm_db_account:new(
@@ -34,7 +41,7 @@ run_rfzone() ->
 		   {admin, [
 			    {uname, <<"seazone">>},
 			    {fullname, <<"Seazone">>},
-			    {'__password', <<"seazone">>}
+			    {password, <<"seazone">>}
 			   ]}]),
     {ok, GID} = exodm_db_group:new(
 		  AID, [{name, <<"seazone">>},
@@ -46,7 +53,7 @@ run_rfzone() ->
 			 {'__ck', <<2,0,0,0,0,0,0,0>>},
 			 {'__sk', <<1,0,0,0,0,0,0,0>>},
 			 {msisdn, <<"070100000000000">>},
-			 {group, {1, GID}},
+			 {groups, [GID]},
 			 {yang, <<"rfzone.yang">>}
 			]).
 
@@ -57,7 +64,7 @@ run_ga() ->
 		  [{admin, [
 			    {uid, <<"ga">>},
 			    {fullname, <<"Getaround">>},
-			    {'__password', <<"wewontechcrunch2011">>}
+			    {password, <<"wewontechcrunch2011">>}
 			   ]}]),
     {ok, GID} = exodm_db_group:new(
 		  AID, [{name, <<"gagroup">>},

@@ -67,10 +67,11 @@ new(AID0, ID0, Options) ->
     %% __ck, __sk are device keys and need special attention 
     insert(Tab,Key, '__ck',  binary_opt('__ck',Options)),
     insert(Tab,Key, '__sk',  binary_opt('__sk',Options)),
-    lists:foreach(
-      fun({I,GID}) ->
-	      insert_group(Tab, Key, I, GID)
-      end, proplists:get_all_values(group, Options)),
+    insert_groups(Tab, Key, proplists:get_value(groups, Options, [])),
+    %% lists:foreach(
+    %%   fun({I,GID}) ->
+    %% 	      insert_group(Tab, Key, I, GID)
+      %% end, proplists:get_all_values(group, Options)),
     ok.
 
 %% FIXME validate every item BEFORE insert!
@@ -257,6 +258,14 @@ key(AID, DID) ->
 insert(Tab, Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
     exodm_db:write(Tab, Key1, Value).
+
+insert_groups(Tab, K, Groups0) ->
+    {Groups,_} = lists:mapfoldl(fun(G,I) ->
+					{{I,G}, I+1}
+				end, 1, Groups0),
+    lists:foreach(fun({I,G}) ->
+			  insert_group(Tab, K, I, G)
+		  end, Groups).
 
 insert_group(Tab, K0, I, GID) when is_integer(I) ->
     K = exodm_db:kvdb_key_join(K0, exodm_db:list_key(groups, I)),

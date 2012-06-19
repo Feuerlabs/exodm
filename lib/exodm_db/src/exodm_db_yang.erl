@@ -8,15 +8,26 @@
 	 delete/1, delete/2,
 	 find/2, find/3,
 	 rpcs/1, rpcs/2]).
--export([init/1]).
+-export([init/0, init/1]).
 
 -define(DB, kvdb_conf).
 
-init(AID) ->
-    kvdb:add_table(?DB, tab_name(AID),
-		   [{encoding, {raw,sext,raw}},
-		    {index, ix_attrs()}]).
+init() ->
+    add_table(tab_name(system)),
+    add_table(tab_name(shared)).
 
+init(AID) ->
+    add_table(tab_name(AID)).
+
+add_table(Tab) ->
+    kvdb:add_table(?DB, Tab, [{encoding, {raw,sext,raw}},
+                              {index, ix_attrs()}]).
+
+
+tab_name(system) ->
+    <<"system_yang">>;
+tab_name(shared) ->
+    <<"shared_yang">>;
 tab_name(AID) ->
     exodm_db:table(exodm_db:account_id_key(AID), <<"yang">>).
 
@@ -115,12 +126,17 @@ find(AID, Ix, V) ->
     kvdb:index_keys(?DB, tab_name(AID), Ix, V).
 
 open_file_hook(AID, File, Opts) ->
-    try case kvdb:get(?DB, tab_name(AID),
-		      to_binary(filename:basename(File))) of
+    FBin = to_binary(filename:basename(File)),
+    try case kvdb:get(?DB, tab_name(AID), FBin) of
 	    {ok, {_, _, Bin}} ->
 		open_bin_hook(AID, File, [{data,Bin}|Opts]);
 	    {error, _} ->
-		{error, enoent}
+                case kvdb:get(?DB, tab_name(system), FBin) of
+                    {ok, {_, _, Bin}} ->
+                        open_bin_hook(system, File, [{data,Bin}|Opts]);
+                    {error,_} ->
+                        {error, enoent}
+                end
 	end
     catch
 	error:_ ->

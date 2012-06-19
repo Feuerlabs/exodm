@@ -8,12 +8,14 @@
 -module(exodm_db_account).
 
 -export([new/1, update/2, lookup/1, exist/1]).
+-export([create_role/3]).
 -export([list_account_keys/0, list_account_keys/1]).
 -export([fold_accounts/2, fold_accounts/3]).
 -export([list_users/1, list_users/2]).
 -export([list_groups/1, list_groups/2]).
 -export([list_admins/1]).
--export([key/1]).
+-export([key/1, group_key/2, new_group_id/1,
+	 table/0]).
 -export([init/0]).
 -import(exodm_db, [binary_opt/2, to_binary/1]).
 
@@ -21,6 +23,9 @@
 
 init() ->
     exodm_db:add_table(?TAB, [alias]).
+
+table() ->
+    ?TAB.
 
 %%
 %% /<aid>/name  = <AccountName>
@@ -37,64 +42,66 @@ new(Options) ->
 		       Os
 	       end,
     Key = AID = exodm_db_system:new_aid(),
-    Roles = initial_roles(proplists:get_all_values(roles, Options)),
-    create_roles(AID, Roles),
     {_, AdminUName} = lists:keyfind(uname, 1, UserOpts),
+    {ok, RID} = create_role_(AID, 1, AdminUName, initial_admin()),
     AcctName = case binary_opt(name, Options) of
 		   <<>> -> AdminUName;
 		   Other -> Other
 	       end,
-    %% AdminUName = exodm_db:encode_id(AdminUName0),
+    insert(Key, '__last_rid', <<1:32>>), % one role already created
+    insert(Key, '__last_gid', <<0:32>>),
     insert(Key, name, AcctName),
-    insert(exodm_db:kvdb_key_join(Key, exodm_db:list_key(admin, 1)),
-	   '__uname', AdminUName),
+    UNameKey = exodm_db:encode_id(AdminUName),
+    insert(exodm_db:kvdb_key_join(Key, <<"admins">>), UNameKey, AdminUName),
     exodm_db_yang:init(AID),
     exodm_db_device:init(AID),
-    exodm_db_user:new(AID, AdminUName, <<"admin">>, UserOpts),
-    lists:foreach(fun({I,Al}) ->
-			  exodm_db:insert_alias(?TAB, Key, I, Al)
-		  end, proplists:get_all_values(alias, Options)),
-    add_user(AID, AdminUName),  % must come after adding the user
-    {ok, aid_value(AID)}.
+    exodm_db_user:new(AID, AdminUName, exodm_db:role_id_value(RID), UserOpts),
+    %% lists:foreach(fun({I,Al}) ->
+    %% 			  exodm_db:insert_alias(?TAB, Key, I, Al)
+    %% 		  end, proplists:get_all_values(alias, Options)),
+    %% add_user(AID, AdminUName, _RID = 1),  % must come after adding the user
+    {ok, exodm_db:account_id_value(AID)}.
 
-initial_roles([]) ->
-    [admin_role()];
-initial_roles(Roles) when is_list(Roles) ->
-    [admin_role() | lists:keydelete(<<"admin">>, 1, Roles)].
-
-admin_role() ->
-    { <<"admin">>, [ {access, {<<"all">>, <<"admin">>}} ] }.
-
-create_roles(AID, Roles) ->
-    lists:foreach(fun({Role, Opts}) ->
-			  create_role(AID, Role, Opts)
-		  end, Roles).
+initial_admin() ->
+    [{descr, "initial admin"},
+     {access, {<<"all">>, <<"admin">>}}].
 
 %% <AID>/roles/<Role>/descr
 %%                   /groups/<gid> = access()
-create_role(AID, Name0, Opts) ->
-    Name = exodm_db:encode_id(to_binary(Name0)),
-    Key = exodm_db:kvdb_key_join([AID, <<"roles">>, Name]),
-    case exist(exodm_db:kvdb_key_join(Key, <<"descr">>)) of
+create_role(AID0, UName, Opts) ->
+    AID = check_access(AID0),
+    case exodm_db_user:exist(UName) of
 	true ->
-	    error({role_exists, Name0});
+	    {ok, RID} = create_role_(AID, UName, Opts),
+	    exodm_db_user:add_access(AID, UName, RID);
 	false ->
-	    insert(Key, descr, binary_opt(descr, Opts)),
-	    GroupsKey = exodm_db:kvdb_key_join(Key, <<"groups">>),
-	    lists:foreach(
-	      fun({<<"all">>, Access}) ->
-		      valid_access(Access),
-		      insert(GroupsKey, <<"all">>, Access);
-		 ({G, Access}) ->
-		      valid_access(Access),
-		      case group_exists(AID, G) of
-			  true ->
-			      insert(GroupsKey, G, Access);
-			  false ->
-			      error({no_such_group, [AID, G]})
-		      end
-	      end, proplists:get_all_values(access, Opts))
+	    error(no_such_user)
     end.
+
+create_role_(AID, UName, Opts) ->
+    RID = new_role_id(AID),
+    create_role_(AID, RID, UName, Opts).
+
+create_role_(AID, RID, UName, Opts) ->
+    Key = role_key(AID, RID),
+    insert(Key, descr, binary_opt(descr, Opts)),
+    insert(Key, uname, to_binary(UName)),
+    AccessKey = exodm_db:kvdb_key_join(Key, <<"access">>),
+    lists:foreach(
+      fun({<<"all">>, Access}) ->
+	      valid_access(Access),
+	      insert(AccessKey, <<"all">>, Access);
+	 ({G, Access}) ->
+	      valid_access(Access),
+	      case group_exists(AID, G) of
+		  true ->
+		      insert(AccessKey, G, Access);
+		  false ->
+		      error({no_such_group, [AID, G]})
+	      end
+      end, proplists:get_all_values(access, Opts)),
+    {ok, exodm_db:role_id_num(RID)}.
+
 
 %% role_exists(AID, Role0) ->
 %%     Role = exodm_db:encode_id(to_binary(Role0)),
@@ -116,33 +123,33 @@ valid_access(A) ->
 	false -> error({invalid_access, A})
     end.
 
-add_user(AID0, UName0) ->
-    UName = exodm_db:encode_id(UName0),
-    case exodm_db_user:exist(UName) of
-	true ->
-	    AID = exodm_db:account_id_key(AID0),
-	    Key = exodm_db:kvdb_key_join(
-		    [AID, <<"users">>, UName, <<"__uname">>]),
-	    case exodm_db:read(?TAB, Key) of
-		{error, not_found} ->
-		    exodm_db:write(?TAB, Key, UName0),
-		    ok;
-		{ok, _} ->
-		    {error, exists}
-	    end;
-	false ->
-	    error(unknown_user, [AID0, UName0])
-    end.
+%% add_user(AID0, UName, RID) ->
+%%     AID = check_access(AID0),
+%%     add_user_(AID, UName, RID).
+
+%% add_user_(AID0, UName0, RID) ->
+%%     UName = exodm_db:encode_id(UName0),
+%%     case exodm_db_user:exist(UName) of
+%% 	true ->
+%% 	    AID = exodm_db:account_id_key(AID0),
+%% 	    Key = exodm_db:kvdb_key_join(
+%% 		    [AID, <<"users">>, UName]),
+%% 	    case read(Key, '__uname') of
+%% 		[] ->
+%% 		    insert(Key, '__uname', UName0),
+%% 		    insert(Key, '__rid', rid_value(RID)),
+%% 		    ok;
+%% 		{ok, _} ->
+%% 		    {error, exists}
+%% 	    end;
+%% 	false ->
+%% 	    error(unknown_user, [AID0, UName0])
+%%     end.
 
 %% FIXME validate every item BEFORE insert!
 update(AID0, Options) ->
-    AID = exodm_db:admin_id_key(AID0),
-    case exist(AID) of
-	false ->
-	    {error, not_found};
-	true ->
-	    update_(AID, Options)
-    end.
+    AID = check_access(AID0),
+    update_(AID, Options).
 
 update_(Key = AID, Options) ->
     Ops =
@@ -240,17 +247,13 @@ list_groups(AID, Limit) ->
     exodm_db_groups:list_group_keys(AID, Limit).
 
 list_admins(AID0) ->
-    exodm_db:fold_list(
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:fold_keys(
       ?TAB,
-      fun(_, Key, Acc) ->
-	      case read(Key, <<"__uname">>) of
-		  [{_, UName}] ->
-		      [UName|Acc];
-		  [] ->
-		      Acc
-	      end
-      end, [],
-      exodm_db:kvdb_key_join(exodm_db:account_id_key(AID0), <<"admin">>)).
+      exodm_db:kvdb_key_join(AID, <<"admins">>),
+      fun([UName|_], Acc) ->
+	      [UName|Acc]
+      end, [], 100).
 
 fold_accounts(F, Acc) ->
     fold_accounts(F, Acc, 30).
@@ -272,10 +275,25 @@ key(AName) ->
     to_binary(AName).
     %% exodm_db:kvdb_key_join(<<"account">>, AName).
 
-%% table(AID, users) ->
-%%     exodm_db:kvdb_key_join(AID, <<"u">>);
-%% table(AID, devices) ->
-%%     exodm_db:kvdb_key_join(AID, <<"d">>).
+group_key(AID, GID) ->
+    exodm_db:kvdb_key_join([exodm_db:account_id_key(AID),
+			    <<"groups">>,
+			    exodm_db:group_id_key(GID)]).
+
+new_group_id(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:update_counter(
+      ?TAB, exodm_db:kvdb_key_join(AID, <<"__last_gid">>), 1).
+
+role_key(AID, RID) ->
+    exodm_db:kvdb_key_join([exodm_db:account_id_key(AID),
+			    <<"roles">>,
+			    exodm_db:role_id_key(RID)]).
+
+new_role_id(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:update_counter(
+      exodm_db:kvdb_key_join(AID, <<"__last_rid">>), 1).
 
 insert(Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
@@ -288,5 +306,16 @@ read(Key,Item) ->
 	{error,not_found} -> []
     end.
 
-aid_value(AID) ->
-    <<(exodm_db:account_id_num(AID)):32>>.
+check_access(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    UName = exodm_db_session:get_user(),
+    case UName of
+	superuser -> AID;
+	_ ->
+	    case exodm_db:read(
+		   ?TAB,exodm_db:kvdb_key_join([AID, <<"admins">>,
+						exodm_db:encode_id(UName)])) of
+		{ok, _}   -> AID;
+		{error,_} -> error(not_authorized)
+	    end
+    end.

@@ -12,6 +12,7 @@
 -export([new/4, update/2, lookup/1, lookup_attr/2,
 	 list_user_keys/0, list_user_keys/1,
 	 fold_users/2, fold_users/3,
+	 add_access/3,
 	 list_access/1, exist/1]).
 -export([add_alias/2,
 	 lookup_by_alias/1]).
@@ -46,7 +47,7 @@ new(AID0, UName, Role, Options) ->
 	    {error, exists};
 	false ->
 	    insert(?TAB, Key,name, Name),
-	    insert(?TAB, Key,'__aid', aid_value(AID)),
+	    insert(?TAB, Key,'__aid', exodm_db:account_id_value(AID)),
 	    insert(?TAB, Key,fullname,      binary_opt(fullname,Options)),
 	    insert(?TAB, Key,phone,         binary_opt(phone,Options)),
 	    insert(?TAB, Key,email,         binary_opt(email,Options)),
@@ -209,19 +210,39 @@ fold_users(F, Acc, Limit) when
 key(UID) ->
     exodm_db:encode_id(UID).
 
-aid_value(AID) ->
-    <<(exodm_db:account_id_num(AID)):32>>.
-
 insert(Tab, Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
     exodm_db:write(Tab, Key1, Value).
+
+add_access(AID0, UName0, RID) ->
+    AID = exodm_db:account_id_key(AID0),
+    UName = exodm_db:encode_id(UName0),
+    case exodm_db_account:exist(AID) of
+	true ->
+	    case exist(UName) of
+		true ->
+		    add_access_(AID, UName, RID);
+		false ->
+		    error({no_such_user, UName})
+	    end;
+	false ->
+	    error({no_such_account, AID})
+    end.
+
+add_access_(AID, UName, RID) ->
+    Pos = exodm_db:append_to_list(
+	    ?TAB, exodm_db:kvdb_key_join(UName, <<"access">>),
+	    <<"__aid">>, exodm_db:account_id_value(AID)),
+    insert(?TAB, exodm_db:kvdb_key_join(
+		   UName, exodm_db:list_key(access, Pos)),
+	   '__rid', exodm_db:role_id_value(RID)).
 
 insert_access(Tab, K0, I, AID0, ARole) when is_integer(I), I>=0 ->
     AID = exodm_db:account_id_key(AID0),
     %% ARole = exodm_db:encode_id(ARole0),
     K = exodm_db:kvdb_key_join(K0, exodm_db:list_key(access, I)),
-    insert(Tab, K, '__aid', aid_value(AID)),
-    insert(Tab, K, '__role', ARole).
+    insert(Tab, K, '__aid', exodm_db:account_id_value(AID)),
+    insert(Tab, K, '__rid', ARole).
 
 list_access(UID0) when is_binary(UID0) ->
     UID = exodm_db:encode_id(UID0),
@@ -229,7 +250,7 @@ list_access(UID0) when is_binary(UID0) ->
       ?TAB,
       fun(I, Key, Acc) ->
 	      case {read_uint32(?TAB, Key, '__aid'),
-		    read(?TAB, Key, '__role')} of
+		    read(?TAB, Key, '__rid')} of
 		  {[{_, AID}], [{_, Role}]} ->
 		      [{I, {AID, Role}}|Acc];
 		  _ -> Acc

@@ -8,7 +8,8 @@
 -export([get_user/0, get_role/0, get_aid/0, get_auth/0]).
 -export([spawn_child/1, spawn_link_child/1, spawn_monitor_child/1]).
 
--export([set_auth_as_user/1]).
+-export([set_auth_as_user/1,
+         set_trusted_proc/0]).
 
 -export([start_link/0,
 	 init/1,
@@ -69,6 +70,14 @@ is_active(User) ->
             ets:member(?TAB, to_binary(User))
     end.
 
+set_trusted_proc() ->
+    put('$exodm_trusted_proc', true),
+    ok.
+
+is_trusted_proc() ->
+    get('$exodm_trusted_proc') == true.
+
+
 set_auth_as_user(User) ->
     case ets:lookup(?TAB, User) of
         [] ->
@@ -76,7 +85,7 @@ set_auth_as_user(User) ->
                                      ?MODULE,
                                      {make_user_active, to_binary(User)})) of
                 {true,_,_} = Res ->
-                    put('$exodm_trusted_proc', true),
+                    set_trusted_proc(),
                     Res;
                 false ->
                     false
@@ -108,7 +117,14 @@ if_active_({UName,_,_} = X, Ret) ->
             Ret(X);
         false ->
             erlang:error(unauthorized)
+    end;
+if_active_(_, _) ->
+    case is_trusted_proc() of
+        true -> superuser;
+        false ->
+            erlang:error(unauthorized)
     end.
+
 
 get_auth_() -> get('$exodm_auth').
 put_auth_({U, AID, Role}) -> put('$exodm_auth', {U, AID, Role}).

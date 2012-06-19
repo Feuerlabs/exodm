@@ -8,8 +8,9 @@
 -module(exodm_db).
 
 -export([init/0]).
--export([group_id_key/1, group_id_num/1]).
--export([account_id_key/1, account_id_num/1]).
+-export([group_id_key/1, group_id_num/1, group_id_value/1]).
+-export([role_id_key/1, role_id_num/1, role_id_value/1]).
+-export([account_id_key/1, account_id_num/1, account_id_value/1]).
 -export([list_key/2]).
 -export([table/2]).
 
@@ -21,7 +22,8 @@
 -export([binary_opt/2, binary_opt/3, uint32_opt/2, uint64_opt/2,
 	 uint32_bin/1, uint64_bin/1]).
 -export([first_child/1, first_child/2,
-	 next_child/1, next_child/2]).
+	 next_child/1, next_child/2,
+	 last_child/1, last_child/2]).
 -export([fold_children/3]).
 -export([fold_keys/2, fold_keys/3, fold_keys/4, fold_keys/5]).
 -export([fold_list/3, fold_list/4]).   % ([Tab,] Fun, Acc, Key)
@@ -40,7 +42,8 @@
 
 -export([read/1, read/2,
 	 write/2, write/3,
-	 update_counter/2]).
+	 update_counter/2,
+	 update_counter/3]).
 
 -import(lists, [reverse/1]).
 %%
@@ -79,7 +82,8 @@
 init() ->
     exodm_db_account:init(),
     exodm_db_user:init(),
-    exodm_db_system:init().
+    exodm_db_system:init(),
+    exodm_db_yang:init().
 
 
 %% user_id_key(<<$u,$$, _/binary>> = UID) -> UID;
@@ -102,6 +106,23 @@ group_id_num(L) when is_list(L) -> list_to_integer(L);
 group_id_num(<<$g, I/binary>>) ->
     list_to_integer(binary_to_list(I)).
 
+group_id_value(GID) ->
+    <<(group_id_num(GID)):32>>.
+
+role_id_key(<<$r, _/binary>> = GID) -> GID;
+role_id_key(ID) ->
+    list_to_binary([$r|id_key(ID)]).
+
+role_id_num(Id) when is_integer(Id) ->
+    Id;
+role_id_num(<<I:32>>) -> I;
+role_id_num(L) when is_list(L) -> list_to_integer(L);
+role_id_num(<<$r, I/binary>>) ->
+    list_to_integer(binary_to_list(I)).
+
+role_id_value(RID) ->
+    <<(role_id_num(RID)):32>>.
+
 account_id_key(<<$a, _/binary>> = AID) -> AID;
 account_id_key(ID) ->
     list_to_binary([$a|id_key(ID)]).
@@ -112,6 +133,8 @@ account_id_num(L) when is_integer(L) -> list_to_integer(L);
 account_id_num(<<$a, I/binary>>) ->
     list_to_integer(binary_to_list(I)).
 
+account_id_value(AID) ->
+    <<(account_id_num(AID)):32>>.
 
 %% device_id_key(<<$x, $$, _/binary>> = DID) -> DID;
 %% device_id_key(ID) when is_binary(ID) ->
@@ -308,6 +331,25 @@ next_child(Tab, K) ->
 	    done
     end.
 
+last_child(K) ->
+    last_child(<<"data">>, K).
+
+last_child(Tab, K) ->
+    case kvdb_conf:prev(Tab, <<K/binary, "*~">>) of
+	{ok, {K1,_As,_Data}} when byte_size(K1) > byte_size(K) ->
+	    N = byte_size(K),
+	    case erlang:split_binary(K1, N) of
+		{K, <<$*,K2/binary>>} ->
+		    [C|_] = kvdb_key_split(K2),
+		    {ok,<<K/binary,$*,C/binary>>};
+		{_, _} ->
+		    done
+	    end;
+	_ ->
+	    done
+    end.
+
+
 all_children(K) ->
     all_children(<<"data">>, K).
 
@@ -383,12 +425,15 @@ append_to_list(Base, SubK, V) ->
 append_to_list(Tab, Base, SubK, V) ->
     case last_in_list(Tab, Base) of
 	[] ->
-	    write(Tab, list_key(Base, 1), V);
+	    write(Tab, list_key(Base, 1), V),
+	    1;
 	[{K, _As, _}] ->
 	    LastPos = list_key_pos(Base, K),
-	    NewKey = kvdb_key_join(list_key(Base, LastPos+1),
+	    NewPos = LastPos+1,
+	    NewKey = kvdb_key_join(list_key(Base, NewPos),
 				   to_binary(SubK)),
-	    write(Tab, NewKey, V)
+	    write(Tab, NewKey, V),
+	    NewPos
     end.
 
 last_in_list(Base) ->
@@ -571,7 +616,10 @@ read(Tab, Key) ->
     kvdb_conf:read(Tab, Key).
 
 update_counter(Key, Incr) ->
-    kvdb_conf:update_counter(Key, Incr).
+    update_counter(<<"data">>, Key, Incr).
+
+update_counter(Tab, Key, Incr) ->
+    kvdb_conf:update_counter(Tab, Key, Incr).
 
 
 add_table(Name, Indexes) ->

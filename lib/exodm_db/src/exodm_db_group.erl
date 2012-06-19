@@ -14,33 +14,33 @@
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
 %%
-%% /<uid>/groups/<gid>/name  = <DeviceName>
-%% /<uid>/groups/<gid>/url   = <MSISDN>
+%% /<aid>/groups/<gid>/name  = <DeviceName>
+%% /<aid>/groups/<gid>/url   = <MSISDN>
 %%
 
 %% FIXME option validation
 new(AID, Options) ->
-    new(AID, exodm_db_system:new_gid(), Options).
+    new(AID, exodm_db_account:new_group_id(AID), Options).
 
 new(AID, GID, Options) ->
-    case exodm_db_system:get_gid_user(GID) of
-	{error, not_found} ->
-	    Key = key(AID, GID),
+    Key = key(AID, GID),
+    case read(Key, name) of
+	[] ->
 	    Name = binary_opt(name, Options),
 	    insert(Key,name,     Name),
 	    insert(Key,url,      binary_opt(url,  Options)),
-	    exodm_db_system:set_gid_user(GID, Name),
 	    {ok, gid_value(GID)};
-	_ ->
+	[_] ->
 	    {error, exists}
     end.
 
 %% FIXME validate every item BEFORE insert!
 update(AID, GID, Options) ->
-    case exodm_db_system:get_gid_user(GID) of
-	{error, not_found} = E ->
-	    E;
-	Name0 ->
+    Key = key(AID, GID),
+    case read(Key, name) of
+	[] ->
+	    {error, not_found};
+	[{_, Name0}] ->
 	    Key = key(AID, GID),
 	    lists:foreach(
 	      fun
@@ -60,8 +60,8 @@ lookup(AID, GID) ->
     lookup(key(AID, GID)).
 
 lookup(Key) ->
-    <<_,ID/binary>> = lists:last(exodm_db:kvdb_key_split(Key)),
-    [{id,gid_value(ID)}] ++
+    GID = lists:last(exodm_db:kvdb_key_split(Key)),
+    [{id,gid_value(GID)}] ++
 	read(Key,name) ++
 	read(Key, url).
 
@@ -98,17 +98,15 @@ fold_groups(F, Acc, AID0, Limit) when
 %% utils
 
 key(AID, GID) ->
-    A = exodm_db:account_id_key(AID),
-    G = exodm_db:group_id_key(GID),
-    exodm_db:kvdb_key_join([A, <<"groups">>, G]).
+    exodm_db_account:group_key(AID, GID).
 
 insert(Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
-    exodm_db:write(Key1, Value).
+    exodm_db:write(exodm_db_account:table(), Key1, Value).
 
 read(Key,Item) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
-    case exodm_db:read(Key1) of
+    case exodm_db:read(exodm_db_account:table(), Key1) of
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []
     end.
