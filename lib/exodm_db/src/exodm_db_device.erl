@@ -12,7 +12,7 @@
 	 exist/2]).
 -export([list_device_keys/1, list_device_keys/2,
 	 fold_devices/3, fold_devices/4]).
--export([key/2]).
+-export([key/2, tab_and_key/1]).
 -export([enc_ext_key/2, dec_ext_key/1]).
 -export([lookup_position/2, lookup_keys/2]).
 -export([lookup_groups/2]).
@@ -54,7 +54,7 @@ new(AID0, ID0, Options) ->
     DID = exodm_db:encode_id(ID0),
     Tab = table(AID),
     Key = DID,
-    insert(Tab,Key,'__did',  ID0),
+    insert(Tab,Key,'__did',  to_binary(ID0)),
     insert(Tab,Key,name,     binary_opt(name, Options)),
     insert(Tab,Key,msisdn,   binary_opt(msisdn,Options)),
     insert(Tab,Key,imsi,     binary_opt(imsi,Options)),
@@ -254,6 +254,9 @@ key(AID, DID) ->
     A = exodm_db:account_id_key(AID),
     D = exodm_db:encode_id(DID),
     exodm_db:kvdb_key_join([A, <<"devices">>, D]).
+
+tab_and_key(AID) ->
+    {table(AID), <<>>}.
 
 insert(Tab, Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),

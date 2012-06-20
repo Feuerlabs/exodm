@@ -7,6 +7,7 @@
 
 -include_lib("nitrogen_core/include/wf.hrl").
 -include_lib("gettext/include/gettext.hrl").
+-include_lib("lager/include/log.hrl").
 
 -export([main/0,
          title/0,
@@ -69,8 +70,10 @@ login_form() ->
 event(ok) ->
     User = wf:q(userTextBox),
     Password = wf:q(passTextBox),
+    ?debug("User = ~p; Password = **********~n", [User]),
     case exodm_db_session:authenticate(User, Password) of
 	{true,_UID,AID} ->
+	    ?debug("Login successful! AID = ~p~n", [AID]),
 	    wf:user(User),
 	    wf:role(get_role(User), true),
 	    wf:session(account_id, AID),

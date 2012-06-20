@@ -52,16 +52,22 @@ layout() ->
 format_row(header) ->
     [?TXT("Device"), ?TXT("Status"), ?TXT("MSISDN")];
 format_row(Row) ->
-    [{id,proplists:get_value(id,Row,"?")},
+    [{id,format_device_id(proplists:get_value(id,Row,"?"))},
      {status,proplists:get_value(status,Row,"?")},
      {msisdn,proplists:get_value(msisdn,Row,"")}
     ].
 
+format_device_id("?") ->
+    "?";
+format_device_id(ID) ->
+    exodm_db:decode_id(ID).
+
+
 device_table() ->
     wf:state(current_id, undefined),
     AID = wf:session(account_id),
-    Key = exodm_db:kvdb_key_join([exodm_db:user_id_key(AID), <<"devices">>]),
-    exodm_web_table:layout(device, Key, ?MODULE).
+    {Tab, Key} = exodm_db_device:tab_and_key(AID),
+    exodm_web_table:layout(device, Tab, Key, ?MODULE).
 
 device_id_entry() ->
     wf:comet(fun() -> background_update_entry() end),
@@ -129,8 +135,8 @@ device_dialog() ->
 get_current_id() ->
     case wf:state(current_id) of
 	undefined ->
-	    io:format("current_id: DEMO: 111\n"),
-	    111;
+	    io:format("current_id: undefined\n"),
+	    undefined;
 	DID ->
 	    io:format("current_id: ~w\n", [DID]),
 	    DID
@@ -200,7 +206,7 @@ clear_dialog() ->
 %% exodm_web_table callback
 row_selected(I, ID) ->
     io:format("row_selected: row=~w, id=~p\n", [I, ID]),
-    DID = list_to_integer(binary_to_list(ID), 16),
+    DID = exodm_db:encode_id(ID),
     AID = wf:session(account_id),
     case exodm_db_device:lookup(AID, DID) of
 	[] ->

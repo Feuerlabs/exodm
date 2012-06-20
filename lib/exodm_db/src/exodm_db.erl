@@ -95,6 +95,10 @@ init() ->
 %% 	    <<$u,$$, ID/binary>>
 %%     end.
 
+group_id_key("g" ++ _ = S) ->
+    group_id_key(list_to_binary(S));
+group_id_key(S) when is_list(S) ->
+    group_id_key(list_to_integer(S));
 group_id_key(<<$g, _/binary>> = GID) -> GID;
 group_id_key(ID) ->
     list_to_binary([$g|id_key(ID)]).
@@ -293,6 +297,14 @@ kvdb_key_drop(K) ->
 first_child(K) ->
     first_child(<<"data">>, K).
 
+first_child(Tab, <<>>) ->
+    case kvdb_conf:first(Tab) of
+	{ok, {K0,_As,_Data}} ->
+	    [K1|_] = kvdb_key_split(K0),
+	    {ok, K1};
+	done ->
+	    done
+    end;
 first_child(Tab, K) ->
     case kvdb_conf:next(Tab, <<K/binary,"*+">>) of
 	{ok,{K1,_As,_Data}} when byte_size(K1) > byte_size(K) ->
@@ -320,6 +332,9 @@ next_child(Tab, K) ->
 		    done;
 	       true ->
 		    case erlang:split_binary(K1, N) of
+			{<<>>, K2} ->
+			    [C|_] = kvdb_key_split(K2),
+			    {ok, C};
 			{K0, <<$*,K2/binary>>} ->
 			    [C|_] = kvdb_key_split(K2),
 			    {ok,<<K0/binary,$*,C/binary>>};
@@ -528,6 +543,8 @@ skip_wsp(Tail) ->
 valid_id_string(<<C, _/binary>>) ->
     not lists:member(C, ":;<>=?").
 
+encode_id(L) when is_list(L) ->
+    encode_id(list_to_binary(L));
 encode_id(<<$=, _/binary>> = Enc) ->
     Enc;
 encode_id(Bin) when is_binary(Bin) ->

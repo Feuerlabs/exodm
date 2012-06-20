@@ -29,7 +29,7 @@
 %% /account/<AID>/user/<UID>/phone      = Phone number to contact
 %% /account/<AID>/user/<UID>/email      = Email to contact
 %% /account/<AID>/user/<UID>/skype      = Skype ID of contact
-%% /account/<AID>/user/<UID>/__password = password - stored encrypted!
+%% /account/<AID>/user/<UID>/password   = password - stored encrypted!
 %% /account/<AID>/user/<UID>/access[<u>]/__aid  = Device owner ID
 %% /account/<AID>/user/<UID>/access[<u>]/__gid  = Device group ID
 %% /account/<AID>/user/<UID>/access[<u>]/__perm = Device group access
@@ -52,8 +52,8 @@ new(AID0, UName, Role, Options) ->
 	    insert(?TAB, Key,phone,         binary_opt(phone,Options)),
 	    insert(?TAB, Key,email,         binary_opt(email,Options)),
 	    insert(?TAB, Key,skype,         binary_opt(skype,Options)),
-	    insert_password(?TAB, Key, '__password',
-			    binary_opt('__password', Options)),
+	    insert_password(?TAB, Key, password,
+			    binary_opt(password, Options)),
 	    lists:foldl(
 	      fun({AAID,ARole}, I) ->
 		      insert_access(?TAB, Key, I, AAID, ARole)
@@ -137,9 +137,9 @@ update(UID, Options) ->
 	      %% 	      _ ->
 	      %% 		  fun() -> insert(Key, account, Account) end
 	      %% 	  end;
-	      ({'__password',Value}) ->
+	      ({password,Value}) ->
 		  fun() ->
-			  insert_password(Tab,Key, '__password',
+			  insert_password(Tab,Key, password,
 					  to_binary(Value))
 		  end;
 	      ({access, {I,AUID,ARole}}) ->

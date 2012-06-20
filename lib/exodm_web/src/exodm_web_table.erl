@@ -10,7 +10,7 @@
 -include_lib("nitrogen_core/include/wf.hrl").
 -include_lib("gettext/include/gettext.hrl").
 
--export([layout/3, layout/4, layout/5]).
+-export([layout/4, layout/5, layout/6]).
 -export([event/1]).
 
 -compile(export_all).
@@ -20,24 +20,24 @@
 row_id(Table, I) ->
     atom_to_list(Table)++"_row_"++integer_to_list(I).
 
-layout(Table, Key, Module) ->
-    layout(Table, Key, 10, Module).
+layout(Type, Tab, Key, Module) ->
+    layout(Type, Tab, Key, 10, Module).
 
-layout(Table, Key, N, Module) ->
-    layout(Table, Key, N, exodm_db:first_child(Key), Module).
+layout(Type, Tab, Key, N, Module) ->
+    layout(Type, Tab, Key, N, exodm_db:first_child(Tab, Key), Module).
 
-layout(Table, _ParentKey, N, StartKey, Module) ->
+layout(Type, Tab, _ParentKey, N, StartKey, Module) ->
     Hs = Module:format_row(header),
     THCells = [#tableheader { text=Text} || Text <- Hs],
     Header = #tablerow { cells=THCells },
     {_,Rows} = 
 	lists:foldr(
 	  fun(Rec,{I,Acc}) ->
-		  TR = create_table_row(Table, Module, I, Rec),
+		  TR = create_table_row(Type, Module, I, Rec),
 		  {I+1, [TR | Acc]}
-	  end, {1,[]}, fetch_records(Table,StartKey,N)),
-    Prev = #event { type=click, delegate=?MODULE, postback={prev_page,Table}},
-    Next = #event { type=click, delegate=?MODULE, postback={next_page,Table}},
+	  end, {1,[]}, fetch_records(Type, Tab,StartKey,N)),
+    Prev = #event { type=click, delegate=?MODULE, postback={prev_page,Type}},
+    Next = #event { type=click, delegate=?MODULE, postback={next_page,Type}},
     PrevCell = #tablecell { valign=top, align=left,
 			    body=#image { id=table_prev,
 					  actions = Prev,
@@ -56,42 +56,49 @@ layout(Table, _ParentKey, N, StartKey, Module) ->
 
 
 %% Create a table cell from a exosense record
-create_table_row(Table, Module, I, empty) ->
+create_table_row(Type, Module, I, empty) ->
     N = length(Module:format_row(header)),
     Cells=[#tableheader { html_encode=false, text="&nbsp;"} |
-	   [#tablecell { html_encode=false, text="&nbsp;" } || _ <- lists:seq(1, N-1)]],
+	   [#tablecell { html_encode=false, text="&nbsp;" } ||
+	       _ <- lists:seq(1, N-1)]],
     Class = element((I band 1)+1, {"","odd"}),
-    RowID = row_id(Table, I),
+    RowID = row_id(Type, I),
     #tablerow { id=RowID, class=Class, cells=Cells };    
-create_table_row(Table, Module, I, Rec) ->
+create_table_row(Type, Module, I, Rec) ->
     [{id,ID}|Hs] = Module:format_row(Rec),
     Cells=[#tableheader { text=ID } |
 	   [#tablecell { text=Value} || {_Key,Value} <- Hs]],
     Actions = #event { type=click,
 		       delegate=?MODULE,
-		       postback={row_selected,Table,Module,I,ID}},
+		       postback={row_selected,Type,Module,I,ID}},
     Class = element((I band 1)+1, {"","odd"}),
-    RowID = row_id(Table, I),
+    RowID = row_id(Type, I),
     #tablerow { id=RowID, class=Class, 
 		cells=Cells, actions=Actions }.
 
-fetch_records(_, _, 0) ->
+fetch_records(_, _, _, 0) ->
     [];
-fetch_records(Table, done, I) ->
-    [empty | fetch_records(Table,done,I-1)];
-fetch_records(Table, {ok,Key}, I) ->
-    case read_record(Table, Key) of
+fetch_records(Type, Tab, done, I) ->
+    [empty | fetch_records(Type, Tab,done,I-1)];
+fetch_records(Type, Tab, {ok,Key}, I) ->
+    case read_record(Type, Key) of
 	[] ->
-	    fetch_records(Table, exodm_db:next_child(Key), I);
+	    fetch_records(Type, Tab, exodm_db:next_child(Tab, Key), I);
 	Rec ->
-	    [Rec|fetch_records(Table, exodm_db:next_child(Key), I-1)]
+	    [Rec|fetch_records(Type, Tab, exodm_db:next_child(Tab, Key), I-1)]
     end.
 
 %% FIXME: we should pass UUID here to allow for consistency check
-read_record(device, Key) ->
-    exodm_db_device:lookup(Key);
 read_record(group, Key) ->
-    exodm_db_group:lookup(Key).
+    exodm_db_group:lookup(Key);
+read_record(device, Key) ->
+    AID = wf:session(account_id),
+    exodm_db_device:lookup(AID, Key).
+
+%% read_record(device, Key) ->
+%%     exodm_db_device:lookup(Key);
+%% read_record(group, Key) ->
+%%     exodm_db_group:lookup(Key).
 	    
 
 

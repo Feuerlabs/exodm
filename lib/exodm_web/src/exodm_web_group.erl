@@ -46,17 +46,23 @@ layout() ->
 format_row(header) ->
     [?TXT("ID"),?TXT("Name"),?TXT("Url")];
 format_row(Row) ->
-    [{id,proplists:get_value(id,Row,"?")},
+    [{id,format_group_id(proplists:get_value(id,Row,"?"))},
      {name,proplists:get_value(name,Row,"?")},
      {url,proplists:get_value(url,Row,"")}
     ].
+
+format_group_id("?") ->
+    "?";
+format_group_id(ID) ->
+    integer_to_list(exodm_db:group_id_num(ID)).
 
 
 group_table() ->
     wf:state(current_id, undefined),
     AID = wf:session(account_id),
-    Key = exodm_db:kvdb_key_join([exodm_db:account_id_key(AID), <<"groups">>]),
-    exodm_web_table:layout(group, Key, ?MODULE).
+    {Tab, Key} = exodm_db_group:tab_and_key(AID),
+    exodm_web_table:layout(group, Tab, Key, ?MODULE).
+
 
 %% Dialog elements 
 group_id(Value) ->
@@ -103,7 +109,8 @@ group_dialog() ->
     ].
 
 fill_dialog(ID,Name,Url) ->
-    wf:set(group_id, if ID =:= undefined -> ""; true -> ID end),
+    wf:set(group_id, if ID =:= undefined -> "";
+			true -> format_group_id(ID) end),
     wf:set(group_name, Name),
     wf:set(group_url, Url).
 
@@ -140,40 +147,31 @@ event(_Event) ->
     io:format("Event=~p~n",[_Event]),
     ok.
 
-add_or_update(_Operation) ->
-    ID   = list_to_integer(wf:q(group_id)),
+add_or_update(Operation) ->
+    ID   = wf:q(group_id),
     Name = wf:q(group_name),
     Url  = wf:q(group_url),
     
     io:format("~p: ID:~p, Name:~p, Url:~p\n", 
-	      [_Operation,ID,Name,Url]),
+	      [Operation,ID,Name,Url]),
 
-    case wf:state(current_id) of
-	ID ->
+    case Operation of
+	update ->
 	    AID = wf:session(account_id),
-	    case exodm_db_group:exist(AID, ID) of
+	    GID = exodm_db:group_id_key(ID),
+	    case exodm_db_group:exist(AID, GID) of
 		true ->
-		    exodm_db_group:update(AID, ID,
+		    exodm_db_group:update(AID, GID,
 					  [{name,Name},{url,Url}]);
 		false ->
 		    throw({invalid,id,"update error"})
 	    end;
-	_ -> %% no group was loaded
+	add ->
 	    AID = wf:session(account_id),
-	    case exodm_db_group:exist(AID, ID) of
-		true ->
-		    exodm_db_group:update(AID, ID,
-					  [{name,Name},
-					   {url,Url}]),
-		    wf:state(current_id, undefined);
-		false ->
-		    exodm_db_group:new(AID, ID,
-				       [{name,Name},
-					{url,Url}]),
-		    wf:state(current_id, undefined);
-		_Error ->
-		    throw({invalid,id,"update error"})
-	    end
+	    exodm_db_group:new(AID,
+			       [{name,Name},
+				{url,Url}]),
+	    wf:state(current_id, undefined)
     end.
 
 delete_current() ->

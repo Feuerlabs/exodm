@@ -34,6 +34,8 @@
 
 -define(INACTIVITY_TIMER, 5*60000).  % should be configurable?
 
+-include_lib("lager/include/log.hrl").
+
 %% @spec authenticate(Username, Password) -> {true, AID} | false
 authenticate(User, Pwd) ->
     UName = to_binary(User),
@@ -266,7 +268,7 @@ first_auth(U, P, Parent) ->
     gen_server:cast(Parent, {first_auth, self(), U, Res}).
 
 first_auth_(U, P) ->
-    case exodm_db_user:lookup_attr(U, '__password') of
+    case exodm_db_user:lookup_attr(U, password) of
         [] ->
             false;
         [{_, Hash}] ->
@@ -279,8 +281,11 @@ first_auth_(U, P) ->
                     {ok, HashStr} = bcrypt:hashpw(P, Hash),
                     case list_to_binary(HashStr) of
                         Hash ->
+                            ?debug("bcrypt hash matches for ~p~n", [U]),
                             {true, Hash, sha(Hash, P)};
                         _ ->
+                            ?debug("bcrypt hash doesn't match for ~p~n"
+                                   "~p | ~p~n", [U, HashStr, Hash]),
                             false
                     end
             end

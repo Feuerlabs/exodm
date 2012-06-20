@@ -7,10 +7,11 @@
 
 -module(exodm_db_group).
 
--export([new/2, update/3, lookup/2, lookup/1, exist/2, exist/1]).
+-export([new/2, update/3, lookup/2, lookup/1, exist/2, exist/1,
+	 delete/2]).
 -export([list_group_keys/1, list_group_keys/2]).
 -export([fold_groups/3, fold_groups/4]).
--export([key/2]).
+-export([key/2, tab_and_key/1]).
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
 %%
@@ -56,6 +57,15 @@ update(AID, GID, Options) ->
 	      end, Options)
     end.
 
+delete(AID, GID) ->
+    Key = key(AID, GID),
+    case exist(Key) of
+	true ->
+	    kvdb_conf:delete_all(table(), Key);
+	false ->
+	    {error, not_found}
+    end.
+
 lookup(AID, GID) ->
     lookup(key(AID, GID)).
 
@@ -89,7 +99,7 @@ fold_groups(F, Acc, AID0, Limit) when
       Limit==infinity; is_integer(Limit), Limit > 0 ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:fold_keys(
-      <<"data">>,
+      table(),
       exodm_db:kvdb_key_join(AID, <<"groups">>),
       fun([_AID,<<"groups">>,GID|_], Acc1) ->
 	      {next, GID, F(GID,Acc1)}
@@ -97,8 +107,15 @@ fold_groups(F, Acc, AID0, Limit) when
 
 %% utils
 
+table() ->
+    exodm_db_account:table().
+
 key(AID, GID) ->
     exodm_db_account:group_key(AID, GID).
+
+tab_and_key(AID) ->
+    {table(),
+     exodm_db:kvdb_key_join(exodm_db:account_id_key(AID), <<"groups">>)}.
 
 insert(Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
