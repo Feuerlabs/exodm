@@ -52,6 +52,8 @@ registration_form() ->
       Panel =
 	#panel {
 	body=[
+	      #label { text="Account Name" },
+	      #textbox { id=acctTextBox, next=userTextBox },
 	      #label { text="Username" },
 	      #textbox { id=userTextBox, next=passTextBox },
 	      #p{},
@@ -115,23 +117,25 @@ emailmatch() -> "The email addresses must match.".
 %%     Value =:= "tesla".
 
 event(register) ->
-    [User, Password, FullName, Email, Phone, Skype] =
-	[wf:q(Fld) || Fld <- [userTextBox, passTextBox,
+    [Acct, User, Password, FullName, Email, Phone, Skype] =
+	[wf:q(Fld) || Fld <- [acctTextBox, userTextBox, passTextBox,
 			      fullNameTextBox, emailTextBox,
 			      phoneTextBox, skypeTextBox]],
-    Info = [{'__password', l2b(Password)},
-	    {fullname, l2b(FullName)},
-	    {email, l2b(Email)},
-	    {phone, l2b(Phone)},
-	    {skype, l2b(Skype)}],
-    exodm_db_user:new(l2b(User), Info),
+    Info = [{name, l2b(Acct)},
+	    {admin, [{uname, l2b(User)},
+		     {'__password', l2b(Password)},
+		     {fullname, l2b(FullName)},
+		     {email, l2b(Email)},
+		     {phone, l2b(Phone)},
+		     {skype, l2b(Skype)}]}],
+    exodm_db_account:new(Info),
     wf:redirect_from_login("/");
 event(_Event) ->
     io:format("Event = ~p\n", [_Event]).
 
 
 username_free(_Tag, User) ->
-    not exodm_db_user:exist(0, list_to_binary(User)).
+    not exodm_db_user:exist(list_to_binary(User)).
 
 l2b(X) ->
     exodm_db:to_binary(X).

@@ -7,14 +7,16 @@
 
 -module(exodm_db_device).
 
--export([new/2, update/3, lookup/2, lookup/1, lookup_attr/3,
-	 exist/2, exist/1]).
--export([key/2]).
+-export([init/1]).
+-export([new/3, update/3, lookup/2, lookup_attr/3,
+	 exist/2]).
+-export([list_device_keys/1, list_device_keys/2,
+	 fold_devices/3, fold_devices/4]).
+-export([key/2, tab_and_key/1]).
 -export([enc_ext_key/2, dec_ext_key/1]).
 -export([lookup_position/2, lookup_keys/2]).
 -export([lookup_groups/2]).
 -export([lookup_group_notifications/2]).
--export([mk_msisdn/2]).
 
 -export([client_auth_config/2]).
 
@@ -23,194 +25,225 @@
 -import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).
 -import(lists, [reverse/1]).
 %%
-%% /<uid>/devices/<did>/name      = string()
-%% /<uid>/devices/<did>/msisdn    = msisdn()
-%% /<uid>/devices/<did>/imsi      = imsi()
-%% /<uid>/devices/<did>/imei      = imei()
-%% /<uid>/devices/<did>/longitud  = uint32()
-%% /<uid>/devices/<did>/latitude  = uint32()
-%% /<uid>/devices/<did>/timestamp = uint32()
-%% /<uid>/devices/<did>/__ck      = uint64()
-%% /<uid>/devices/<did>/__sk      = uint64()
-%% /<uid>/devices/<did>/groups[<i>]/__gid = uint32()
+%% /<aid>/devices/<did>/name      = string()
+%% /<aid>/devices/<did>/msisdn    = msisdn()
+%% /<aid>/devices/<did>/imsi      = imsi()
+%% /<aid>/devices/<did>/imei      = imei()
+%% /<aid>/devices/<did>/longitud  = uint32()
+%% /<aid>/devices/<did>/latitude  = uint32()
+%% /<aid>/devices/<did>/timestamp = uint32()
+%% /<aid>/devices/<did>/__ck      = uint64()
+%% /<aid>/devices/<did>/__did     = string()
+%% /<aid>/devices/<did>/__sk      = uint64()
+%% /<aid>/devices/<did>/groups[<i>]/__gid = uint32()
 %%
 
 %% FIXME option validation
 
-new(AID, Options) ->
-    ?info("new(~p, ~p)~n", [AID, Options]),
-    DID = exodm_db_system:new_did(),
-    Key = key(AID, DID),
-    insert(Key,name,     binary_opt(name, Options)),
-    insert(Key,msisdn,   mk_msisdn(binary_opt(msisdn,Options), DID)),
-    insert(Key,imsi,     binary_opt(imsi,Options)),
-    insert(Key,imei,     binary_opt(imei,Options)),
-    insert(Key,activity, uint32_opt(activity,Options)),
-    insert(Key,longitude,uint32_opt(longitud,Options)),
-    insert(Key,latitude, uint32_opt(latitude,Options)),
-    insert(Key,timestamp,uint32_opt(timestamp,Options)),
-    insert(Key,yang, binary_opt(yang, Options)),
+init(AID) ->
+    kvdb_conf:add_table(table(AID), []).
+
+table(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    <<AID/binary, "_dev">>.
+
+new(AID0, ID0, Options) ->
+    ?info("new(~p, ~p, ~p)~n", [AID0, ID0, Options]),
+%%    DID = exodm_db_system:new_did(),
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(ID0),
+    Tab = table(AID),
+    Key = DID,
+    insert(Tab,Key,'__did',  to_binary(ID0)),
+    insert(Tab,Key,name,     binary_opt(name, Options)),
+    insert(Tab,Key,msisdn,   binary_opt(msisdn,Options)),
+    insert(Tab,Key,imsi,     binary_opt(imsi,Options)),
+    insert(Tab,Key,imei,     binary_opt(imei,Options)),
+    insert(Tab,Key,activity, uint32_opt(activity,Options)),
+    insert(Tab,Key,longitude,uint32_opt(longitud,Options)),
+    insert(Tab,Key,latitude, uint32_opt(latitude,Options)),
+    insert(Tab,Key,timestamp,uint32_opt(timestamp,Options)),
+    insert(Tab,Key,yang, binary_opt(yang, Options)),
     %% __ck, __sk are device keys and need special attention 
-    insert(Key, '__ck',  binary_opt('__ck',Options)),
-    insert(Key, '__sk',  binary_opt('__sk',Options)),
-    lists:foreach(
-      fun({I,GID}) ->
-	      insert_group(Key, I, GID)
-      end, proplists:get_all_values(group, Options)),
+    insert(Tab,Key, '__ck',  binary_opt('__ck',Options)),
+    insert(Tab,Key, '__sk',  binary_opt('__sk',Options)),
+    insert_groups(Tab, Key, proplists:get_value(groups, Options, [])),
+    %% lists:foreach(
+    %%   fun({I,GID}) ->
+    %% 	      insert_group(Tab, Key, I, GID)
+      %% end, proplists:get_all_values(group, Options)),
     ok.
 
 %% FIXME validate every item BEFORE insert!
-update(AID, DID, Options) ->
-    Key = key(AID, DID),
+update(AID0, DID0, Options) ->
+    DID = exodm_db:encode_id(DID0),
+    AID = exodm_db:account_id_key(AID0),
+    Tab = table(AID),
     lists:foreach(
       fun
 	  ({name,Value}) ->
-	      insert(Key,name,to_binary(Value));
+	      insert(Tab,DID,name,to_binary(Value));
 	  ({msisdn,Value}) ->
-	      insert(Key,msisdn,mk_msisdn(to_binary(Value), DID));
+	      insert(Tab,DID,msisdn, to_binary(Value));
 	  ({imsi,Value}) ->
-	      insert(Key,imsi,to_binary(Value));
+	      insert(Tab,DID,imsi,to_binary(Value));
 	  ({imei,Value}) ->
-	      insert(Key,imei,to_binary(Value));
+	      insert(Tab,DID,imei,to_binary(Value));
 	  ({activity,Act}) ->
-	      insert(Key,activity,<<Act:32>>);
+	      insert(Tab,DID,activity,<<Act:32>>);
 	  ({latitude,Lat}) ->
-	      insert(Key,latitude,<<Lat:32>>);
+	      insert(Tab,DID,latitude,<<Lat:32>>);
 	  ({longitude,Lon}) ->
-	      insert(Key,longitude,<<Lon:32>>);
+	      insert(Tab,DID,longitude,<<Lon:32>>);
 	  ({timestamp,Ts}) ->
-	      insert(Key,timestamp,<<Ts:32>>);
+	      insert(Tab,DID,timestamp,<<Ts:32>>);
 	  ({'__ck',Value}) when is_binary(Value), byte_size(Value) =:= 8 ->
-	      insert(Key,'__ck', Value);
+	      insert(Tab,DID,'__ck', Value);
 	  ({'__sk',Value}) when is_binary(Value), byte_size(Value) =:= 8 ->
-	      insert(Key,'__sk', Value);
+	      insert(Tab,DID,'__sk', Value);
 	  ({group,{I,GID}}) ->
-	      insert_group(Key,I,GID);
+	      insert_group(Tab,DID,I,GID);
 	  ({yang,Value}) ->
-	      insert(Key, yang, to_binary(Value))
+	      insert(Tab,DID, yang, to_binary(Value))
       end, Options).
 
 lookup(AID, DID) ->
-    lookup(key(AID, DID)).
+    lookup_(table(AID), exodm_db:encode_id(DID)).
 
-lookup(Key) ->
-    <<_,ID/binary>> = lists:last(exodm_db:kvdb_key_split(Key)),
-    [{id,ID}] ++
-	read(Key,name) ++
-	read(Key, msisdn) ++
-	read(Key, imsi) ++
-	read(Key, imei) ++
-	read(Key, '__ck') ++
-	read(Key, '__sk') ++
-	read(Key, yang) ++
-	read_uint32(Key, activity) ++
-	read_uint32(Key, status) ++
-	read_uint32(Key, longitude) ++
-	read_uint32(Key, latitude) ++
-	read_uint32(Key, timestamp).
+lookup_(Tab,Key) ->
+    [{id,Key}] ++
+	read(Tab,Key,name) ++
+	read(Tab,Key, msisdn) ++
+	read(Tab,Key, imsi) ++
+	read(Tab,Key, imei) ++
+	read(Tab,Key, '__ck') ++
+	read(Tab,Key, '__sk') ++
+	read(Tab,Key, yang) ++
+	read_uint32(Tab,Key, activity) ++
+	read_uint32(Tab,Key, status) ++
+	read_uint32(Tab,Key, longitude) ++
+	read_uint32(Tab,Key, latitude) ++
+	read_uint32(Tab,Key, timestamp).
 
 lookup_attr(AID, DID, Attr) ->
-    Key = key(AID, DID),
-    read(Key, Attr).
+    read(table(AID), exodm_db:encode_id(DID), Attr).
 
-lookup_groups(UID, DID) ->
-    Key0 = key(UID, DID),
-    exodm_db:fold_list(
-      fun(I,Acc) ->
-	      Key1 = exodm_db:kvdb_key_join(Key0, exodm_db:list_key(groups,I)),
-	      case read_uint32(Key1, '__gid') of
+list_device_keys(AID) ->
+    list_device_keys(AID, 30).
+
+list_device_keys(AID, Limit) ->
+    fold_devices(fun(DID, Acc) ->
+			 [DID|Acc]
+		 end, [], AID, Limit).
+
+fold_devices(F, Acc, AID) ->
+    fold_devices(F, Acc, AID, 30).
+
+fold_devices(F, Acc, AID, Limit) when
+      Limit==infinity; is_integer(Limit), Limit > 0 ->
+    Tab = table(AID),
+    exodm_db:fold_keys(
+      Tab,
+      <<>>,
+      fun([DID|_], Acc1) ->
+	      {next, DID, F(DID,Acc1)}
+      end, Acc, Limit).
+
+
+lookup_groups(AID, DID0) ->
+    Tab = table(AID),
+    DID = exodm_db:encode_id(DID0),
+    exodm_db:fold_list2(
+      Tab,
+      fun(I,Key,Acc) ->
+	      case read_uint32(Tab, Key, '__gid') of
 		  [{_,GID}] -> [{group,{I,GID}} | Acc];
 		  [] -> Acc
 	      end
-      end, [], Key0, groups).
+      end, [], DID, groups).
 
 
-lookup_group_notifications(UID, DID) ->
+lookup_group_notifications(AID, DID) ->
     lists:foldl(
       fun({group,{_I,GID}},Acc) ->
-	      Props = exodm_db_group:lookup(UID, GID),
+	      Props = exodm_db_group:lookup(AID, GID),
 	      case proplists:get_value(url, Props, <<>>) of
 		  <<>> -> Acc;
 		  Url -> [Url | Acc]
 		       end
-      end,[],lookup_groups(UID, DID)).
+      end,[],lookup_groups(AID, DID)).
 
 %% find last known position or {0,0,0} if not found
-lookup_position(UID, DID) ->
-    Key = key(UID, DID),
-    { 
-      case read_uint32(Key,latitude) of
+lookup_position(AID, DID0) ->
+    Tab = table(AID),
+    DID = exodm_db:encode_id(DID0),
+    {
+      case read_uint32(Tab,DID,latitude) of
 	  [] -> 0;
 	  [{latitude,Lat}] -> Lat
       end,
-      case read_uint32(Key,longitude) of
+      case read_uint32(Tab,DID,longitude) of
 	  [] -> 0;
 	  [{longitude,Lon}] -> Lon
       end,
-      case read_uint32(Key,timestamp) of
+      case read_uint32(Tab,DID,timestamp) of
 	  [] -> 0;
 	  [{timestamp,Ts}] -> Ts
       end
     }.
 
-dec_ext_key(<<$a, Ia:8/binary, $x, Ix:8/binary>>) ->
-    {<<"a", Ia/binary>>, <<"x", Ix/binary>>};
+dec_ext_key(<<$a, Ia:8/binary, "=", Ix/binary>>) ->
+    {<<"a", Ia/binary>>, <<"=", Ix/binary>>};
 dec_ext_key(_) ->
     error.
 
-enc_ext_key(<<$a,_/binary>> = AID, <<$x, _/binary>> = DID) ->
+enc_ext_key(<<$a,_/binary>> = AID, <<$=, _/binary>> = DID) ->
     <<AID/binary, DID/binary>>;
 enc_ext_key(AID, DID) ->
-    enc_ext_key(exodm_db:account_id_key(AID), exodm_db:device_id_key(DID)).
+    enc_ext_key(exodm_db:account_id_key(AID), exodm_db:encode_id(DID)).
 
 
 %% @doc Convenience function to extract a client auth config for the
 %% device BERT RPC client.
 client_auth_config(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
-    DID = exodm_db:device_id_key(DID0),
-    Key = key(AID, DID),
-    case read(Key, '__ck') of
+    DID = exodm_db:encode_id(DID0),
+    Tab = table(AID),
+    case read(Tab, DID, '__ck') of
 	[] -> {error, not_found};
 	[{_, Ck}] ->
-	    case read(Key, '__sk') of
+	    case read(Tab, DID, '__sk') of
 		[] -> {error, not_found};
 		[{_, Cs}] ->
 		    ExtKey = enc_ext_key(AID, DID),
-		    {client, {ExtKey, Ck, Cs}}
+		    {bert,
+		     [{auth, [
+			      {client, [{id, ExtKey},
+					{keys, {Ck, Cs}},
+					{mod, bert_challenge}]}
+			     ]},
+		      {reuse_mode, client}]}
 	    end
     end.
 
 
-mk_msisdn(<<>>, _) ->
-    <<>>;
-mk_msisdn(Bin, <<$x, ID/binary>>) ->
-    DID_len = 19 - byte_size(Bin),  % 15 + length("$DID") -> 19
-    N = pad(integer_to_list(list_to_integer(binary_to_list(ID), 16)), DID_len),
-    re:replace(Bin, "\\$DID", N, [{return, binary}]).
-
-pad(S, N) ->
-    lists:duplicate(N - length(S), $0) ++ S.
-
 
 %% find last known position or {0,0,0} if not found
-lookup_keys(AID, DID) ->
-    Key = key(AID, DID),
-    { 
-      case read(Key,'__ck') of
+lookup_keys(AID, DID0) ->
+    DID = exodm_db:encode_id(DID0),
+    Tab = table(AID),
+    {
+      case read(Tab, DID,'__ck') of
 	  [] -> <<0,0,0,0,0,0,0,0>>;
 	  [{'__ck',Ck}] -> Ck
       end,
-      case read(Key, '__sk') of
+      case read(Tab, DID, '__sk') of
 	  [] ->  <<0,0,0,0,0,0,0,0>>;
 	  [{'__sk',Sk}] -> Sk
       end}.
 
-exist(UID, DID) ->
-    exist(key(UID, DID)).
-
-exist(Key) ->
-    case read(Key, name) of
+exist(AID, DID) ->
+    case read(table(AID), exodm_db:encode_id(DID), name) of
 	[] -> false;
 	[_] -> true
     end.
@@ -219,27 +252,40 @@ exist(Key) ->
 
 key(AID, DID) ->
     A = exodm_db:account_id_key(AID),
-    D = exodm_db:device_id_key(DID),
+    D = exodm_db:encode_id(DID),
     exodm_db:kvdb_key_join([A, <<"devices">>, D]).
 
-insert(Key, Item, Value) ->
-    Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
-    exodm_db:write(Key1, Value).
+tab_and_key(AID) ->
+    {table(AID), <<>>}.
 
-insert_group(K0, I, GID0) when is_integer(I), I >= 0 ->
-    GID = exodm_db:group_id_key(GID0),
+insert(Tab, Key, Item, Value) ->
+    Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
+    exodm_db:write(Tab, Key1, Value).
+
+insert_groups(Tab, K, Groups0) ->
+    {Groups,_} = lists:mapfoldl(fun(G,I) ->
+					{{I,G}, I+1}
+				end, 1, Groups0),
+    lists:foreach(fun({I,G}) ->
+			  insert_group(Tab, K, I, G)
+		  end, Groups).
+
+insert_group(Tab, K0, I, GID) when is_integer(I) ->
     K = exodm_db:kvdb_key_join(K0, exodm_db:list_key(groups, I)),
-    insert(K, '__gid',  GID).
+    insert(Tab, K, '__gid',  gid_value(GID)).
 
-read(Key,Item) ->
+gid_value(GID) ->
+    <<(exodm_db:group_id_num(GID)):32>>.
+
+read(Tab, Key,Item) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
-    case exodm_db:read(Key1) of
+    case exodm_db:read(Tab, Key1) of
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []
     end.
 
-read_uint32(Key,Item) ->
-    case read(Key,Item) of
+read_uint32(Tab, Key,Item) ->
+    case read(Tab, Key,Item) of
 	[{Item,<<Value:32>>}] -> [{Item,Value}];
 	[] -> []
     end.

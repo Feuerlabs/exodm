@@ -6,3 +6,4 @@ rel/files
 rel/exodm
 nodes
 devel
+lib/exodm_db/src/provision_device

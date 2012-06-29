@@ -5,10 +5,11 @@
 
 -export([authenticate/2, logout/0, logout/1,
          is_active/0, is_active/1, refresh/0]).
--export([get_user/0, get_uid/0, get_aid/0, get_auth/0]).
+-export([get_user/0, get_role/0, get_aid/0, get_auth/0]).
 -export([spawn_child/1, spawn_link_child/1, spawn_monitor_child/1]).
 
--export([set_auth_as_user/1]).
+-export([set_auth_as_user/1,
+         set_trusted_proc/0]).
 
 -export([start_link/0,
 	 init/1,
@@ -24,22 +25,25 @@
 	     procs = dict:new()}).
 
 -record(session, {user,
-                  uid,
                   aid,
+                  role,
                   access = [],
                   hash,
                   sha,
                   timer}).
 
--define(INACTIVITY_TIMER, 60000).  % should be configurable?
+-define(INACTIVITY_TIMER, 5*60000).  % should be configurable?
 
+-include_lib("lager/include/log.hrl").
+
+%% @spec authenticate(Username, Password) -> {true, AID} | false
 authenticate(User, Pwd) ->
     UName = to_binary(User),
     check_auth_(
       UName, gen_server:call(?MODULE, {auth, UName, to_binary(Pwd)}, 10000)).
 
-check_auth_(UName, {true, UID,AID} = Result) ->
-    put_auth_({UName, UID, AID}),
+check_auth_(UName, {true, AID, Role} = Result) ->
+    put_auth_({UName, AID, Role}),
     Result;
 check_auth_(_, false) ->
     false.
@@ -68,6 +72,14 @@ is_active(User) ->
             ets:member(?TAB, to_binary(User))
     end.
 
+set_trusted_proc() ->
+    put('$exodm_trusted_proc', true),
+    ok.
+
+is_trusted_proc() ->
+    get('$exodm_trusted_proc') == true.
+
+
 set_auth_as_user(User) ->
     case ets:lookup(?TAB, User) of
         [] ->
@@ -75,15 +87,15 @@ set_auth_as_user(User) ->
                                      ?MODULE,
                                      {make_user_active, to_binary(User)})) of
                 {true,_,_} = Res ->
-                    put('$exodm_trusted_proc', true),
+                    set_trusted_proc(),
                     Res;
                 false ->
                     false
             end;
-        [#session{uid = UID, aid = AID}] ->
-            put_auth_({User, UID, AID}),
+        [#session{aid = AID, role = Role}] ->
+            put_auth_({User, AID, Role}),
             put('$exodm_system_proc', true),
-            {true, UID, AID}
+            {true, AID, Role}
     end.
 
 
@@ -97,8 +109,8 @@ spawn_link_child(F) -> proc_lib:spawn_link(auth_f(F)).
 spawn_monitor_child(F) -> proc_lib:spawn_monitor(auth_f(F)).
 
 get_user() -> if_active_(get_auth_(), fun({X,_,_}) -> X end).
-get_uid()  -> if_active_(get_auth_(), fun({_,X,_}) -> X end).
-get_aid()  -> if_active_(get_auth_(), fun({_,_,X}) -> X end).
+get_aid()  -> if_active_(get_auth_(), fun({_,X,_}) -> X end).
+get_role() -> if_active_(get_auth_(), fun({_,_,X}) -> X end).
 get_auth() -> if_active_(get_auth_(), fun(X) -> X end).
 
 if_active_({UName,_,_} = X, Ret) ->
@@ -107,10 +119,17 @@ if_active_({UName,_,_} = X, Ret) ->
             Ret(X);
         false ->
             erlang:error(unauthorized)
+    end;
+if_active_(_, _) ->
+    case is_trusted_proc() of
+        true -> superuser;
+        false ->
+            erlang:error(unauthorized)
     end.
 
+
 get_auth_() -> get('$exodm_auth').
-put_auth_({U, UID, AID}) -> put('$exodm_auth', {U, UID, AID}).
+put_auth_({U, AID, Role}) -> put('$exodm_auth', {U, AID, Role}).
 
 auth_f(F) ->
     Auth = get_auth(),  % checks if active
@@ -144,11 +163,11 @@ handle_call({auth, U, P}, From, St) ->
             %% system processes have accessed user, but not authenticated
             %% sessions.
             {noreply, pending(U, [{From,P}], St)};
-	[#session{hash = Hash, uid = UID, aid = AID, sha = Sha} = Session] ->
+	[#session{hash = Hash, aid = AID, role = Role, sha = Sha} = Session] ->
 	    case sha(Hash, P) of
 		Sha ->
 		    reset_timer(Session),
-		    {reply, {true, UID, AID}, St};
+		    {reply, {true, AID, Role}, St};
 		_ ->
 		    {reply, false, St}
 	    end
@@ -160,13 +179,13 @@ handle_call({make_user_active, U}, _, St) ->
                 false ->
                     {reply, false, St};
                 {true, Hash, undefined} ->
-                    #session{uid = UID, aid = AID} =
+                    #session{aid = AID, role = Role} =
                         create_session(U, Hash, undefined),
-                    {reply, {true, UID, AID}, St}
+                    {reply, {true, AID, Role}, St}
             end;
-        [#session{uid = UID, aid = AID}] = Session ->
+        [#session{aid = AID, role = Role}] = Session ->
             reset_timer(Session),
-            {reply, {true, UID, AID}, St}
+            {reply, {true, AID, Role}, St}
     end;
 handle_call({refresh, U}, _From, St) ->
     case ets:lookup(?TAB, U) of
@@ -187,10 +206,10 @@ handle_cast({first_auth, Pid, User, Res}, #st{pending = Pend,
 		procs = dict:erase(Pid, Procs)},
     case Res of
 	{true, Hash, Sha} ->
-            #session{uid = UID, aid = AID} =
+            #session{aid = AID, role = Role} =
                 create_session(User, Hash, Sha),
 	    {noreply, process_pending(
-                        {true, UID, AID}, Waiting, User, St1)};
+                        {true, AID, Role}, Waiting, User, St1)};
 	false ->
 	    {noreply, process_pending(false, Waiting, User, St1)}
     end.
@@ -249,7 +268,7 @@ first_auth(U, P, Parent) ->
     gen_server:cast(Parent, {first_auth, self(), U, Res}).
 
 first_auth_(U, P) ->
-    case exodm_db_user:lookup_attr(U, '__password') of
+    case exodm_db_user:lookup_attr(U, password) of
         [] ->
             false;
         [{_, Hash}] ->
@@ -262,8 +281,11 @@ first_auth_(U, P) ->
                     {ok, HashStr} = bcrypt:hashpw(P, Hash),
                     case list_to_binary(HashStr) of
                         Hash ->
+                            ?debug("bcrypt hash matches for ~p~n", [U]),
                             {true, Hash, sha(Hash, P)};
                         _ ->
+                            ?debug("bcrypt hash doesn't match for ~p~n"
+                                   "~p | ~p~n", [U, HashStr, Hash]),
                             false
                     end
             end
@@ -278,12 +300,11 @@ create_session(User, Hash, Sha) ->
     Sn.
 
 get_session_data(#session{user = User} = S) ->
-    [{_, UID}] = exodm_db_user:lookup_attr(User,<<"__uid">>),
-    [{_, AID}] = exodm_db_user:lookup_attr(User,<<"__aid">>),
-    Access = exodm_db_user:list_access(User),
-    S#session{uid = UID,
-              aid = AID,
-              access = Access}.
+    %% [{_, AID}] = exodm_db_user:lookup_attr(User,<<"__aid">>),
+    [{_,{AID,Role}}|_] = Access = exodm_db_user:list_access(User),
+    S#session{aid = AID,
+              role = Role,
+              access = [{A,R} || {_,{A,R}} <- Access]}.
 
 sha(Hash, Passwd) ->
     crypto:sha_mac(Hash, Passwd).

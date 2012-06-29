@@ -13,33 +13,82 @@
 -define(GA_CUSTOMER_ID, 16#00000001).
 
 
-run_euc() ->
-    %% Don't know why this is needed...
-    BCryptRes = bcrypt:start(),
-    io:fwrite("bcrypt:start() -> ~p~n", [BCryptRes]),
-    {ok, AID} = exodm_db_account:new(<<"feuerlabs">>, []),
-    {ok, GID} = exodm_db_group:new(
-		  AID, [{name, <<"euc">>},
-			{url, "http://localhost:8000/exodm/test_callback"}]),
-    {ok, _UID} = exodm_db_user:new(
-		   AID, <<"euc">>,
+%% each entity has a unique system-generated id:
+%% account: ANNNNNNNN
+%% group  : GNNNNNNNN
+%% device : DNNNNNNNN
+%% user   : UNNNNNNNN
+
+test1() ->
+    {ok, _AID} = exodm_db_account:new(
 		   [
-		    {fullname, <<"EUC Demo 2012">>},
-		    {'__password', <<"exosense">>},
-		    {access, {1,AID,GID,rw}}
+		    {name, <<"feuer">>},
+		    {admin, [{uname, <<"magnus">>},
+			     {fullname, <<"Magnus Feuer">>},
+			     {password, <<"feuerlabs">>}]}
 		   ]),
+    {ok, _AID2} = exodm_db_account:new(
+		    [
+		     {name, <<"wiger">>},
+		     {admin, [{uname, <<"ulf">>},
+			      {fullname, <<"Ulf Wiger">>},
+			      {password, <<"wiger">>}]}
+		     ]).
+
+run_rfzone() ->
+    {ok, AID} = exodm_db_account:new(
+		  [{name, <<"seazone">>},
+		   {admin, [
+			    {uname, <<"seazone">>},
+			    {fullname, <<"Seazone">>},
+			    {password, <<"seazone">>}
+			   ]}]),
+    {ok, GID} = exodm_db_group:new(
+		  AID, [{name, <<"seazone">>},
+			{url, "http://localhost:8080/exodm/callback"}]),
     store_rfzone_yang(),
     exodm_db_device:new(AID,
+			<<"x00000001">>,
 			[
 			 {'__ck', <<2,0,0,0,0,0,0,0>>},
 			 {'__sk', <<1,0,0,0,0,0,0,0>>},
-			 {msisdn, <<"0701$DID">>},
+			 {msisdn, <<"070100000000000">>},
+			 {groups, [GID]},
+			 {yang, <<"rfzone.yang">>}
+			]).
+
+run_ga() ->
+    %% Don't know why this is needed...
+    {ok, AID} = exodm_db_account:new(
+		  <<"getaround">>,
+		  [{admin, [
+			    {uid, <<"ga">>},
+			    {fullname, <<"Getaround">>},
+			    {password, <<"wewontechcrunch2011">>}
+			   ]}]),
+    {ok, GID} = exodm_db_group:new(
+		  AID, [{name, <<"gagroup">>},
+			{url, "http://gacallback:8080/exodm/callback"}]),
+    %% {ok, _UID} = exodm_db_user:new(
+    %% 		   AID, <<"euc">>,
+    %% 		   [
+    %% 		    {fullname, <<"EUC Demo 2012">>},
+    %% 		    {'__password', <<"exosense">>},
+    %% 		    {access, {1,AID,GID,rw}}
+    %% 		   ]),
+    %% store_rfzone_yang(),
+    exodm_db_device:new(AID,
+                        <<"4711">>, 
+			[
+			 {'__ck', <<2,0,0,0,0,0,0,0>>},
+			 {'__sk', <<1,0,0,0,0,0,0,0>>},
+			 {msisdn, <<"070100000000000">>},
 			 {group, {1, GID}},
 			 {yang, <<"rfzone.yang">>}
 			]).
 
 store_rfzone_yang() ->
-    exodm_db_session:set_auth_as_user(<<"euc">>),
+    exodm_db_session:set_auth_as_user(<<"seazone">>),
     {ok, UART} = file:read_file(
 		   filename:join(code:priv_dir(nmea_0183), "uart.yang")),
     exodm_db_yang:write("uart.yang", UART),
@@ -47,7 +96,7 @@ store_rfzone_yang() ->
 		  filename:join(code:priv_dir(rfzone), "rfzone.yang")),
     exodm_db_yang:write("rfzone.yang", Bin).
 
-run_ga() ->
+run_ga_old() ->
     exodm_db_group:new(?GA_CUSTOMER_ID, 1, 
 		       [{name, "default"},{url,  ""}]),
     exodm_db_group:new(?GA_CUSTOMER_ID, 2, 

@@ -57,9 +57,13 @@ expand({sys, Params}, Env) ->
 		element(1,P) =/= app
 	  ],
     Ps2 = replace_rels(Ps1, Env),
-    AllApps = lists:usort(lists:concat([As || {rel,_,_,As} <- Ps2])),
+    AllApps = lists:usort(
+		  [app_name(A) ||
+		      A <- lists:concat(
+			     [As || {rel,_,_,As} <- Ps2])]),
     {sys, fix_lib_dirs(AllApps,
-		       Ps2 ++ [{app, app_name(A), [{incl_cond, include}]} || A <- AllApps])};
+		       Ps2 ++ [{app, A, [{incl_cond, include}]} ||
+				  A <- AllApps])};
 expand(T, _) ->
     T.
 
