@@ -13,11 +13,17 @@
 -define(DB, kvdb_conf).
 
 init() ->
-    add_table(tab_name(system)),
-    add_table(tab_name(shared)).
+    exodm_db:in_transaction(
+      fun(_) ->
+              add_table(tab_name(system)),
+              add_table(tab_name(shared))
+      end).
 
 init(AID) ->
-    add_table(tab_name(AID)).
+    exodm_db:in_transaction(
+      fun(_) ->
+              add_table(tab_name(AID))
+      end).
 
 add_table(Tab) ->
     kvdb:add_table(?DB, Tab, [{encoding, {raw,sext,raw}},
@@ -69,7 +75,13 @@ read(AID0, Y) ->
 write(File, YangSpec) ->
     write(get_aid(), File, YangSpec).
 
-write(AID0, File, Y) ->
+write(AID, File, Y) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+              write_(AID, File, Y)
+      end).
+
+write_(AID0, File, Y) ->
     AID = exodm_db:account_id_key(AID0),
     Opts = [{open_hook, fun(F, Os) when F == File ->
 				open_bin_hook(AID, F, [{data,Y}|Os]);
@@ -91,7 +103,10 @@ delete(File) ->
     delete(get_aid(), File).
 
 delete(AID, File) ->
-    kvdb:delete(?DB, tab_name(AID), File).
+    exodm_db:in_transaction(
+      fun(_) ->
+              kvdb:delete(?DB, tab_name(AID), File)
+      end).
 
 rpcs(File) ->
     rpcs(get_aid(), File).

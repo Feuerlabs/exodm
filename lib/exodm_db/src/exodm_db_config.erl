@@ -14,6 +14,12 @@
 
 %% Move to CK3!
 new(UID, DID, Target, Options) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      new_(UID, DID, Target, Options)
+      end).
+
+new_(UID, DID, Target, Options) ->
     Key = key(UID, DID, Target),
     insert(Key, <<"kill-switch">>,
 	   do_option(<<"kill-switch">>,Options,<<"0">>)),
@@ -117,6 +123,9 @@ new(UID, DID, Target, Options) ->
 %%
 %%
 update(UID, DID, Target, Options) ->
+    exodm_db:in_transaction(fun(_) -> update_(UID, DID, Target, Options) end).
+
+update_(UID, DID, Target, Options) ->
     Key0 = key(UID, DID, Target),
     case validate_options(Options) of
 	true ->

@@ -41,13 +41,22 @@
 %% FIXME option validation
 
 init(AID) ->
-    kvdb_conf:add_table(table(AID), []).
+    exodm_db:in_transaction(
+      fun(_) ->
+	      kvdb_conf:add_table(table(AID), [])
+      end).
 
 table(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     <<AID/binary, "_dev">>.
 
-new(AID0, ID0, Options) ->
+new(AID, ID, Options) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      new_(AID, ID, Options)
+      end).
+
+new_(AID0, ID0, Options) ->
     ?info("new(~p, ~p, ~p)~n", [AID0, ID0, Options]),
 %%    DID = exodm_db_system:new_did(),
     AID = exodm_db:account_id_key(AID0),
@@ -75,7 +84,13 @@ new(AID0, ID0, Options) ->
     ok.
 
 %% FIXME validate every item BEFORE insert!
-update(AID0, DID0, Options) ->
+update(AID, DID, Options) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      update_(AID, DID, Options)
+      end).
+
+update_(AID0, DID0, Options) ->
     DID = exodm_db:encode_id(DID0),
     AID = exodm_db:account_id_key(AID0),
     Tab = table(AID),

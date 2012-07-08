@@ -35,9 +35,18 @@
 %% /account/<AID>/user/<UID>/access[<u>]/__perm = Device group access
 %%
 init() ->
-    exodm_db:add_table(<<"user">>, [alias]).
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:add_table(<<"user">>, [alias])
+      end).
 
-new(AID0, UName, Role, Options) ->
+new(AID, UName, Role, Options) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      new_(AID, UName, Role, Options)
+      end).
+
+new_(AID0, UName, Role, Options) ->
     [_] = exodm_db:nc_key_split(exodm_db:decode_id(UName)),  %% validation!
     Key = exodm_db:encode_id(UName),
     AID = exodm_db:account_id_key(AID0),
@@ -67,7 +76,13 @@ new(AID0, UName, Role, Options) ->
 	    {ok, UName}
     end.
 
-add_alias(UID0, Alias) ->
+add_alias(UID, Alias) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      add_alias_(UID, Alias)
+      end).
+
+add_alias_(UID0, Alias) ->
     UID = exodm_db:encode_id(UID0),
     case exist(UID) of
 	true ->
@@ -116,6 +131,12 @@ ix_alias({K, _, V}) ->
 %%     exodm_db_system:new_uid().
 
 update(UID, Options) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      update_(UID, Options)
+      end).
+
+update_(UID, Options) ->
     Tab = <<"user">>,
     Key = key(UID),
     Ops =
@@ -214,7 +235,13 @@ insert(Tab, Key, Item, Value) ->
     Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
     exodm_db:write(Tab, Key1, Value).
 
-add_access(AID0, UName0, RID) ->
+add_access(AID, UName, RID) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      t_add_access(AID, UName, RID)
+      end).
+
+t_add_access(AID0, UName0, RID) ->
     AID = exodm_db:account_id_key(AID0),
     UName = exodm_db:encode_id(UName0),
     case exodm_db_account:exist(AID) of

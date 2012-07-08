@@ -20,6 +20,9 @@
 %% user   : UNNNNNNNN
 
 test1() ->
+    exodm_db:in_transaction(fun(_) -> test1_() end).
+
+test1_() ->
     {ok, _AID} = exodm_db_account:new(
 		   [
 		    {name, <<"feuer">>},
@@ -36,6 +39,9 @@ test1() ->
 		     ]).
 
 run_rfzone() ->
+    exodm_db:in_transaction(fun(_) -> run_rfzone_() end).
+
+run_rfzone_() ->
     {ok, AID} = exodm_db_account:new(
 		  [{name, <<"seazone">>},
 		   {admin, [
@@ -58,6 +64,9 @@ run_rfzone() ->
 			]).
 
 run_ga() ->
+    exodm_db:in_transaction(fun(_) -> run_ga_() end).
+
+run_ga_() ->
     %% Don't know why this is needed...
     {ok, AID} = exodm_db_account:new(
 		  <<"getaround">>,
@@ -97,6 +106,9 @@ store_rfzone_yang() ->
     exodm_db_yang:write("rfzone.yang", Bin).
 
 run_ga_old() ->
+    exodm_db:in_transaction(fun(_) -> run_ga_old_() end).
+
+run_ga_old_() ->
     exodm_db_group:new(?GA_CUSTOMER_ID, 1, 
 		       [{name, "default"},{url,  ""}]),
     exodm_db_group:new(?GA_CUSTOMER_ID, 2, 
@@ -122,6 +134,9 @@ run_ga_old() ->
       end, lists:seq(100, 123)).
 
 run_tony() ->
+    exodm_db:in_transaction(fun(_) -> run_tony_() end).
+
+run_tony_() ->
     exodm_db_group:new(12, 1, [{name, "default"},{url,  ""}]),
     exodm_db_group:new(12, 2, [{name, "temp"},
 			       {url, "http://www.rogvall.se/exodm_client/temp_reading"}]),
@@ -171,6 +186,9 @@ run_tony() ->
     ok.
 
 run_love() ->
+    exodm_db:in_transaction(fun(_) -> run_love_() end).
+
+run_love_() ->
     exodm_db_group:new(13, 1, [{name, "default"},{url,  ""}]),
     exodm_db_user:new(13, <<"love">>,
 		      [{name,"love"},
@@ -194,7 +212,10 @@ run_love() ->
 	      exodm_db_config:new(13, DID, running, [])
       end, lists:seq(2000, 2099)).
 
-run_ulf() ->    
+run_ulf() ->
+    exodm_db:in_transaction(fun(_) -> run_ulf_() end).
+
+run_ulf_() ->
     exodm_db_group:new(14, 1, [{name, "default"},{url,  ""}]),
     exodm_db_user:new(14, <<"ulf">>,
 		      [{name,"ulf"},
@@ -216,7 +237,10 @@ run_ulf() ->
 	      exodm_db_config:new(14, DID, running, [])
       end, lists:seq(1000, 1049)).
 
-run_marcus() ->    
+run_marcus() ->
+    exodm_db:in_transaction(fun(_) -> run_marcus_() end).
+
+run_marcus_() ->
     exodm_db_group:new(15, 1, [{name, "default"},{url,  ""}]),
     exodm_db_user:new(15, <<"marcus">>,
 		      [{name,"marcus"},
@@ -237,8 +261,8 @@ run_marcus() ->
 	      exodm_db_config:new(15, DID, candidate, []),
 	      exodm_db_config:new(15, DID, running, [])
       end, lists:seq(10000, 10009)).
-    
-    
+
+
 %%
 %% Setup typical test data
 %%
@@ -246,13 +270,16 @@ run_marcus() ->
 %%
 run() ->
     %% add users
-    run_ga(),
+    exodm_db:transaction(
+      fun(_) ->
+	      run_ga(),
 
-    run_tony(),
-    run_love(),
-    run_ulf(),
-    run_marcus(),
+	      run_tony(),
+	      run_love(),
+	      run_ulf(),
+	      run_marcus(),
 
-    ok.
-    
+	      ok
+      end).
+
 

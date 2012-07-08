@@ -66,17 +66,26 @@ new(PackageFile) ->
     new(<<"packages">>, PackageFile).
 
 new(ParentKey, PackageFile) ->
-    load_file(ParentKey, PackageFile).
+    exodm_db:in_transaction(
+      fun(_) ->
+	      load_file(ParentKey, PackageFile)
+      end).
 
 %% Load all packages in the directory Dir
 load_directory(Dir) ->
     load_directory(<<"packages">>, Dir).
 
 load_directory(ParentKey, Dir) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      load_directory_(ParentKey, Dir)
+      end).
+
+load_directory_(ParentKey, Dir) ->
     case file:list_dir(Dir) of
 	{ok,Fs} ->
 	    lists:map(
-	      fun(F) -> 
+	      fun(F) ->
 		      load_file(ParentKey, filename:join(Dir, F))
 	      end, Fs);
 	Error ->
@@ -87,6 +96,12 @@ load_file(File) ->
     load_file(<<"packages">>, File).
 
 load_file(ParentKey, File) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      load_file_(ParentKey, File)
+      end).
+
+load_file_(ParentKey, File) ->
     case erl_opkg:get_control(File) of
 	{ok, CData} ->
 	    Package = proplists:get_value(<<"Package">>, CData),

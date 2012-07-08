@@ -22,7 +22,10 @@
 -define(TAB, <<"acct">>).
 
 init() ->
-    exodm_db:add_table(?TAB, [alias]).
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:add_table(?TAB, [alias])
+      end).
 
 table() ->
     ?TAB.
@@ -34,6 +37,12 @@ table() ->
 
 %% FIXME option validation
 new(Options) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      new_(Options)
+      end).
+
+new_(Options) ->
     %% initial check: there must be an admin
     UserOpts = case lists:keyfind(admin, 1, Options) of
 		   false ->
@@ -68,7 +77,13 @@ initial_admin() ->
 
 %% <AID>/roles/<Role>/descr
 %%                   /groups/<gid> = access()
-create_role(AID0, UName, Opts) ->
+create_role(AID, UName, Opts) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      t_create_role(AID, UName, Opts)
+      end).
+
+t_create_role(AID0, UName, Opts) ->
     AID = check_access(AID0),
     case exodm_db_user:exist(UName) of
 	true ->
@@ -147,7 +162,13 @@ valid_access(A) ->
 %%     end.
 
 %% FIXME validate every item BEFORE insert!
-update(AID0, Options) ->
+update(AID, Options) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      t_update(AID, Options)
+      end).
+
+t_update(AID0, Options) ->
     AID = check_access(AID0),
     update_(AID, Options).
 

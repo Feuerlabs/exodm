@@ -8,6 +8,9 @@
 -module(exodm_db).
 
 -export([init/0]).
+
+-export([transaction/1, in_transaction/1]).
+
 -export([group_id_key/1, group_id_num/1, group_id_value/1]).
 -export([role_id_key/1, role_id_num/1, role_id_value/1]).
 -export([account_id_key/1, account_id_num/1, account_id_value/1]).
@@ -85,6 +88,12 @@ init() ->
     exodm_db_system:init(),
     exodm_db_yang:init().
 
+
+transaction(F) when is_function(F, 1) ->
+    kvdb:transaction(kvdb_conf, F).
+
+in_transaction(F) when is_function(F, 1) ->
+    kvdb:in_transaction(kvdb_conf, F).
 
 %% user_id_key(<<$u,$$, _/binary>> = UID) -> UID;
 %% user_id_key(ID) when is_binary(ID) ->

@@ -21,7 +21,10 @@
 
 %% FIXME option validation
 new(AID, Options) ->
-    new(AID, exodm_db_account:new_group_id(AID), Options).
+    exodm_db:in_transaction(
+      fun(_) ->
+	      new(AID, exodm_db_account:new_group_id(AID), Options)
+      end).
 
 new(AID, GID, Options) ->
     Key = key(AID, GID),
@@ -37,6 +40,12 @@ new(AID, GID, Options) ->
 
 %% FIXME validate every item BEFORE insert!
 update(AID, GID, Options) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      update_(AID, GID, Options)
+      end).
+
+update_(AID, GID, Options) ->
     Key = key(AID, GID),
     case read(Key, name) of
 	[] ->
@@ -58,6 +67,12 @@ update(AID, GID, Options) ->
     end.
 
 delete(AID, GID) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      delete_(AID, GID)
+      end).
+
+delete_(AID, GID) ->
     Key = key(AID, GID),
     case exist(Key) of
 	true ->
