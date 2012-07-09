@@ -47,7 +47,7 @@ git_vsn(Opts) ->
 	    {ok, Cwd} = file:get_cwd(),
 	    Dir = case Opts of
 		      [] -> root_dir();
-		      [D|_] -> D
+		      ["-d",D|_] -> D
 		  end,
 	    ok = file:set_cwd(Dir),
 	    Res = os:cmd("git describe --always --tags "
