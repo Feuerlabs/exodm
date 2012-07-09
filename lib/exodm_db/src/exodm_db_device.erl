@@ -17,7 +17,7 @@
 -export([lookup_position/2, lookup_keys/2]).
 -export([lookup_groups/2]).
 -export([lookup_group_notifications/2]).
-
+-export([table/1]).
 -export([client_auth_config/2]).
 
 -include_lib("lager/include/log.hrl").

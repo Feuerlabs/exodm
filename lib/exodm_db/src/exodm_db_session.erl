@@ -8,7 +8,7 @@
 -export([get_user/0, get_role/0, get_aid/0, get_auth/0]).
 -export([spawn_child/1, spawn_link_child/1, spawn_monitor_child/1]).
 
--export([set_auth_as_user/1,
+-export([set_auth_as_user/1, set_auth_as_user/2,
          set_trusted_proc/0]).
 
 -export([start_link/0,
@@ -81,11 +81,15 @@ is_trusted_proc() ->
 
 
 set_auth_as_user(User) ->
+    set_auth_as_user(User, kvdb_conf).
+
+set_auth_as_user(User, Db) ->
     case ets:lookup(?TAB, User) of
         [] ->
-            case check_auth_(User, gen_server:call(
-                                     ?MODULE,
-                                     {make_user_active, to_binary(User)})) of
+            case check_auth_(
+                   User, gen_server:call(
+                           ?MODULE,
+                           {make_user_active, to_binary(User), Db})) of
                 {true,_,_} = Res ->
                     set_trusted_proc(),
                     Res;
@@ -172,17 +176,20 @@ handle_call({auth, U, P}, From, St) ->
 		    {reply, false, St}
 	    end
     end;
-handle_call({make_user_active, U}, _, St) ->
+handle_call({make_user_active, U, Db}, _, St) ->
     case ets:lookup(?TAB, U) of
         [] ->
-            case first_auth_(U, no_password) of
-                false ->
-                    {reply, false, St};
-                {true, Hash, undefined} ->
-                    #session{aid = AID, role = Role} =
-                        create_session(U, Hash, undefined),
-                    {reply, {true, AID, Role}, St}
-            end;
+            kvdb:in_transaction(
+              Db, fun(_) ->
+                          case first_auth_(U, no_password) of
+                              false ->
+                                  {reply, false, St};
+                              {true, Hash, undefined} ->
+                                  #session{aid = AID, role = Role} =
+                                      create_session(U, Hash, undefined),
+                                  {reply, {true, AID, Role}, St}
+                          end
+                  end);
         [#session{aid = AID, role = Role}] = Session ->
             reset_timer(Session),
             {reply, {true, AID, Role}, St}

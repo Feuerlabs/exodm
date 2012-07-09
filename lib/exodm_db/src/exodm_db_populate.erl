@@ -64,20 +64,22 @@ run_rfzone_() ->
 			]).
 
 run_ga() ->
-    exodm_db:in_transaction(fun(_) -> run_ga_() end).
+    exodm_db:in_transaction(fun(Db) -> run_ga_(Db) end).
 
-run_ga_() ->
+run_ga_(Db) ->
     %% Don't know why this is needed...
     {ok, AID} = exodm_db_account:new(
-		  <<"getaround">>,
-		  [{admin, [
-			    {uid, <<"ga">>},
+		  [
+		   {name, <<"getaround">>},
+		   {admin, [
+			    {uname, <<"ga">>},
 			    {fullname, <<"Getaround">>},
 			    {password, <<"wewontechcrunch2011">>}
 			   ]}]),
     {ok, GID} = exodm_db_group:new(
 		  AID, [{name, <<"gagroup">>},
 			{url, "http://gacallback:8080/exodm/callback"}]),
+    store_ck3_yang(Db),
     %% {ok, _UID} = exodm_db_user:new(
     %% 		   AID, <<"euc">>,
     %% 		   [
@@ -91,10 +93,37 @@ run_ga_() ->
 			[
 			 {'__ck', <<2,0,0,0,0,0,0,0>>},
 			 {'__sk', <<1,0,0,0,0,0,0,0>>},
-			 {msisdn, <<"070100000000000">>},
+			 {msisdn, <<"07014711">>},
 			 {group, {1, GID}},
 			 {yang, <<"rfzone.yang">>}
-			]).
+			]),
+    lists:foreach(
+      fun(DID0) ->
+	      DID = devid(DID0),
+	      exodm_db_device:new(?GA_CUSTOMER_ID, DID,
+				  [{'__ck',<<2,0,0,0,0,0,0,0>>},
+				   {'__sk',<<1,0,0,0,0,0,0,0>>},
+				   {msisdn,"0701"++integer_to_list(DID0)},
+				   {groups, [GID]}
+				  ]),
+	      exodm_db_config:new(AID, DID, candidate, []),
+	      exodm_db_config:new(AID, DID, running, [])
+      end, lists:seq(100, 123)).
+
+devid(I) when is_integer(I) ->
+    list_to_binary(integer_to_list(I)).
+
+store_ck3_yang(Db) ->
+    exodm_db_session:set_auth_as_user(<<"ga">>, Db),
+    store_yang(ck3, "exosense.yang", "yang/exosense.yang"),
+    store_yang(ck3, "ieft-inet-types.yang", "yang/ietf-inet-types.yang"),
+    store_yang(ck3, "ckp.yang", "yang/ckp.yang"),
+    store_yang(ck3, "ckp-cfg.yang", "yang/ckp-cfg.yang").
+
+store_yang(App, F, Path) ->
+    {ok, Bin} = file:read_file(
+		  filename:join(code:lib_dir(App), Path)),
+    exodm_db_yang:write(F, Bin).
 
 store_rfzone_yang() ->
     exodm_db_session:set_auth_as_user(<<"seazone">>),
