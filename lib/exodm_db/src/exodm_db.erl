@@ -556,6 +556,8 @@ encode_id(L) when is_list(L) ->
     encode_id(list_to_binary(L));
 encode_id(<<$=, _/binary>> = Enc) ->
     Enc;
+encode_id(I) when is_integer(I) ->
+    encode_id(list_to_binary(integer_to_list(I)));
 encode_id(Bin) when is_binary(Bin) ->
     Enc = << <<(id_char(C))/binary>> || <<C>> <= Bin >>,
     <<$=, Enc/binary>>.
