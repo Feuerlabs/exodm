@@ -122,7 +122,7 @@ store_ck3_yang(Db) ->
 
 store_yang(App, F, Path) ->
     {ok, Bin} = file:read_file(
-		  filename:join(code:lib_dir(App), Path)),
+		  filename:join(code:priv_dir(App), Path)),
     exodm_db_yang:write(F, Bin).
 
 store_rfzone_yang() ->
