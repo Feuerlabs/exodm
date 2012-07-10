@@ -41,21 +41,31 @@ help() ->
 tar([V]) ->
     Base = "exodm_" ++ V,
     Top = filename:join(Dir = rel_lib_dir(), Base),
-    Target = filename:join(Dir, Base ++ ".tgz"),
-    case filelib:is_regular(Target) of
+    Target0 = filename:join(Dir, Base ++ ".tgz"),
+    Target = filename:absname(Target0),
+    case filelib:is_regular(Target0) of
 	false ->
 	    TmpDir = make_temp_dir(),
 	    Res = os:cmd(Cmd = "cp -r " ++ Top ++ " " ++ TmpDir ++ "/"),
 	    io:fwrite("~s ->~n  ~s~n", [Cmd, Res]),
 	    TmpTop = filename:join(TmpDir, Base),
 	    {ok,_} = beam_lib:strip_release(TmpTop),
-	    TarRes = os:cmd(TarCmd = "tar czf " ++ Target ++ " " ++ TmpTop),
-	    io:fwrite("~s ->~n~s~n", [TarCmd, TarRes]),
+	    make_tar(TmpDir, Base, Target),
+	    %% TarRes = os:cmd(TarCmd = "tar czf " ++ Target ++ " " ++ TmpTop),
+	    %% io:fwrite("~s ->~n~s~n", [TarCmd, TarRes]),
 	    os:cmd("rm -rf " ++ TmpDir),
-	    io:fwrite("Stripped archive in ~s~n", [Target]);
+	    io:fwrite("Stripped archive in ~s~n", [Target0]);
 	true ->
-	    abort("Archive exists [~s]~n", [Target])
+	    abort("Archive exists [~s]~n", [Target0])
     end.
+
+make_tar(Dir, SubDir, Target) ->
+    {ok, Cwd} = file:get_cwd(),
+    ok = file:set_cwd(Dir),
+    TarRes = os:cmd(TarCmd = "tar czf " ++ Target ++ " " ++ SubDir),
+    io:fwrite("~s ->~n~s~n", [TarCmd, TarRes]),
+    file:set_cwd(Cwd).
+
 
 make_temp_dir() ->
     {M,S,U} = os:timestamp(),
