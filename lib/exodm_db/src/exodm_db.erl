@@ -41,6 +41,7 @@
 -export([valid_id_string/1,
 	 encode_id/1,
 	 decode_id/1,
+	 id_key_to_integer/1,
 	 to_hex/1]).
 
 -export([read/1, read/2,
