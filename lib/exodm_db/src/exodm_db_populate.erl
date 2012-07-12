@@ -106,8 +106,8 @@ run_ga_(Db) ->
 				   {msisdn,"0701"++integer_to_list(DID0)},
 				   {groups, [GID]}
 				  ]),
-	      exodm_db_config:new(AID, DID, candidate, []),
-	      exodm_db_config:new(AID, DID, running, [])
+	      exodm_ck3_config:new(AID, DID, candidate, []),
+	      exodm_ck3_config:new(AID, DID, running, [])
       end, lists:seq(100, 123)).
 
 devid(I) when is_integer(I) ->
@@ -158,8 +158,8 @@ run_ga_old_() ->
 				   {msisdn,"0701"++integer_to_list(DID)},
 				   {group, {1,2}}
 				  ]),
-	      exodm_db_config:new(?GA_CUSTOMER_ID, DID, candidate, []),
-	      exodm_db_config:new(?GA_CUSTOMER_ID, DID, running, [])
+	      exodm_ck3_config:new(?GA_CUSTOMER_ID, DID, candidate, []),
+	      exodm_ck3_config:new(?GA_CUSTOMER_ID, DID, running, [])
       end, lists:seq(100, 123)).
 
 run_tony() ->
@@ -186,8 +186,8 @@ run_tony_() ->
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
-	      exodm_db_config:new(12, DID, candidate, []),
-	      exodm_db_config:new(12, DID, running, [])
+	      exodm_ck3_config:new(12, DID, candidate, []),
+	      exodm_ck3_config:new(12, DID, running, [])
       end, lists:seq(1000, 1099)),   
     lists:foreach(
       fun(DID) ->
@@ -197,8 +197,8 @@ run_tony_() ->
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {2, 2}}
 				  ]),
-	      exodm_db_config:new(12, DID, candidate, []),
-	      exodm_db_config:new(12, DID, running, [])
+	      exodm_ck3_config:new(12, DID, candidate, []),
+	      exodm_ck3_config:new(12, DID, running, [])
       end, lists:seq(1100, 1150)),
     lists:foreach(
       fun(DID) ->
@@ -209,8 +209,8 @@ run_tony_() ->
 				   {group, {1, 1}},
 				   {group, {2, 2}}
 				  ]),
-	      exodm_db_config:new(12, DID, candidate, []),
-	      exodm_db_config:new(12, DID, running, [])
+	      exodm_ck3_config:new(12, DID, candidate, []),
+	      exodm_ck3_config:new(12, DID, running, [])
       end, lists:seq(1151, 1199)),
     ok.
 
@@ -237,8 +237,8 @@ run_love_() ->
 				   {msisdn,"07013"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
-	      exodm_db_config:new(13, DID, candidate, []),
-	      exodm_db_config:new(13, DID, running, [])
+	      exodm_ck3_config:new(13, DID, candidate, []),
+	      exodm_ck3_config:new(13, DID, running, [])
       end, lists:seq(2000, 2099)).
 
 run_ulf() ->
@@ -262,8 +262,8 @@ run_ulf_() ->
 				   {msisdn,"07014"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
-	      exodm_db_config:new(14, DID, candidate, []),
-	      exodm_db_config:new(14, DID, running, [])
+	      exodm_ck3_config:new(14, DID, candidate, []),
+	      exodm_ck3_config:new(14, DID, running, [])
       end, lists:seq(1000, 1049)).
 
 run_marcus() ->
@@ -287,8 +287,8 @@ run_marcus_() ->
 				   {msisdn,"07015"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
-	      exodm_db_config:new(15, DID, candidate, []),
-	      exodm_db_config:new(15, DID, running, [])
+	      exodm_ck3_config:new(15, DID, candidate, []),
+	      exodm_ck3_config:new(15, DID, running, [])
       end, lists:seq(10000, 10009)).
 
 

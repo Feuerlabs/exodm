@@ -209,8 +209,15 @@ lookup_position(AID, DID0) ->
 
 dec_ext_key(<<$a, Ia:8/binary, "=", Ix/binary>>) ->
     {<<"a", Ia/binary>>, <<"=", Ix/binary>>};
-dec_ext_key(_) ->
-    error.
+dec_ext_key(Key) ->
+    try
+	AID = exodm_db_session:get_aid(),
+	{exodm_db:account_id_key(AID), exodm_db:encode_id(Key)}
+    catch
+	error:_ ->
+	    error
+    end.
+
 
 enc_ext_key(<<$a,_/binary>> = AID, <<$=, _/binary>> = DID) ->
     <<AID/binary, DID/binary>>;

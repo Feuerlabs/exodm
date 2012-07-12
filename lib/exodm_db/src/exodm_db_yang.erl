@@ -3,12 +3,21 @@
 %% @copyright 2012 Feuerlabs, Inc.
 -module(exodm_db_yang).
 
--export([read/1, read/2,
-	 write/2, write/3,
-	 delete/1, delete/2,
-	 find/2, find/3,
-	 rpcs/1, rpcs/2]).
--export([init/0, init/1]).
+-export([read/1,    %% (YangF) -> read(get_aid(), YangF)
+         read/2,    %% (AID, YangF)
+	 write/2,   %% (YangF, YangSpec) -> write(get_aid(), YangF, YangSpec)
+         write/3,   %% (AID, YangF, YangSpec)
+	 delete/1,  %% delete(YangF) -> delete(get_aid(), YangF)
+         delete/2,  %% (AID, YangF)
+	 find/2,    %% (Index, Value) -> find(get_aid(), Index, Value)
+         find/3,    %% (AID, Index, Value)
+	 rpcs/1,    %% (YangF) -> rpcs(get_aid(), YangF)
+         rpcs/2,    %% (AID, YangF)
+         specs/0,   %% () -> specs(get_aid())
+         specs/1]). %% (AID)
+-export([init/0, init/1,
+         write_system/2
+        ]).
 
 -define(DB, kvdb_conf).
 
@@ -78,11 +87,22 @@ write(File, YangSpec) ->
 write(AID, File, Y) ->
     exodm_db:in_transaction(
       fun(_) ->
-              write_(AID, File, Y)
+              write_(exodm_db:account_id_key(AID), File, Y)
       end).
 
-write_(AID0, File, Y) ->
-    AID = exodm_db:account_id_key(AID0),
+write_system(File, Y) ->
+    case exodm_db_session:is_trusted_proc() of
+        true ->
+            exodm_db:in_transaction(
+              fun(_) ->
+                      write_(system, File, Y)
+              end);
+        false ->
+            error(unauthorized)
+    end.
+
+write_(AID, File0, Y) ->
+    File = to_string(File0),
     Opts = [{open_hook, fun(F, Os) when F == File ->
 				open_bin_hook(AID, F, [{data,Y}|Os]);
 			   (F, Os) ->
@@ -112,7 +132,18 @@ rpcs(File) ->
     rpcs(get_aid(), File).
 
 rpcs(AID, File) ->
-    kvdb:get_attrs(?DB, tab_name(AID), file_key(File), [rpcs]).
+    case kvdb:get_attrs(?DB, tab_name(AID), file_key(File), [rpcs]) of
+        {ok, Res} ->
+            Res;
+        {error,not_found} ->
+            []
+    end.
+
+specs() ->
+    specs(get_aid()).
+
+specs(AID) ->
+    exodm_db:select(tab_name(AID), [{ {'$1','_','_'}, [], ['$1'] }]).
 
 store(AID, File, {module, _, M, L} = Mod, RPCs, Src) ->
     Checksum = compute_checksum(Mod),
@@ -142,16 +173,26 @@ find(AID, Ix, V) ->
 
 open_file_hook(AID, File, Opts) ->
     FBin = to_binary(filename:basename(File)),
-    try case kvdb:get(?DB, tab_name(AID), FBin) of
+    case FBin of
+        <<"user.", Rest/binary>> ->
+            try_file(AID, Rest, Opts);
+        <<"system.", Rest/binary>> ->
+            try_file(system, Rest, Opts);
+        _ ->
+            case try_file(AID, FBin, Opts) of
+                {error, not_found} ->
+                    try_file(system, FBin, Opts);
+                Other ->
+                    Other
+            end
+    end.
+
+try_file(AID, File, Opts) ->
+    try case kvdb:get(?DB, tab_name(AID), File) of
 	    {ok, {_, _, Bin}} ->
 		open_bin_hook(AID, File, [{data,Bin}|Opts]);
-	    {error, _} ->
-                case kvdb:get(?DB, tab_name(system), FBin) of
-                    {ok, {_, _, Bin}} ->
-                        open_bin_hook(system, File, [{data,Bin}|Opts]);
-                    {error,_} ->
-                        {error, enoent}
-                end
+	    {error, _} = Err ->
+                Err
 	end
     catch
 	error:_ ->
@@ -159,7 +200,9 @@ open_file_hook(AID, File, Opts) ->
     end.
 
 open_bin_hook(AID0, File, Opts) ->
-    AID = exodm_db:account_id_key(AID0),
+    AID = if AID0 == system -> <<"system">>;
+             true -> exodm_db:account_id_key(AID0)
+          end,
     Bin = proplists:get_value(data, Opts, <<>>),
     case file:open(filename:join(AID, File), [read, write, ram, binary]) of
 	{ok, Fd} ->
@@ -169,6 +212,9 @@ open_bin_hook(AID0, File, Opts) ->
 	{error, _} ->
 	    {error, enoent}
     end.
+
+to_string(X) ->
+    binary_to_list(exodm_db:to_binary(X)).
 
 to_binary(X) ->
     exodm_db:to_binary(X).

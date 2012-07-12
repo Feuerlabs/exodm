@@ -7,7 +7,7 @@
 
 -module(exodm_db_account).
 
--export([new/1, update/2, lookup/1, exist/1]).
+-export([new/1, update/2, lookup/1, lookup_by_name/1, exist/1]).
 -export([create_role/3]).
 -export([list_account_keys/0, list_account_keys/1]).
 -export([fold_accounts/2, fold_accounts/3]).
@@ -24,7 +24,7 @@
 init() ->
     exodm_db:in_transaction(
       fun(_) ->
-	      exodm_db:add_table(?TAB, [alias])
+	      exodm_db:add_table(?TAB, [name])
       end).
 
 table() ->
@@ -208,7 +208,8 @@ update_(Key = AID, Options) ->
 	  end, Options),
     lists:foreach(fun(Op) -> Op() end, Ops).
 
-lookup(AID) ->
+lookup(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
     lookup_(key(AID)).
 
 lookup_(Key) ->
@@ -216,6 +217,17 @@ lookup_(Key) ->
     [{id,ID}] ++
 	read(Key,name) ++
 	read(Key, admin).
+
+lookup_by_name(Name) ->
+    Matches = kvdb:index_get(kvdb_conf, ?TAB, name, Name),
+    %% e.g. [{<<"a00000001*name">>,[],<<"getaround">>}]
+    lists:foldr(
+      fun({Key, _, _}, Acc) ->
+	      case exodm_db:kvdb_key_split(Key) of
+		  [ID, _] -> [ID|Acc];
+		  _       -> Acc
+	      end
+      end, [], Matches).
 
 %% get_admin_uid(Admin) ->
 %%     case exodm_db_system:get_uid_user(Admin) of
@@ -230,8 +242,9 @@ lookup_(Key) ->
 %% 	    Admin
 %%     end.
 
-exist(Acct) ->
-    exist_(key(Acct)).
+exist(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    exist_(key(AID)).
 
 exist_(Key) ->
     case read(Key,name) of

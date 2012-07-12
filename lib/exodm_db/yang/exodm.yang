@@ -1,7 +1,7 @@
-module exodm-cfg {
+module exodm {
 
-    namespace "http://feuerlabs.com/exodm-cfg";
-    prefix cfg;
+    namespace "http://feuerlabs.com/exodm";
+    prefix exodm;
 
     import ietf-inet-types {
         prefix inet;
@@ -12,7 +12,7 @@ module exodm-cfg {
     // INTERNAL INFO!
     // <uid>/groups/<gid>/name
     // <uid>/groups/<gid>/url
-    // 
+    //
     list groups {
 	description "Device group information";
 
@@ -29,7 +29,7 @@ module exodm-cfg {
 
 	leaf notification-url {
 	    description "Where to send notifications";
-	    type inet:url;
+	    type inet:uri;
 	}
     }
 
@@ -60,18 +60,18 @@ module exodm-cfg {
 	list groups {
 	    description "Device group member ship";
 	    key "id";
-	    
+
 	    leaf id {
-		description "access index"
-		type uint32;
+	      description "access index";
+	      type uint32;
 	    }
-	    
+
 	    leaf __gid {
 		description "group id";
 		type uint32;
 	    }
 	}
-	
+
 	leaf msisdn {
 	    description "phone number used to access device if any";
 	    type string;
@@ -141,28 +141,71 @@ module exodm-cfg {
 	list access {
 	    description "Device group access";
 	    key "id";
-	    
+
 	    leaf id {
-		description "access index"
-		type uint32;
+	      description "access index";
+	      type uint32;
 	    }
 
 	    leaf __uid {
-		description "Device owner id";
-		type uint32;
+	      description "Device owner id";
+	      type uint32;
 	    }
 
 	    leaf __gid {
-		description "group name";
-		type uint32;
+	      description "group name";
+	      type uint32;
 	    }
 
 	    leaf __perm {
-		description "group permissions, r,w or rw";
-		type string; 
+	      description "group permissions, r,w or rw";
+	      type string;
 	    }
 	}
-
     }
-    
+
+    rpc create-config-data {
+      description "RPC to create device config data";
+      input {
+	leaf name {
+	  description "Name of the config data set";
+	  type string {
+	    length "1..32";
+	  }
+	}
+	leaf yang {
+	  description "Name of the corresponding yang file - must exist.";
+	  type string {
+	    length "1..32";
+	  }
+	}
+	anyxml values {
+	  description "Configuration values (validated against the yang spec)";
+	}
+      }
+
+      output {
+	leaf result {
+	  type enumeration {
+	    enum complete {
+	      description "Operation has completed successfully.";
+	      value 0;
+	    }
+	    enum name-exists {
+	      description "A config data set with that name already exists.";
+	      value 1;
+	    }
+	    enum no-such-yang {
+	      description "No yang spec of the given name has been registered.";
+	      value 2;
+	    }
+	    enum validation-error {
+	      description "The given values don't match the yang specification.";
+	      value 3;
+	    }
+	  }
+	}
+      }
+    }
 }
+

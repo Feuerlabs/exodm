@@ -9,7 +9,8 @@
 -export([spawn_child/1, spawn_link_child/1, spawn_monitor_child/1]).
 
 -export([set_auth_as_user/1, set_auth_as_user/2,
-         set_trusted_proc/0]).
+         set_trusted_proc/0,
+         is_trusted_proc/0]).
 
 -export([start_link/0,
 	 init/1,
@@ -57,10 +58,37 @@ refresh() ->
     end.
 
 logout() ->
-    logout(get('$exodm_user')).
+    case get_auth_() of
+        {User, _, _} ->
+            do_logout(User),
+            del_auth_(),
+            unset_trusted_proc(),
+            ok;
+        undefined ->
+            ok
+    end.
 
-logout(User) ->
-    gen_server:call(?MODULE, {logout, to_binary(User)}).
+logout(User0) ->
+    User = to_binary(User0),
+    case get_auth_() of
+        {User, _, _} ->
+            do_logout(User),
+            del_auth_(),
+            unset_trusted_proc();
+        _ ->
+            case is_trusted_proc() of
+                true ->
+                    do_logout(User),
+                    ok;
+                false ->
+                    error(unauthorized)
+            end
+    end,
+    ok.
+
+do_logout(User) ->
+    gen_server:call(?MODULE, {logout, User}).
+
 
 is_active() ->
     is_active(get_user()).
@@ -76,6 +104,9 @@ set_trusted_proc() ->
     put('$exodm_trusted_proc', true),
     ok.
 
+unset_trusted_proc() ->
+    erase('$exodm_trusted_proc').
+
 is_trusted_proc() ->
     get('$exodm_trusted_proc') == true.
 
@@ -90,15 +121,14 @@ set_auth_as_user(User, Db) ->
                    User, gen_server:call(
                            ?MODULE,
                            {make_user_active, to_binary(User), Db})) of
-                {true,_,_} = Res ->
-                    set_trusted_proc(),
+                {true,AID,Role} = Res ->
+                    put_auth_({User, AID, Role}),
                     Res;
                 false ->
                     false
             end;
         [#session{aid = AID, role = Role}] ->
             put_auth_({User, AID, Role}),
-            put('$exodm_system_proc', true),
             {true, AID, Role}
     end.
 
@@ -133,6 +163,7 @@ if_active_(_, _) ->
 
 
 get_auth_() -> get('$exodm_auth').
+del_auth_() -> erase('$exodm_auth').
 put_auth_({U, AID, Role}) -> put('$exodm_auth', {U, AID, Role}).
 
 auth_f(F) ->
