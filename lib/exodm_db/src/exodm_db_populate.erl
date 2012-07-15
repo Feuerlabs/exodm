@@ -64,20 +64,22 @@ run_rfzone_() ->
 			]).
 
 run_ga() ->
-    exodm_db:in_transaction(fun(_) -> run_ga_() end).
+    exodm_db:in_transaction(fun(Db) -> run_ga_(Db) end).
 
-run_ga_() ->
+run_ga_(Db) ->
     %% Don't know why this is needed...
     {ok, AID} = exodm_db_account:new(
-		  <<"getaround">>,
-		  [{admin, [
-			    {uid, <<"ga">>},
+		  [
+		   {name, <<"getaround">>},
+		   {admin, [
+			    {uname, <<"ga">>},
 			    {fullname, <<"Getaround">>},
 			    {password, <<"wewontechcrunch2011">>}
 			   ]}]),
     {ok, GID} = exodm_db_group:new(
 		  AID, [{name, <<"gagroup">>},
 			{url, "http://gacallback:8080/exodm/callback"}]),
+    store_ck3_yang(Db),
     %% {ok, _UID} = exodm_db_user:new(
     %% 		   AID, <<"euc">>,
     %% 		   [
@@ -91,10 +93,37 @@ run_ga_() ->
 			[
 			 {'__ck', <<2,0,0,0,0,0,0,0>>},
 			 {'__sk', <<1,0,0,0,0,0,0,0>>},
-			 {msisdn, <<"070100000000000">>},
+			 {msisdn, <<"07014711">>},
 			 {group, {1, GID}},
 			 {yang, <<"rfzone.yang">>}
-			]).
+			]),
+    lists:foreach(
+      fun(DID0) ->
+	      DID = devid(DID0),
+	      exodm_db_device:new(?GA_CUSTOMER_ID, DID,
+				  [{'__ck',<<2,0,0,0,0,0,0,0>>},
+				   {'__sk',<<1,0,0,0,0,0,0,0>>},
+				   {msisdn,"0701"++integer_to_list(DID0)},
+				   {groups, [GID]}
+				  ]),
+	      exodm_ck3_config:new(AID, DID, candidate, []),
+	      exodm_ck3_config:new(AID, DID, running, [])
+      end, lists:seq(100, 123)).
+
+devid(I) when is_integer(I) ->
+    list_to_binary(integer_to_list(I)).
+
+store_ck3_yang(Db) ->
+    exodm_db_session:set_auth_as_user(<<"ga">>, Db),
+    store_yang(ck3, "exosense.yang", "yang/exosense.yang"),
+    store_yang(ck3, "ieft-inet-types.yang", "yang/ietf-inet-types.yang"),
+    store_yang(ck3, "ckp.yang", "yang/ckp.yang"),
+    store_yang(ck3, "ckp-cfg.yang", "yang/ckp-cfg.yang").
+
+store_yang(App, F, Path) ->
+    {ok, Bin} = file:read_file(
+		  filename:join(code:priv_dir(App), Path)),
+    exodm_db_yang:write(F, Bin).
 
 store_rfzone_yang() ->
     exodm_db_session:set_auth_as_user(<<"seazone">>),
@@ -129,8 +158,8 @@ run_ga_old_() ->
 				   {msisdn,"0701"++integer_to_list(DID)},
 				   {group, {1,2}}
 				  ]),
-	      exodm_db_config:new(?GA_CUSTOMER_ID, DID, candidate, []),
-	      exodm_db_config:new(?GA_CUSTOMER_ID, DID, running, [])
+	      exodm_ck3_config:new(?GA_CUSTOMER_ID, DID, candidate, []),
+	      exodm_ck3_config:new(?GA_CUSTOMER_ID, DID, running, [])
       end, lists:seq(100, 123)).
 
 run_tony() ->
@@ -157,8 +186,8 @@ run_tony_() ->
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
-	      exodm_db_config:new(12, DID, candidate, []),
-	      exodm_db_config:new(12, DID, running, [])
+	      exodm_ck3_config:new(12, DID, candidate, []),
+	      exodm_ck3_config:new(12, DID, running, [])
       end, lists:seq(1000, 1099)),   
     lists:foreach(
       fun(DID) ->
@@ -168,8 +197,8 @@ run_tony_() ->
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {2, 2}}
 				  ]),
-	      exodm_db_config:new(12, DID, candidate, []),
-	      exodm_db_config:new(12, DID, running, [])
+	      exodm_ck3_config:new(12, DID, candidate, []),
+	      exodm_ck3_config:new(12, DID, running, [])
       end, lists:seq(1100, 1150)),
     lists:foreach(
       fun(DID) ->
@@ -180,8 +209,8 @@ run_tony_() ->
 				   {group, {1, 1}},
 				   {group, {2, 2}}
 				  ]),
-	      exodm_db_config:new(12, DID, candidate, []),
-	      exodm_db_config:new(12, DID, running, [])
+	      exodm_ck3_config:new(12, DID, candidate, []),
+	      exodm_ck3_config:new(12, DID, running, [])
       end, lists:seq(1151, 1199)),
     ok.
 
@@ -208,8 +237,8 @@ run_love_() ->
 				   {msisdn,"07013"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
-	      exodm_db_config:new(13, DID, candidate, []),
-	      exodm_db_config:new(13, DID, running, [])
+	      exodm_ck3_config:new(13, DID, candidate, []),
+	      exodm_ck3_config:new(13, DID, running, [])
       end, lists:seq(2000, 2099)).
 
 run_ulf() ->
@@ -233,8 +262,8 @@ run_ulf_() ->
 				   {msisdn,"07014"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
-	      exodm_db_config:new(14, DID, candidate, []),
-	      exodm_db_config:new(14, DID, running, [])
+	      exodm_ck3_config:new(14, DID, candidate, []),
+	      exodm_ck3_config:new(14, DID, running, [])
       end, lists:seq(1000, 1049)).
 
 run_marcus() ->
@@ -258,8 +287,8 @@ run_marcus_() ->
 				   {msisdn,"07015"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
-	      exodm_db_config:new(15, DID, candidate, []),
-	      exodm_db_config:new(15, DID, running, [])
+	      exodm_ck3_config:new(15, DID, candidate, []),
+	      exodm_ck3_config:new(15, DID, running, [])
       end, lists:seq(10000, 10009)).
 
 

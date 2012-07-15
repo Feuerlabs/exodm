@@ -5,6 +5,9 @@ RELNAME=exodm
 
 all: compile
 
+tar:
+	./exorel tar `./exorel current`
+
 compile:
 	./rebar get-deps
 	./rebar compile

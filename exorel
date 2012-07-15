@@ -12,6 +12,7 @@ main([F|Args] = _A) ->
     %% a non-space space character appended to the command.
     try list_to_existing_atom(
 	   re:replace(F, "[^a-z_]", "", [global,{return,list}])) of
+	tar      -> tar(Args);
 	git_vsn  -> git_vsn(Args);
 	nodes    -> nodes(Args);
 	versions -> versions(Args);
@@ -37,6 +38,43 @@ help() ->
       [filename:basename(escript:script_name())]),
     halt(1).
 
+tar([V]) ->
+    Base = "exodm_" ++ V,
+    Top = filename:join(Dir = rel_lib_dir(), Base),
+    Target0 = filename:join(Dir, Base ++ ".tgz"),
+    Target = filename:absname(Target0),
+    case filelib:is_regular(Target0) of
+	false ->
+	    TmpDir = make_temp_dir(),
+	    Res = os:cmd(Cmd = "cp -r " ++ Top ++ " " ++ TmpDir ++ "/"),
+	    io:fwrite("~s ->~n  ~s~n", [Cmd, Res]),
+	    TmpTop = filename:join(TmpDir, Base),
+	    {ok,_} = beam_lib:strip_release(TmpTop),
+	    make_tar(TmpDir, Base, Target),
+	    %% TarRes = os:cmd(TarCmd = "tar czf " ++ Target ++ " " ++ TmpTop),
+	    %% io:fwrite("~s ->~n~s~n", [TarCmd, TarRes]),
+	    os:cmd("rm -rf " ++ TmpDir),
+	    io:fwrite("Stripped archive in ~s~n", [Target0]);
+	true ->
+	    abort("Archive exists [~s]~n", [Target0])
+    end.
+
+make_tar(Dir, SubDir, Target) ->
+    {ok, Cwd} = file:get_cwd(),
+    ok = file:set_cwd(Dir),
+    TarRes = os:cmd(TarCmd = "tar czf " ++ Target ++ " " ++ SubDir),
+    io:fwrite("~s ->~n~s~n", [TarCmd, TarRes]),
+    file:set_cwd(Cwd).
+
+
+make_temp_dir() ->
+    {M,S,U} = os:timestamp(),
+    D = filename:join("/tmp", lists:concat([escript:script_name(),"-",
+					    integer_to_list(M),".",
+					    integer_to_list(S),".",
+					    integer_to_list(U)])),
+    ok = file:make_dir(D),
+    D.
 
 git_vsn([V]) -> io:fwrite("~s~n", [V]);
 git_vsn(Opts) ->
@@ -47,7 +85,7 @@ git_vsn(Opts) ->
 	    {ok, Cwd} = file:get_cwd(),
 	    Dir = case Opts of
 		      [] -> root_dir();
-		      [D|_] -> D
+		      ["-d",D|_] -> D
 		  end,
 	    ok = file:set_cwd(Dir),
 	    Res = os:cmd("git describe --always --tags "
@@ -192,3 +230,8 @@ pad_x(X) ->
 flip(C) when $a =< C, C =< $z -> $A + (C - $a);
 flip(C) when $A =< C, C =< $Z -> $a + (C - $A);
 flip(C) -> C.
+
+
+abort(Fmt, Args) ->
+    io:fwrite(Fmt, Args),
+    halt(1).

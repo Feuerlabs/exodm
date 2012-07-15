@@ -36,17 +36,19 @@
 -export([all_children/1, all_children/2]).
 -export([insert_alias/4]).
 -export([add_table/2,
-	 ix_alias/1]).
+	 ix_alias/1, ix_name/1]).
 
 -export([valid_id_string/1,
 	 encode_id/1,
 	 decode_id/1,
+	 id_key_to_integer/1,
 	 to_hex/1]).
 
 -export([read/1, read/2,
 	 write/2, write/3,
 	 update_counter/2,
-	 update_counter/3]).
+	 update_counter/3,
+	 select/1, select/2, select/3]).
 
 -import(lists, [reverse/1]).
 %%
@@ -556,6 +558,8 @@ encode_id(L) when is_list(L) ->
     encode_id(list_to_binary(L));
 encode_id(<<$=, _/binary>> = Enc) ->
     Enc;
+encode_id(I) when is_integer(I) ->
+    encode_id(list_to_binary(integer_to_list(I)));
 encode_id(Bin) when is_binary(Bin) ->
     Enc = << <<(id_char(C))/binary>> || <<C>> <= Bin >>,
     <<$=, Enc/binary>>.
@@ -647,6 +651,14 @@ update_counter(Key, Incr) ->
 update_counter(Tab, Key, Incr) ->
     kvdb_conf:update_counter(Tab, Key, Incr).
 
+select(Pat) ->
+    select(<<"data">>, Pat).
+
+select(Tab, Pat) ->
+    kvdb:select(kvdb_conf, Tab, Pat).
+
+select(Tab, Pat, Limit) ->
+    kvdb:select(kvdb_conf, Tab, Pat, Limit).
 
 add_table(Name, Indexes) ->
     Opts = case [index_def(I) || I <- Indexes] of
@@ -659,14 +671,27 @@ add_table(Name, Indexes) ->
 
 index_def(alias) ->
     {alias, each, {exodm_db, ix_alias}};
+index_def(name) ->
+    {name, each, {exodm_db, ix_name}};
 index_def(Other) ->
     Other.
 
 
 ix_alias({K, _, V}) ->
     case lists:reverse(exodm_db:kvdb_key_split(K)) of
-	[<<"__alias">>,<<"alias[",_/binary>>|_] ->
+	[<<"__alias">>, <<"alias[",_/binary>>, _] ->
+	    %% NOTE: only "top-level" aliases are indexed
 	    io:fwrite("alias (~p): ~p~n", [K, V]),
+	    [V];
+	_ ->
+	    []
+    end.
+
+ix_name({K, _, V}) ->
+    case lists:reverse(exodm_db:kvdb_key_split(K)) of
+	[<<"name">>, _] ->
+	    %% NOTE: only "top-level" names are indexed
+	    io:fwrite("name (~p): ~p~n", [K, V]),
 	    [V];
 	_ ->
 	    []

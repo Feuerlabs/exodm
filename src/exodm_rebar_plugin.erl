@@ -11,6 +11,7 @@
 	    New = lists:map(fun(T) -> expand(T, Env) end,
 			    expand_env(Vars, Terms)),
 	    write_to_file("reltool.config", New),
+	    write_vm_args(),
 	    ok;
 	_ ->
 	    ok
@@ -166,6 +167,14 @@ write_to_file(F, Terms) ->
 	file:close(Fd)
     end.
 
+write_vm_args() ->
+    case file:copy("../priv/templates/simplenode.vm.args",
+		   "files/vm.args") of
+	{ok, _BytesCopied} ->
+	    ok;
+	Other ->
+	    error({could_not_copy_vm_args, Other})
+    end.
 
 %% Copied from http://github.com/uwiger/setup
 %%
