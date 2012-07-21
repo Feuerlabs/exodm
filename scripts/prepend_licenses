@@ -1,0 +1,191 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%% @author Tony Rogvall <tony@rogvall.se>
+%%% @copyright (C) 2012, Tony Rogvall
+%%% @doc
+%%%
+%%% @end
+%%% Created : 15 May 2012 by Tony Rogvall <tony@rogvall.se>
+
+%% -mode(compile).
+-include_lib("kernel/include/file.hrl").
+%%
+%% Recursivly prepend copyright texts to all .c .h .erl .hrl files
+%% copyright text must be located in
+%% $HOME/LICENSES/$LICENSE_OWNER/LICENSE
+%% $HOME/LICENSES/$LICENSE_OWNER/copyright.c
+%% $HOME/LICENSES/$LICENSE_OWNER/copyright.erl
+%% $HOME/LICENSES/$LICENSE_OWNER/copyright.md
+%%
+%% LICENSE_OWNER default to the string "Default"
+%%
+
+main(Args) ->
+    case validate() of
+	false ->
+	    halt(1);
+	true ->
+	    ok
+    end,
+    {Fn,Bn} = prepend_files(Args),
+    io:format("Prepeded ~w filed copying ~w bytes\n", [Fn, Bn]),
+    halt(0).
+
+
+lic_owner() ->
+    case os:getenv("LICENSE_OWNER") of
+	false ->
+	    "Default";  %% expect Defaul owner
+	Owner ->
+	    Owner
+    end.
+
+lic_dir() ->
+    Owner = lic_owner(),
+    filename:join([os:getenv("HOME"),"LICENSES",Owner]).
+
+validate() ->
+    LicDir = lic_dir(),
+    validate_dir(LicDir) and
+	validate_file(filename:join(LicDir, "LICENSE"), false) and
+	validate_file(filename:join(LicDir, "copyright.c"), true) and
+	validate_file(filename:join(LicDir, "copyright.erl"), true) and
+	validate_file(filename:join(LicDir, "copyright.md"), false) and
+	validate_file(filename:join(LicDir, "copyright.txt"), false).
+
+validate_dir(Dir) ->
+    case filelib:is_dir(Dir) of
+	true -> 
+	    true;
+	false ->
+	    io:format("missing directory ~s\n", [Dir]),
+	    false
+    end.
+
+validate_file(File, BeginEnd) when is_list(File), is_boolean(BeginEnd) ->
+    case filelib:is_regular(File) of
+	true -> 
+	    case file:read_file(File) of
+		{ok,Data} ->
+		    case is_ascii(Data) of
+			false ->
+			    io:format("~s: file is not ascii\n", [File]),
+			    false;
+			true ->
+			    true
+		    end,
+		    if BeginEnd ->
+			    case has_begin_end(File,Data) of
+				false ->
+				    io:format("~s: missing begin/end\n",[File]),
+				    false;
+				true ->
+				    true
+			    end,
+			    true;
+		       true ->
+			    true
+		    end;
+		{error,Reason} ->
+		    io:format("~s: unable to read: ~p\n", [File, Reason]),
+		    false
+	    end;
+	false ->
+	    io:format("missing file ~s\n", [File]),
+	    false
+    end.
+
+
+prepend_files([File|Files]) ->
+    case file:read_file_info(File) of
+	{ok, Info} ->
+	    case Info#file_info.type of
+		regular ->
+		    {Fn1,Bn1} = prepend_file(File),
+		    {Fn2,Bn2} = prepend_files(Files),
+		    {Fn1+Fn2,Bn1+Bn2};
+		directory ->
+		    case file:list_dir(File) of 
+			{error,Reason} ->
+			    io:format("~s: warning: unable to list: ~p\n",
+				      [File, Reason]),
+			    prepend_files(Files);
+			{ok,FileList} ->
+			    %% depth first !
+			    PathList = lists:map(
+					 fun(F) ->
+						 filename:join(File,F)
+					 end, FileList),
+			    prepend_files(PathList ++ Files)
+		    end;
+		_ ->
+		    prepend_files(Files)
+	    end;
+	{error, Reason} ->
+	    io:format("~s: warning: unable to read file info: ~p\n", 
+		      [File,Reason]),
+	    prepend_files(Files)
+    end;
+prepend_files([]) ->
+    {0,0}.
+
+prepend_file(File) ->
+    case filename:extension(File) of
+	".erl" -> prepend_file("copyright.erl", File);
+	".hrl" -> prepend_file("copyright.erl", File);
+	".c" ->   prepend_file("copyright.c", File);
+	".h" ->   prepend_file("copyright.c", File);
+	_ -> {0,0}
+    end.
+
+prepend_file(File, Source) ->
+    LicFile = filename:join(lic_dir(), File),
+    TmpPath = "/tmp/copy"++ os:getpid(),
+    {ok,Fd} = file:open(TmpPath, [write,binary]),
+    {ok,Copied1} = file:copy(LicFile, Fd),
+    {ok,Copied2} = file:copy(Source, Fd),
+    file:close(Fd),
+    file:rename(TmpPath, Source),
+    {1, Copied1+Copied2}.
+
+is_ascii(Binary) ->
+    S = lists:foldl(fun(C,Sum) -> C bor Sum end, 0, binary_to_list(Binary)),
+    (S band 16#80) =:= 0.
+
+%% check if data begin/end markers - this is important if data
+%% is to be changed/removed/replaced in the future!
+has_begin_end(Filename, Binary) ->
+    has_begin_end(Filename, Binary, <<"BEGIN COPYRIGHT">>, <<"END COPYRIGHT">>).
+
+has_begin_end(Filename, Binary,Begin,End) ->
+    case binary:split(Binary, <<"\n">>, [global]) of
+	[Line1|Lines=[_|_]] ->
+	    N = length(Lines)+1,
+	    LineN = case lists:reverse(Lines) of
+			[<<>>, Last | _] -> Last;
+			[Last | _] -> Last
+		    end,
+	    check_tag_and_pos(Filename, Line1, Begin, 1, 9) and
+		check_tag_and_pos(Filename, LineN, End, N, 9);
+	_ ->
+	    false
+    end.
+	    
+check_tag_and_pos(Filename, Line, Tag, Ln, Pos) ->
+    case binary:split(Line, Tag) of
+	[Before,_After] ->
+	    if byte_size(Before)+1 =/= Pos ->
+		    io:format("~s:~w: warning tag ~s not at position ~w\n",
+			      [Filename,Ln,Tag,Pos]),
+		    true;
+	       true ->
+		    true
+	    end;
+	_ ->
+	    false
+    end.
+	    
+			    
+	    
+	
+    
