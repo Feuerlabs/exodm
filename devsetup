@@ -5,12 +5,20 @@
 -mode(compile).
 
 main([]) ->
-    try setup_gen:run([{name, "exodm"},
+    try setup_gen:run([
+		       {name, "exodm"},
 		       {relconf, "rel/reltool.config"},
 		       {sys, "rel/sys.config"},
 		       {outdir, "./devel"},
 		       {install, true},
-		       {verbose, false}])
+		       {verbose, false},
+		       {env, [
+			      {setup,
+			       [
+				{data_dir, "db"}
+			       ]}
+			     ]}
+		      ])
     catch
 	error:E ->
 	    io:fwrite("ERROR: ~p~n"

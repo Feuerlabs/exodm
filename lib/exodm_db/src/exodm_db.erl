@@ -17,18 +17,17 @@
 -export([list_key/2]).
 -export([table/2]).
 
--export([kvdb_key_split/1, kvdb_key_join/1, kvdb_key_join/2]).
+-export([split_key/1, join_key/1, join_key/2]).
 -export([nc_key_split/1, nc_key_join/1, nc_key_join/2]).
 -export([nc_to_kvdb_key/1]).
 
 -export([to_binary/1]).
--export([binary_opt/2, binary_opt/3, uint32_opt/2, uint64_opt/2,
+-export([list_options/2, binary_opt/2, binary_opt/3, uint32_opt/2, uint64_opt/2,
 	 uint32_bin/1, uint64_bin/1]).
 -export([first_child/1, first_child/2,
 	 next_child/1, next_child/2,
 	 last_child/1, last_child/2]).
 -export([fold_children/3]).
--export([fold_keys/2, fold_keys/3, fold_keys/4, fold_keys/5]).
 -export([fold_list/3, fold_list/4]).   % ([Tab,] Fun, Acc, Key)
 -export([fold_list2/4, fold_list2/5]). % ([Tab,] Fun, Acc, Key, ListItem)
 -export([last_in_list/1, last_in_list/2]).
@@ -36,9 +35,10 @@
 -export([all_children/1, all_children/2]).
 -export([insert_alias/4]).
 -export([add_table/2,
-	 ix_alias/1, ix_name/1]).
+	 ix_alias/1, ix_name/1, ix_aid/1]).
 
 -export([valid_id_string/1,
+	 escape_key/1,
 	 encode_id/1,
 	 decode_id/1,
 	 id_key_to_integer/1,
@@ -92,10 +92,10 @@ init() ->
 
 
 transaction(F) when is_function(F, 1) ->
-    kvdb:transaction(kvdb_conf, F).
+    kvdb_conf:transaction(F).
 
 in_transaction(F) when is_function(F, 1) ->
-    kvdb:in_transaction(kvdb_conf, F).
+    kvdb_conf:in_transaction(F).
 
 %% user_id_key(<<$u,$$, _/binary>> = UID) -> UID;
 %% user_id_key(ID) when is_binary(ID) ->
@@ -166,10 +166,11 @@ account_id_value(AID) ->
 
 %% fixme add list keys with predicate access
 list_key(Name, Pos) when is_integer(Pos), Pos >= 0 ->
-    %% IX = list_to_binary(integer_to_list(Pos, 19)),
-    NM = to_binary(Name),
-    IX = list_to_binary(id_key(Pos)),
-    <<NM/binary, "[", IX/binary, "]">>.
+    kvdb_conf:list_key(to_binary(Name), Pos).
+    %% %% IX = list_to_binary(integer_to_list(Pos, 19)),
+    %% NM = to_binary(Name),
+    %% IX = list_to_binary(id_key(Pos)),
+    %% <<NM/binary, "[", IX/binary, "]">>.
 
 id_key(ID) when is_integer(ID), ID >= 0, ID =< 16#ffffffff ->
     tl(integer_to_list(16#100000000+ID,16));
@@ -179,14 +180,14 @@ id_key(<<ID:32/integer>>) ->
 id_key_to_integer(I) when is_binary(I) ->
     list_to_integer(binary_to_list(I), 16).
 
-kvdb_key_split(Key) when is_binary(Key) ->
-    binary:split(Key, <<"*">>, [global]).
+split_key(Key) when is_binary(Key) ->
+    kvdb_conf:split_key(Key).
 
-kvdb_key_join(A,B) ->
-    join_parts(A,B,<<"*">>).
+join_key(A, B) ->
+    kvdb_conf:join_key(A, B).
 
-kvdb_key_join(Parts) ->
-    join_parts(Parts, <<"*">>).
+join_key(Parts) ->
+    kvdb_conf:join_key(Parts).
 
 nc_key_join(A,B) ->
     join_parts(A,B,<<"/">>).
@@ -195,8 +196,8 @@ nc_key_join(Parts) ->
 
 nc_to_kvdb_key(Key) ->
     case nc_key_split(Key) of
-	[<<>> | Parts] -> kvdb_key_join(Parts);  %% kvdb does not use leading *
-	Parts -> kvdb_key_join(Parts)
+	[<<>> | Parts] -> join_key(Parts);  %% kvdb does not use leading *
+	Parts -> join_key(Parts)
     end.
 
 table(AID, Type) ->
@@ -300,62 +301,22 @@ join_parts(A, B, Sep) when is_binary(A), is_binary(B), is_binary(Sep) ->
 join_parts([Part],_Sep) -> Part;
 join_parts([Part|Ps], Sep) -> join_parts(Part, join_parts(Ps,Sep), Sep);
 join_parts([], _) -> <<>>.
-				
+
 %% drop last key component
-kvdb_key_drop(K) ->
-    kvdb_key_join(reverse(tl(reverse(kvdb_key_split(K))))).
+%% kvdb_key_drop(K) ->
+%%     join_key(reverse(tl(reverse(split_key(K))))).
 
 first_child(K) ->
-    first_child(<<"data">>, K).
+    kvdb_conf:first_child(K).
 
-first_child(Tab, <<>>) ->
-    case kvdb_conf:first(Tab) of
-	{ok, {K0,_As,_Data}} ->
-	    [K1|_] = kvdb_key_split(K0),
-	    {ok, K1};
-	done ->
-	    done
-    end;
 first_child(Tab, K) ->
-    case kvdb_conf:next(Tab, <<K/binary,"*+">>) of
-	{ok,{K1,_As,_Data}} when byte_size(K1) > byte_size(K) ->
-	    N = byte_size(K),
-	    case erlang:split_binary(K1, N) of
-		{K, <<$*,K2/binary>>} ->
-		    [C|_] = kvdb_key_split(K2),
-		    {ok,<<K/binary,$*,C/binary>>};
-		{_, _} ->
-		    done
-	    end;
-	_ ->
-	    done
-    end.
+    kvdb_conf:first_child(Tab, K).
 
 next_child(K) ->
-    next_child(<<"data">>, K).
+    kvdb_conf:next_child(K).
 
 next_child(Tab, K) ->
-    case kvdb_conf:next(Tab, <<K/binary,"+">>) of
-	{ok,{K1,_As,_Data}} ->
-	    K0 = kvdb_key_drop(K),
-	    N = byte_size(K0),
-	    if N >= byte_size(K1) ->
-		    done;
-	       true ->
-		    case erlang:split_binary(K1, N) of
-			{<<>>, K2} ->
-			    [C|_] = kvdb_key_split(K2),
-			    {ok, C};
-			{K0, <<$*,K2/binary>>} ->
-			    [C|_] = kvdb_key_split(K2),
-			    {ok,<<K0/binary,$*,C/binary>>};
-			{_, _} ->
-			    done
-		    end
-	    end;
-	done ->
-	    done
-    end.
+    kvdb_conf:next_child(Tab, K).
 
 last_child(K) ->
     last_child(<<"data">>, K).
@@ -366,7 +327,7 @@ last_child(Tab, K) ->
 	    N = byte_size(K),
 	    case erlang:split_binary(K1, N) of
 		{K, <<$*,K2/binary>>} ->
-		    [C|_] = kvdb_key_split(K2),
+		    [C|_] = split_key(K2),
 		    {ok,<<K/binary,$*,C/binary>>};
 		{_, _} ->
 		    done
@@ -401,47 +362,49 @@ fold_list2(Fun, Acc, Key, ListItem) when is_function(Fun, 3) ->
     fold_list2(<<"data">>, Fun, Acc, Key, ListItem).
 
 fold_list2(Tab, Fun, Acc, Key, ListItem) when is_function(Fun, 3) ->
-    K = kvdb_key_join(Key, to_binary(ListItem)),
-    fold_list_(Tab, Fun, Acc, K, next_child(Tab, K)).
+    kvdb_conf:fold_list(Tab, Fun, Acc, join_key(Key, to_binary(ListItem))).
+    %% K = join_key(Key, to_binary(ListItem)),
+    %% fold_list_(Tab, Fun, Acc, K, next_child(Tab, K)).
 
 fold_list(Fun, Acc, Key) when is_function(Fun, 3) ->
     fold_list(<<"data">>, Fun, Acc, Key).
 
 fold_list(Tab, Fun, Acc, Key) when is_function(Fun, 3) ->
-    %% assume the Key is refereing to the list basename without []
-    fold_list_(Tab, Fun, Acc, Key, next_child(Tab, Key)).
+    kvdb_conf:fold_list(Tab, Fun, Acc, Key).
+%%     %% assume the Key is refereing to the list basename without []
+%%     fold_list_(Tab, Fun, Acc, Key, next_child(Tab, Key)).
 
-fold_list_(Tab, Fun, Acc, Key, {ok,Key1}) ->
-    N = byte_size(Key),
-    N1 = byte_size(Key1),
-    N2 = (N1-N)-2,
-    case Key1 of
-	<<Key:N/binary,"[",Pos:N2/binary,"]">> ->
-	    %% FIXME: this assumes simple lists with position,
-	    %% make this work for predicate items as well.
-	    %% I = list_to_integer(binary_to_list(Pos)),
-	    I = id_key_to_integer(Pos),
-	    Acc1 = Fun(I, Key1, Acc),
-	    fold_list_(Tab, Fun, Acc1, Key, next_child(Tab, Key1));
-	_ ->
-	    reverse(Acc)
-    end;
-fold_list_(_Tab, _Fun, Acc, _Key, done) ->
-    reverse(Acc).
+%% fold_list_(Tab, Fun, Acc, Key, {ok,Key1}) ->
+%%     N = byte_size(Key),
+%%     N1 = byte_size(Key1),
+%%     N2 = (N1-N)-2,
+%%     case Key1 of
+%% 	<<Key:N/binary,"[",Pos:N2/binary,"]">> ->
+%% 	    %% FIXME: this assumes simple lists with position,
+%% 	    %% make this work for predicate items as well.
+%% 	    %% I = list_to_integer(binary_to_list(Pos)),
+%% 	    I = id_key_to_integer(Pos),
+%% 	    Acc1 = Fun(I, Key1, Acc),
+%% 	    fold_list_(Tab, Fun, Acc1, Key, next_child(Tab, Key1));
+%% 	_ ->
+%% 	    reverse(Acc)
+%%     end;
+%% fold_list_(_Tab, _Fun, Acc, _Key, done) ->
+%%     reverse(Acc).
 
 insert_alias(Tab, Base, I, Alias0) when is_integer(I), I >= 0 ->
     Alias = to_binary(Alias0),
-    case read(Tab, Alias) of
-	[] ->
+    case read(Tab, join_key(Alias0, <<"name">>)) of
+	{error, not_found} ->
 	    case kvdb:index_keys(kvdb_conf, Tab, alias, Alias) of
 		[] ->
-		    K = kvdb_key_join(
+		    K = join_key(
 			  [Base, list_key(alias, I), <<"__alias">>]),
 		    write(Tab, K, Alias);
 		[_|_] ->
 		    error({alias_exists, Alias})
 	    end;
-	[_|_] ->
+	{ok, _} ->
 	    error({alias_exists, Alias})
     end.
 
@@ -456,8 +419,8 @@ append_to_list(Tab, Base, SubK, V) ->
 	[{K, _As, _}] ->
 	    LastPos = list_key_pos(Base, K),
 	    NewPos = LastPos+1,
-	    NewKey = kvdb_key_join(list_key(Base, NewPos),
-				   to_binary(SubK)),
+	    NewKey = join_key(list_key(Base, NewPos),
+			      to_binary(SubK)),
 	    write(Tab, NewKey, V),
 	    NewPos
     end.
@@ -477,57 +440,17 @@ last_in_list(Tab, Base) ->
 list_key_pos(Base, Key) ->
     SzB = byte_size(Base),
     <<Base:SzB/binary, Rest/binary>> = Key,
-    [Ix|_] = kvdb_key_split(Rest),
+    [Ix|_] = split_key(Rest),
     SzI = byte_size(Ix),
     N = SzI - 2,
     <<"[", I:N/binary, "]">> = Ix,
     id_key_to_integer(I).
 
-fold_keys(Prefix, F) when is_binary(Prefix), is_function(F, 2) ->
-    fold_keys(<<"data">>, Prefix, F, [], 30).
 
-fold_keys(Tab, Prefix, F) when
-      is_binary(Tab), is_binary(Prefix), is_function(F, 2) ->
-    fold_keys(Tab, Prefix, F, [], 30).
-
-fold_keys(Tab, Prefix, Acc, F) when
-      is_binary(Tab), is_binary(Prefix), is_function(F, 2) ->
-    fold_keys(Tab, Prefix, F, Acc, 30).
-
-fold_keys(Tab, Pfx, F, Acc0, Limit) when
-      is_binary(Tab), is_binary(Pfx), is_function(F, 2),
-      (Limit==infinity orelse (is_integer(Limit) andalso Limit > 0)) ->
-    fold_keys_(kvdb_conf:next(Tab, Pfx), F, Limit, Limit, Acc0).
-
-fold_keys_({ok, {K, _, _}}, F, Limit, Limit0, Acc) ->
-    case F(kvdb_key_split(K), Acc) of
-	{done, Acc1} ->
-	    if Acc1 == [] -> done;
-	       true -> {lists:reverse(Acc1), fun() -> done end}
-	    end;
-	{next, NextK, Acc1} ->
-	    case decr(Limit) of
-		0 ->
-		    {lists:reverse(Acc1),
-		     fun() ->
-			     fold_keys_(kvdb_conf:next_at_level(NextK),
-					F, Limit0, Limit0, [])
-		     end};
-		Limit1 ->
-		    fold_keys_(kvdb_conf:next_at_level(NextK),
-			       F, Limit1, Limit0, Acc1)
-	    end
-    end;
-fold_keys_(_, _, _, _, Acc) ->
-    if Acc == [] -> done;
-       true ->
-	    {lists:reverse(Acc), fun() -> done end}
-    end.
-
-decr(infinity) ->
-    infinity;
-decr(I) when is_integer(I), I > 0 ->
-    I-1.
+%% decr(infinity) ->
+%%     infinity;
+%% decr(I) when is_integer(I), I > 0 ->
+%%     I-1.
 
 
 
@@ -554,15 +477,15 @@ skip_wsp(Tail) ->
 valid_id_string(<<C, _/binary>>) ->
     not lists:member(C, ":;<>=?").
 
+escape_key(Key) ->
+    kvdb_conf:escape_key(Key).
+
 encode_id(L) when is_list(L) ->
     encode_id(list_to_binary(L));
-encode_id(<<$=, _/binary>> = Enc) ->
-    Enc;
 encode_id(I) when is_integer(I) ->
     encode_id(list_to_binary(integer_to_list(I)));
 encode_id(Bin) when is_binary(Bin) ->
-    Enc = << <<(id_char(C))/binary>> || <<C>> <= Bin >>,
-    <<$=, Enc/binary>>.
+    kvdb_conf:escape_key(Bin).
 
 decode_id(<<$=, Enc/binary>>) ->
     decode_id_(Enc);
@@ -578,12 +501,12 @@ decode_id_(<<>>) ->
 
 
 
-id_char(C) ->
-    case ?is_id2(C) of
-	true -> <<C>>;
-	false when C =< 255 ->
-	    <<$@, (to_hex(C bsr 4)):8/integer, (to_hex(C)):8/integer >>
-    end.
+%% id_char(C) ->
+%%     case ?is_id2(C) of
+%% 	true -> <<C>>;
+%% 	false when C =< 255 ->
+%% 	    <<$@, (to_hex(C bsr 4)):8/integer, (to_hex(C)):8/integer >>
+%%     end.
 
 add_char($@,Part) -> [$@,$@|Part];
 add_char(C,Part) ->
@@ -597,6 +520,32 @@ add_char(C,Part) ->
 to_hex(C) ->    
     element((C band 16#f)+1, {$0,$1,$2,$3,$4,$5,$6,$7,$8,$9,
 			      $A,$B,$C,$D,$E,$F}).
+
+
+list_options(Key, Options) ->
+    Values =
+	lists:flatmap(fun({K, V}) when K==Key, is_binary(V) -> [V];
+			 ({K, [{I,_}|_] = Vals}) when
+				K==Key, is_integer(I) -> Vals;
+			 ({K, [V|_] = Vals}) when K==Key, is_binary(V) -> Vals;
+			 (_) -> []
+		      end, Options),
+    {Numbered, Unnumbered} =
+	lists:partition(fun(X) -> is_tuple(X) end, Values),
+    merge_list_options(1, lists:keysort(1, Numbered), Unnumbered).
+
+merge_list_options(P, [{P,V}|Ns], UNs) ->
+    [{P,V}|merge_list_options(P+1, Ns, UNs)];
+merge_list_options(P, [{P1,_}|_] = Ns, UNs) when P < P1 ->
+    case UNs of
+	[] -> merge_list_options(P1, Ns, []);
+	[H|T] ->
+	    [{P,H}|merge_list_options(P+1, Ns, T)]
+    end;
+merge_list_options(P, [], [H|UNs]) ->
+    [{P,H}|merge_list_options(P+1, [], UNs)];
+merge_list_options(_, [], []) ->
+    [].
 
 %% FIXME: validation must be in each model!!!
 binary_opt(Key, Options) ->
@@ -673,25 +622,37 @@ index_def(alias) ->
     {alias, each, {exodm_db, ix_alias}};
 index_def(name) ->
     {name, each, {exodm_db, ix_name}};
+index_def(aid) ->
+    {aid, each, {exodm_db, ix_aid}};
 index_def(Other) ->
     Other.
 
 
 ix_alias({K, _, V}) ->
-    case lists:reverse(exodm_db:kvdb_key_split(K)) of
-	[<<"__alias">>, <<"alias[",_/binary>>, _] ->
-	    %% NOTE: only "top-level" aliases are indexed
-	    io:fwrite("alias (~p): ~p~n", [K, V]),
+    ix_list(K, V, <<"=__alias">>, <<"=alias">>).
+
+ix_name({K, _, V}) ->
+    ix_leaf(K,V,<<"=name">>).
+
+ix_aid({K, _, V}) ->
+    ix_leaf(K,V,<<"__aid">>).
+
+ix_leaf(K, V, Match) ->
+    case lists:reverse(kvdb_conf:raw_split_key(K)) of
+	[Match, _] ->
+	    %% NOTE: only "top-level" matches are indexed
+	    io:fwrite("ix_leaf (~p): ~p~n", [K, V]),
 	    [V];
 	_ ->
 	    []
     end.
 
-ix_name({K, _, V}) ->
-    case lists:reverse(exodm_db:kvdb_key_split(K)) of
-	[<<"name">>, _] ->
-	    %% NOTE: only "top-level" names are indexed
-	    io:fwrite("name (~p): ~p~n", [K, V]),
+ix_list(K, V, Key, Base) ->
+    BSz = byte_size(Base),
+    case lists:reverse(kvdb_conf:raw_split_key(K)) of
+	[Key, <<Base:BSz/binary, "[",_/binary>>, _] ->
+	    %% NOTE: only "top-level" aliases are indexed
+	    io:fwrite("list ix (~p): ~p~n", [K, V]),
 	    [V];
 	_ ->
 	    []

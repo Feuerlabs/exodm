@@ -108,6 +108,9 @@ else
 	exit 2
 endif
 
+test: release
+	rebar skip_deps=true eunit
+
 clean:
 	./rebar clean
 

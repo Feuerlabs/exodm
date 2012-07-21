@@ -23,7 +23,7 @@
 init(AID) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      kvdb_conf:add_table(table(AID), [])
+	      kvdb_conf:add_table(table(AID), [{encoding,{raw,sext,term}}])
       end).
 
 table(AID0) ->
@@ -66,7 +66,7 @@ read_config_data(AID, Name0) ->
 	      case exists(Tab, NameKey) of
 		  true ->
 		     case kvdb_conf:read_tree(Tab, NameKey) of
-			 [{NameKey, _, _, L}] ->
+			 [{Name, _, _, L}] ->
 			     {ok, tree_to_values(L)};
 			 Other ->
 			     error({unexpected, Other})
@@ -104,7 +104,7 @@ create_yang_module(Repository0, File, Yang0) ->
     end.
 
 exists(Tab, Name) ->
-    Key = exodm_db:kvdb_key_join([exodm_db:encode_id(Name), <<"name">>]),
+    Key = exodm_db:join_key([exodm_db:encode_id(Name), <<"name">>]),
     case exodm_db:read(Tab, Key) of
 	{error, not_found} ->
 	    false;
@@ -117,30 +117,27 @@ validate_config(_Tab, _AID, _Yang, _Values) ->
     ok.
 
 write(Tab, Name, AKey, Value) ->
-    Key = exodm_db:kvdb_key_join([Name, to_binary(AKey)]),
+    Key = exodm_db:join_key([Name, to_binary(AKey)]),
     write(Tab, Key, Value).
 
 write(Tab, Key, Value) ->
     exodm_db:write(Tab, Key, Value).
 
 write_values(Tab, Name, Values) ->
-    Key = exodm_db:kvdb_key_join([Name, <<"values">>]),
+    Key = exodm_db:join_key([Name, <<"values">>]),
     write_values_(Tab, Key, Values).
 
 write_values_(Tab, Key, {struct, Elems}) ->
     lists:foreach(
       fun({K,{array,_} = A}) ->
-	      Key1 = exodm_db:kvdb_key_join(Key, to_id(K)),
+	      Key1 = exodm_db:join_key(Key, to_id(K)),
 	      write_values_(Tab, Key1, A);
 	 ({K, {struct,_} = S}) ->
-	      Key1 = exodm_db:kvdb_key_join(Key, to_id(K)),
+	      Key1 = exodm_db:join_key(Key, to_id(K)),
 	      write_values_(Tab, Key1, S);
-	 ({K,V}) when is_integer(V) ->
-	      Key1 = exodm_db:kvdb_key_join(Key, to_id(K)),
-	      write(Tab, Key1, list_to_binary(integer_to_list(V)));
 	 ({K,V}) ->
-	      Key1 = exodm_db:kvdb_key_join(Key, to_id(K)),
-	      write(Tab, Key1, to_id(K), to_binary(V))
+	      Key1 = exodm_db:join_key(Key, to_id(K)),
+	      write(Tab, Key1, to_id(K), V)
       end, Elems);
 write_values_(Tab, Key, {array, Elems}) ->
     lists:foldl(
@@ -153,12 +150,9 @@ write_values_(Tab, Key, {array, Elems}) ->
 	      write_values_(Tab, Key1, S),
 	      I+1;
 	 ({K, V}, I) ->
-	      Key1 = exodm_db:kvdb_key_join(
+	      Key1 = exodm_db:join_key(
 		       exodm_db:list_key(Key, I), to_id(K)),
-	      V1 = if is_integer(V) -> list_to_binary(integer_to_list(V));
-		      true -> to_binary(V)
-		   end,
-	      write(Tab, Key1, V1),
+	      write(Tab, Key1, V),
 	      I+1
       end, 1, Elems).
 

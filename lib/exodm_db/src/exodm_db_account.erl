@@ -9,8 +9,8 @@
 
 -export([new/1, update/2, lookup/1, lookup_by_name/1, exist/1]).
 -export([create_role/3]).
--export([list_account_keys/0, list_account_keys/1]).
--export([fold_accounts/2, fold_accounts/3]).
+-export([list_account_keys/0]).
+-export([fold_accounts/2]).
 -export([list_users/1, list_users/2]).
 -export([list_groups/1, list_groups/2]).
 -export([list_admins/1]).
@@ -50,26 +50,30 @@ new_(Options) ->
 		   {_, Os} when is_list(Os) ->
 		       Os
 	       end,
-    Key = AID = exodm_db_system:new_aid(),
+    AID = exodm_db_system:new_aid(),
+    Key = exodm_db:escape_key(AID),
+    insert(Key, '__last_rid', <<0:32>>),
+    insert(Key, '__last_gid', <<0:32>>),
     {_, AdminUName} = lists:keyfind(uname, 1, UserOpts),
-    {ok, RID} = create_role_(AID, 1, AdminUName, initial_admin()),
     AcctName = case binary_opt(name, Options) of
 		   <<>> -> AdminUName;
 		   Other -> Other
 	       end,
-    insert(Key, '__last_rid', <<1:32>>), % one role already created
-    insert(Key, '__last_gid', <<0:32>>),
     insert(Key, name, AcctName),
-    UNameKey = exodm_db:encode_id(AdminUName),
-    insert(exodm_db:kvdb_key_join(Key, <<"admins">>), UNameKey, AdminUName),
+    exodm_db_user:new(AID, AdminUName, UserOpts),
+    {ok, _RID} = t_create_role_(AID, AdminUName, initial_admin()),
+    UNameKey = to_binary(AdminUName),
+    insert(exodm_db:join_key(Key, <<"admins">>), UNameKey, AdminUName),
     exodm_db_yang:init(AID),
     exodm_db_device:init(AID),
-    exodm_db_user:new(AID, AdminUName, exodm_db:role_id_value(RID), UserOpts),
+    exodm_db_config:init(AID),
+    AIDVal = exodm_db:account_id_value(AID),
+
     %% lists:foreach(fun({I,Al}) ->
     %% 			  exodm_db:insert_alias(?TAB, Key, I, Al)
     %% 		  end, proplists:get_all_values(alias, Options)),
     %% add_user(AID, AdminUName, _RID = 1),  % must come after adding the user
-    {ok, exodm_db:account_id_value(AID)}.
+    {ok, AIDVal}.
 
 initial_admin() ->
     [{descr, "initial admin"},
@@ -84,11 +88,16 @@ create_role(AID, UName, Opts) ->
       end).
 
 t_create_role(AID0, UName, Opts) ->
-    AID = check_access(AID0),
+    AID = exodm_db:account_id_key(AID0),
+    check_access(AID),
+    t_create_role_(AID, UName, Opts).
+
+t_create_role_(AID, UName, Opts) ->
     case exodm_db_user:exist(UName) of
 	true ->
 	    {ok, RID} = create_role_(AID, UName, Opts),
-	    exodm_db_user:add_access(AID, UName, RID);
+	    exodm_db_user:add_access(AID, UName, RID),
+	    {ok, RID};
 	false ->
 	    error(no_such_user)
     end.
@@ -101,7 +110,7 @@ create_role_(AID, RID, UName, Opts) ->
     Key = role_key(AID, RID),
     insert(Key, descr, binary_opt(descr, Opts)),
     insert(Key, uname, to_binary(UName)),
-    AccessKey = exodm_db:kvdb_key_join(Key, <<"access">>),
+    AccessKey = exodm_db:join_key(Key, <<"access">>),
     lists:foreach(
       fun({<<"all">>, Access}) ->
 	      valid_access(Access),
@@ -120,12 +129,12 @@ create_role_(AID, RID, UName, Opts) ->
 
 %% role_exists(AID, Role0) ->
 %%     Role = exodm_db:encode_id(to_binary(Role0)),
-%%     exist(exodm_db:kvdb_key_join([exodm_db:account_id_key(AID),
+%%     exist(exodm_db:join_key([exodm_db:account_id_key(AID),
 %% 				  <<"roles">>, Role, <<"descr">>])).
 
 group_exists(AID, GID) ->
-    case exodm_db:read(?TAB, exodm_db:kvdb_key_join([AID, <<"groups">>,
-						     GID, <<"name">>])) of
+    case exodm_db:read(?TAB, exodm_db:join_key([AID, <<"groups">>,
+						GID, <<"name">>])) of
 	[] ->
 	    false;
 	_ ->
@@ -147,7 +156,7 @@ valid_access(A) ->
 %%     case exodm_db_user:exist(UName) of
 %% 	true ->
 %% 	    AID = exodm_db:account_id_key(AID0),
-%% 	    Key = exodm_db:kvdb_key_join(
+%% 	    Key = exodm_db:join_key(
 %% 		    [AID, <<"users">>, UName]),
 %% 	    case read(Key, '__uname') of
 %% 		[] ->
@@ -173,47 +182,43 @@ t_update(AID0, Options) ->
     update_(AID, Options).
 
 update_(Key = AID, Options) ->
-    Ops =
-	lists:map(
-	  fun
-	      ({name,Value}) ->
-		  NewName = to_binary(Value),
-		  fun() ->
-			  insert(Key, name, NewName)
-		  end;
-	      ({add_admin,UName}) ->
-		  case exodm_db_user:exist(UName) of
-		      false ->
-			  error({no_such_user, UName});
-		      true ->
-			  Last = exodm_db:fold_list(
-				   ?TAB,
-				   fun(I, LKey, _Acc) ->
-					   case exist(exodm_db:kvdb_key_join(
-							LKey, <<"__uname">>)) of
-					       true ->
-						   error({admin_exists, UName});
-					       false ->
-						   I
-					   end
-				   end, 0,
-				   exodm_db:kvdb_key_join(AID, <<"admin">>)),
-			  fun() ->
-				  insert(
-				    exodm_db:kvdb_key_join(
-				      AID, exodm_db:list_key(admin, Last+1)),
-				      '__uname', UName)
-			  end
-		  end
-	  end, Options),
-    lists:foreach(fun(Op) -> Op() end, Ops).
+    F =	fun({name,Value}) ->
+		NewName = to_binary(Value),
+		insert(Key, name, NewName);
+	   ({add_admin,UName}) ->
+		update_add_admin_(AID, UName)
+	end,
+    lists:foreach(F, Options).
+
+update_add_admin_(AID, UName) ->
+    case exodm_db_user:exist(UName) of
+	false ->
+	    error({no_such_user, UName});
+	true ->
+	    Last = exodm_db:fold_list(
+		     ?TAB,
+		     fun(I, LKey, _Acc) ->
+			     case exist(exodm_db:join_key(
+					  LKey, <<"__uname">>)) of
+				 true ->
+				     error({admin_exists, UName});
+				 false ->
+				     I
+			     end
+		     end, 0,
+		     exodm_db:join_key(AID, <<"admin">>)),
+	    insert(
+	      exodm_db:join_key(
+		AID, exodm_db:list_key(admin, Last+1)), '__uname', UName)
+    end.
+
 
 lookup(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     lookup_(key(AID)).
 
 lookup_(Key) ->
-    <<_,ID/binary>> = lists:last(exodm_db:kvdb_key_split(Key)),
+    <<_,ID/binary>> = lists:last(exodm_db:split_key(Key)),
     [{id,ID}] ++
 	read(Key,name) ++
 	read(Key, admin).
@@ -223,7 +228,7 @@ lookup_by_name(Name) ->
     %% e.g. [{<<"a00000001*name">>,[],<<"getaround">>}]
     lists:foldr(
       fun({Key, _, _}, Acc) ->
-	      case exodm_db:kvdb_key_split(Key) of
+	      case exodm_db:split_key(Key) of
 		  [ID, _] -> [ID|Acc];
 		  _       -> Acc
 	      end
@@ -253,12 +258,9 @@ exist_(Key) ->
     end.
 
 list_account_keys() ->
-    list_account_keys(30).
-
-list_account_keys(Limit) ->
-    fold_accounts(fun(AID, Acc) ->
-			  [AID|Acc]
-		  end, [], Limit).
+    lists:reverse(fold_accounts(fun(AID, Acc) ->
+					[AID|Acc]
+				end, [])).
 
 list_users(AID) ->
     list_users(AID, 30).
@@ -267,9 +269,9 @@ list_users(AID0, Limit) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:fold_keys(
       <<"data">>,
-      exodm_db:kvdb_key_join(AID, <<"users">>),
+      exodm_db:join_key(AID, <<"users">>),
       fun([A, <<"users">>, UID|_], Acc) ->
-	      {next, exodm_db:kvdb_key_join([A,<<"users">>, UID]), [UID|Acc]};
+	      {next, exodm_db:join_key([A,<<"users">>, UID]), [UID|Acc]};
 	 (_, Acc) ->
 	      {done, Acc}
       end, [], Limit).
@@ -278,63 +280,54 @@ list_groups(AID) ->
     list_groups(AID, 30).
 
 list_groups(AID, Limit) ->
-    exodm_db_groups:list_group_keys(AID, Limit).
+    exodm_db_group:list_group_keys(AID, Limit).
 
 list_admins(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:fold_keys(
       ?TAB,
-      exodm_db:kvdb_key_join(AID, <<"admins">>),
+      exodm_db:join_key(AID, <<"admins">>),
       fun([UName|_], Acc) ->
 	      [UName|Acc]
       end, [], 100).
 
 fold_accounts(F, Acc) ->
-    fold_accounts(F, Acc, 30).
-
-fold_accounts(F, Acc, Limit) when
-      Limit==infinity; is_integer(Limit), Limit > 0 ->
-    exodm_db:fold_keys(
-      ?TAB,
-      <<>>,
-      fun([AID|_], Acc1) ->
-	      {next, AID, F(AID,Acc1)};
-	 (_, Acc1) ->
-	      {done, Acc1}
-      end, Acc, Limit).
+    kvdb_conf:fold_children(
+      ?TAB, F, Acc, <<>>).
 
 %% utils
 
 key(AName) ->
     to_binary(AName).
-    %% exodm_db:kvdb_key_join(<<"account">>, AName).
+%% exodm_db:join_key(<<"account">>, AName).
 
 group_key(AID, GID) ->
-    exodm_db:kvdb_key_join([exodm_db:account_id_key(AID),
-			    <<"groups">>,
-			    exodm_db:group_id_key(GID)]).
+    exodm_db:join_key([exodm_db:account_id_key(AID),
+		       <<"groups">>,
+		       exodm_db:group_id_key(GID)]).
 
 new_group_id(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:update_counter(
-      ?TAB, exodm_db:kvdb_key_join(AID, <<"__last_gid">>), 1).
+      ?TAB, exodm_db:join_key(AID, <<"__last_gid">>), 1).
 
 role_key(AID, RID) ->
-    exodm_db:kvdb_key_join([exodm_db:account_id_key(AID),
-			    <<"roles">>,
-			    exodm_db:role_id_key(RID)]).
+    exodm_db:join_key([exodm_db:account_id_key(AID),
+		       <<"roles">>,
+		       exodm_db:role_id_key(RID)]).
 
 new_role_id(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:update_counter(
-      exodm_db:kvdb_key_join(AID, <<"__last_rid">>), 1).
+      ?TAB,
+      exodm_db:join_key(AID, <<"__last_rid">>), 1).
 
 insert(Key, Item, Value) ->
-    Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
+    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     exodm_db:write(?TAB, Key1, Value).
 
 read(Key,Item) ->
-    Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
+    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     case exodm_db:read(?TAB, Key1) of
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []
@@ -347,8 +340,8 @@ check_access(AID0) ->
 	superuser -> AID;
 	_ ->
 	    case exodm_db:read(
-		   ?TAB,exodm_db:kvdb_key_join([AID, <<"admins">>,
-						exodm_db:encode_id(UName)])) of
+		   ?TAB,exodm_db:join_key([AID, <<"admins">>,
+					   exodm_db:encode_id(UName)])) of
 		{ok, _}   -> AID;
 		{error,_} -> error(not_authorized)
 	    end

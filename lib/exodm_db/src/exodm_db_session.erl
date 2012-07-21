@@ -339,7 +339,7 @@ create_session(User, Hash, Sha) ->
 
 get_session_data(#session{user = User} = S) ->
     %% [{_, AID}] = exodm_db_user:lookup_attr(User,<<"__aid">>),
-    [{_,{AID,Role}}|_] = Access = exodm_db_user:list_access(User),
+    [{_, {AID,Role}}|_] = Access = exodm_db_user:list_access(User),
     S#session{aid = AID,
               role = Role,
               access = [{A,R} || {_,{A,R}} <- Access]}.

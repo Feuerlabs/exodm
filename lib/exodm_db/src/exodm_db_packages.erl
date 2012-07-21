@@ -60,7 +60,7 @@
 -import(lists, [reverse/1]).
 
 
-	    
+
 
 new(PackageFile) ->
     new(<<"packages">>, PackageFile).
@@ -107,15 +107,15 @@ load_file_(ParentKey, File) ->
 	    Package = proplists:get_value(<<"Package">>, CData),
 	    Version = proplists:get_value(<<"Version">>, CData),
 	    Arch = proplists:get_value(<<"Architecture">>, CData),
-	    Key = exodm_db:kvdb_key_join([ParentKey,Package,Version,Arch]),
-	    DKey = exodm_db:kvdb_key_join([Key,<<"data">>]),
-	    CKey = exodm_db:kvdb_key_join([Key,<<"control">>]),
+	    Key = exodm_db:join_key([ParentKey,Package,Version,Arch]),
+	    DKey = exodm_db:join_key([Key,<<"data">>]),
+	    CKey = exodm_db:join_key([Key,<<"control">>]),
 	    {ok,Bin} = file:read_file(File),
 	    exodm_db:write(DKey, Bin),
 	    io:format("load_file: ~p - ~p - ~p\n", [Package,Version,Arch]),
 	    lists:foreach(
 	      fun({Attr,Value}) ->
-		      CKey1 = exodm_db:kvdb_key_join([CKey,Attr]),
+		      CKey1 = exodm_db:join_key([CKey,Attr]),
 		      exodm_db:write(CKey1, Value)
 	      end, CData),
 	    [] /= exodm_db:all_children(Key);
@@ -130,7 +130,7 @@ all_versions(Package) when is_binary(Package) ->
 
 %%
 %% Fold over all version-arch combination for a given package
-%% Fun is called with arguments Fun({Package,Vsn,Arch}, Acc) 
+%% Fun is called with arguments Fun({Package,Vsn,Arch}, Acc)
 %% Vsn = {Epoch,Version,Revision}  (use erl_opkg:compare_version!!!)
 %% Arch = any | {Os,Cpu}
 %%
@@ -139,7 +139,7 @@ fold_version(Fun, Acc, Package) ->
       fun(VersionChild,Acc0) ->
 	      exodm_db:fold_children(
 		fun(ArchChild,Acc1) ->
-			[A,V|_]=reverse(exodm_db:kvdb_key_split(ArchChild)),
+			[A,V|_]=reverse(exodm_db:split_key(ArchChild)),
 			{Vsn,""}=erl_opkg:parse_version(binary_to_list(V)),
 			{Arc,""}=erl_opkg:parse_architecture(binary_to_list(A)),
 			Pat = #opkg { package=Package,
@@ -201,10 +201,10 @@ sort_package_versions(PVAs) ->
 
 depends(#opkg { package=Package,version=Version,arch=Arch}) ->
     depends(Package, format_version(Version), format_arch(Arch)).
-    
+
 %% Get dependencies
 depends(Package,Version,Arch) ->
-    case exodm_db:read(<<"packages", "*", 
+    case exodm_db:read(<<"packages", "*",
 			 Package/binary, "*",
 			 Version/binary, "*",
 			 Arch/binary, "*"
@@ -218,18 +218,18 @@ depends(Package,Version,Arch) ->
     end.
 
 %% build a list of all package needed for installing
-%% the packge <<"Package">> of version <<"Version">> 
+%% the packge <<"Package">> of version <<"Version">>
 
 %%
 %% example resolve(<<"erlang">>, <<"R12B">>, <<"x86">>).
 %%
 resolve(P, V, A) when is_binary(P), is_binary(V), is_binary(A) ->
     {Vsn,""}=erl_opkg:parse_version(binary_to_list(V)),
-    {Arc,""}=erl_opkg:parse_architecture(binary_to_list(A)),    
+    {Arc,""}=erl_opkg:parse_architecture(binary_to_list(A)),
     Opkg = #opkg { package = P, version=Vsn, arch=Arc },
     case depends(P, V, A) of
 	Err = {error,_} -> Err;
-	Deps -> 
+	Deps ->
 	    resolve_or(Deps, Arc, package_set_new([Opkg]))
     end.
 
@@ -247,7 +247,7 @@ resolve_or([], _Arch, _Set) ->
 resolve_and([X={Package,VersionOpPatern,ArchPattern}|Ps], Arch0, Set) ->
     io:format("Check package: ~p\n", [X]),
     case select_version(list_to_binary(Package),VersionOpPatern,ArchPattern) of
-	[] -> 
+	[] ->
 	    empty;  %% dependency is missing
 	PVAs ->
 	    %% check dependencies
@@ -255,13 +255,13 @@ resolve_and([X={Package,VersionOpPatern,ArchPattern}|Ps], Arch0, Set) ->
 		lists:foldl(
 		  fun(P,Set0) ->
 			  case package_set_is_member(P, Set0) of
-			      true -> 
+			      true ->
 				  Set0;
 			      false ->
 				  case depends(P) of
 				      {error,_} ->
 					  Set0;
-				      [] -> 
+				      [] ->
 					  [P|Set0];  %% no dependencies! ok!
 				      PAlts ->
 					  case resolve_or(PAlts,Arch0,Set0) of
@@ -278,7 +278,7 @@ resolve_and([], _ArchPattern, Set) ->
     Set.
 
 
-    
+
 package_set_new() -> [].
 package_set_new(List) -> List.
 
@@ -308,7 +308,7 @@ test_version('=',  Cmp) -> Cmp =:= 0;
 test_version('>=', Cmp) -> Cmp >= 0;
 test_version('>>', Cmp) -> Cmp > 0.
 
-    
+
 format_version({0,Vsn,""}) ->
     list_to_binary(Vsn);
 format_version({0,Vsn,Rev}) ->
@@ -323,7 +323,7 @@ format_version({E,Vsn,Rev}) ->
 format_arch(any) -> <<>>;
 format_arch({any,Cpu}) -> list_to_binary(Cpu);
 format_arch({Os,any}) ->  list_to_binary(Os);
-format_arch({Os,Cpu}) -> 
+format_arch({Os,Cpu}) ->
     << (list_to_binary(Os))/binary, "-", (list_to_binary(Cpu))/binary>>.
 
 list_packages() ->
@@ -335,27 +335,22 @@ list_packages(Match) ->
 
 list_version_(K,Match) ->
     exodm_db:fold_children(
-      fun(Kv,_Acc) -> list_arch_(Kv,Match) end, ok, K).      
+      fun(Kv,_Acc) -> list_arch_(Kv,Match) end, ok, K).
 
 list_arch_(K,Match) ->
     exodm_db:fold_children(
       fun(Ka,_Acc) -> list_pack_(Ka,Match) end, ok, K).
 
 list_pack_(K,Match) ->
-    Ctl = exodm_db:kvdb_key_join([K,<<"control">>]),
-    {ok,{_K1,_A1,Name}} = 
-	exodm_db:read(exodm_db:kvdb_key_join(Ctl,<<"Package">>)),
+    Ctl = exodm_db:join_key([K,<<"control">>]),
+    {ok,{_K1,_A1,Name}} =
+	exodm_db:read(exodm_db:join_key(Ctl,<<"Package">>)),
     case re:run(Name, ".*"++Match++".*") of
 	nomatch -> ok;
 	{match,_} ->
-	    {ok,{_K2,_A2,Vers}} = 
-		exodm_db:read(exodm_db:kvdb_key_join(Ctl,<<"Version">>)),
-	    {ok,{_K3,_A3,Arch}} = 
-		exodm_db:read(exodm_db:kvdb_key_join(Ctl,<<"Architecture">>)),
+	    {ok,{_K2,_A2,Vers}} =
+		exodm_db:read(exodm_db:join_key(Ctl,<<"Version">>)),
+	    {ok,{_K3,_A3,Arch}} =
+		exodm_db:read(exodm_db:join_key(Ctl,<<"Architecture">>)),
 	    io:format("~s-~s-~s\n", [Name,Vers,Arch])
     end.
-
-			      
-
-
-

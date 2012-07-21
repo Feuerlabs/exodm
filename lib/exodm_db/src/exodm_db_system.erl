@@ -39,18 +39,24 @@ set_did_acct(ID, Name) ->
     set_id_user(<<"did">>, exodm_db:device_id_key(ID), Name).
 
 set_id_user(Type, ID, Name) ->
-    exodm_db:write(
-      exodm_db:kvdb_key_join([<<"system">>,Type,ID]), Name).
+    exodm_db:write(key(Type,ID), Name).
 
-get_gid_user(ID) -> get_id_user(<<"gid">>, exodm_db:group_id_key(ID)).
-get_aid_user(ID) -> get_id_user(<<"aid">>, exodm_db:account_id_key(ID)).
-get_did_acct(ID) -> get_id_user(<<"did">>, exodm_db:device_id_key(ID)).
+get_gid_user(ID) -> get_id_user(<<"gid">>, ID).
+get_aid_user(ID) -> get_id_user(<<"aid">>, ID).
+get_did_acct(ID) -> get_id_user(<<"did">>, ID).
+
+
+id_key(<<"gid">>, ID) -> exodm_db:group_id_key(ID);
+id_key(<<"aid">>, ID) -> exodm_db:account_id_key(ID);
+id_key(<<"did">>, ID) -> exodm_db:device_id_key(ID).
 
 get_id_user(Type, ID) ->
-    exodm_db:read(
-      exodm_db:kvdb_key_join([<<"system">>,Type,ID])).
+    exodm_db:read(key(Type, id_key(Type, ID))).
 
 ctr(Type) -> key(<<"last_", Type/binary>>).
 
 key(Item) ->
-    exodm_db:kvdb_key_join(<<"system">>, exodm_db:to_binary(Item)).
+    exodm_db:join_key(<<"system">>, exodm_db:to_binary(Item)).
+
+key(Type, Item) ->
+    exodm_db:join_key([<<"system">>, Type, Item]).

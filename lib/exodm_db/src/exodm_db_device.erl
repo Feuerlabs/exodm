@@ -275,13 +275,13 @@ exist(AID, DID) ->
 key(AID, DID) ->
     A = exodm_db:account_id_key(AID),
     D = exodm_db:encode_id(DID),
-    exodm_db:kvdb_key_join([A, <<"devices">>, D]).
+    exodm_db:join_key([A, <<"devices">>, D]).
 
 tab_and_key(AID) ->
     {table(AID), <<>>}.
 
 insert(Tab, Key, Item, Value) ->
-    Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
+    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     exodm_db:write(Tab, Key1, Value).
 
 insert_groups(Tab, K, Groups0) ->
@@ -293,14 +293,14 @@ insert_groups(Tab, K, Groups0) ->
 		  end, Groups).
 
 insert_group(Tab, K0, I, GID) when is_integer(I) ->
-    K = exodm_db:kvdb_key_join(K0, exodm_db:list_key(groups, I)),
+    K = exodm_db:join_key(K0, exodm_db:list_key(groups, I)),
     insert(Tab, K, '__gid',  gid_value(GID)).
 
 gid_value(GID) ->
     <<(exodm_db:group_id_num(GID)):32>>.
 
 read(Tab, Key,Item) ->
-    Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
+    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     case exodm_db:read(Tab, Key1) of
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []

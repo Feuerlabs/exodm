@@ -27,6 +27,7 @@ test1_() ->
 		   [
 		    {name, <<"feuer">>},
 		    {admin, [{uname, <<"magnus">>},
+			     {alias, <<"love">>},
 			     {fullname, <<"Magnus Feuer">>},
 			     {password, <<"feuerlabs">>}]}
 		   ]),
@@ -34,6 +35,7 @@ test1_() ->
 		    [
 		     {name, <<"wiger">>},
 		     {admin, [{uname, <<"ulf">>},
+			      {alias, [<<"uffe">>, <<"uwiger">>]},
 			      {fullname, <<"Ulf Wiger">>},
 			      {password, <<"wiger">>}]}
 		     ]).
@@ -66,8 +68,7 @@ run_rfzone_() ->
 run_ga() ->
     exodm_db:in_transaction(fun(Db) -> run_ga_(Db) end).
 
-run_ga_(Db) ->
-    %% Don't know why this is needed...
+create_account(ga) ->
     {ok, AID} = exodm_db_account:new(
 		  [
 		   {name, <<"getaround">>},
@@ -75,28 +76,31 @@ run_ga_(Db) ->
 			    {uname, <<"ga">>},
 			    {fullname, <<"Getaround">>},
 			    {password, <<"wewontechcrunch2011">>}
-			   ]}]),
+			   ]}]).
+
+create_group(ga, AID) ->
     {ok, GID} = exodm_db_group:new(
 		  AID, [{name, <<"gagroup">>},
-			{url, "http://gacallback:8080/exodm/callback"}]),
-    store_ck3_yang(Db),
-    %% {ok, _UID} = exodm_db_user:new(
-    %% 		   AID, <<"euc">>,
-    %% 		   [
-    %% 		    {fullname, <<"EUC Demo 2012">>},
-    %% 		    {'__password', <<"exosense">>},
-    %% 		    {access, {1,AID,GID,rw}}
-    %% 		   ]),
-    %% store_rfzone_yang(),
+			{url, "http://gacallback:8080/exodm/callback"}]).
+
+create_device(AID, GID, 4711) ->
     exodm_db_device:new(AID,
-                        <<"4711">>, 
+                        <<"4711">>,
 			[
 			 {'__ck', <<2,0,0,0,0,0,0,0>>},
 			 {'__sk', <<1,0,0,0,0,0,0,0>>},
 			 {msisdn, <<"07014711">>},
 			 {group, {1, GID}},
 			 {yang, <<"rfzone.yang">>}
-			]),
+			]).
+
+
+
+run_ga_(Db) ->
+    %% Don't know why this is needed...
+    {ok, AID} = create_account(ga),
+    {ok, GID} = create_group(ga, AID),
+    store_ck3_yang(Db),
     lists:foreach(
       fun(DID0) ->
 	      DID = devid(DID0),

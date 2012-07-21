@@ -85,7 +85,7 @@ lookup(AID, GID) ->
     lookup(key(AID, GID)).
 
 lookup(Key) ->
-    GID = lists:last(exodm_db:kvdb_key_split(Key)),
+    GID = lists:last(exodm_db:split_key(Key)),
     [{id,gid_value(GID)}] ++
 	read(Key,name) ++
 	read(Key, url).
@@ -113,12 +113,8 @@ fold_groups(F, Acc, AID) ->
 fold_groups(F, Acc, AID0, Limit) when
       Limit==infinity; is_integer(Limit), Limit > 0 ->
     AID = exodm_db:account_id_key(AID0),
-    exodm_db:fold_keys(
-      table(),
-      exodm_db:kvdb_key_join(AID, <<"groups">>),
-      fun([_AID,<<"groups">>,GID|_], Acc1) ->
-	      {next, GID, F(GID,Acc1)}
-      end, Acc, Limit).
+    kvdb_conf:fold_children(
+      table(), F, Acc, exodm_db:join_key(AID, <<"groups">>)).
 
 %% utils
 
@@ -130,14 +126,14 @@ key(AID, GID) ->
 
 tab_and_key(AID) ->
     {table(),
-     exodm_db:kvdb_key_join(exodm_db:account_id_key(AID), <<"groups">>)}.
+     exodm_db:join_key(exodm_db:account_id_key(AID), <<"groups">>)}.
 
 insert(Key, Item, Value) ->
-    Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
+    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     exodm_db:write(exodm_db_account:table(), Key1, Value).
 
 read(Key,Item) ->
-    Key1 = exodm_db:kvdb_key_join([Key, to_binary(Item)]),
+    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     case exodm_db:read(exodm_db_account:table(), Key1) of
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []
