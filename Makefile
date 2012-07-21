@@ -19,7 +19,7 @@ release: compile
 	cd rel; ../rebar create-node skip_deps=true nodeid=$(RELNAME)
 
 generate:
-	./rebar generate -f skip_deps=true
+	(cd rel && ../rebar generate -f skip_deps=true)
 	./exorel current `./exorel last_build`
 
 dev:

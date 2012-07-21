@@ -31,7 +31,7 @@
 -export([fold_list/3, fold_list/4]).   % ([Tab,] Fun, Acc, Key)
 -export([fold_list2/4, fold_list2/5]). % ([Tab,] Fun, Acc, Key, ListItem)
 -export([last_in_list/1, last_in_list/2]).
--export([append_to_list/3, append_to_list/4]).
+-export([append_to_list/2, append_to_list/3]).
 -export([all_children/1, all_children/2]).
 -export([insert_alias/4]).
 -export([add_table/2,
@@ -408,43 +408,60 @@ insert_alias(Tab, Base, I, Alias0) when is_integer(I), I >= 0 ->
 	    error({alias_exists, Alias})
     end.
 
-append_to_list(Base, SubK, V) ->
-    append_to_list(<<"data">>, Base, SubK, V).
+%% Calculates the next unused position (following the highest pos), creates
+%% a list key, and calls F(ListKey).
+append_to_list(Base, F) when is_binary(Base), is_function(F, 1) ->
+    append_to_list(<<"data">>, Base, F).
 
-append_to_list(Tab, Base, SubK, V) ->
-    case last_in_list(Tab, Base) of
-	[] ->
-	    write(Tab, list_key(Base, 1), V),
-	    1;
-	[{K, _As, _}] ->
-	    LastPos = list_key_pos(Base, K),
-	    NewPos = LastPos+1,
-	    NewKey = join_key(list_key(Base, NewPos),
-			      to_binary(SubK)),
-	    write(Tab, NewKey, V),
-	    NewPos
-    end.
+append_to_list(Tab, Base, F) when is_binary(Base), is_function(F, 1) ->
+    {ok, Last} = kvdb_conf:last_list_pos(Tab, Base),
+    Pos = Last + 1,
+    Key = list_key(Base, Pos),
+    F(Key).
 
+%% append_to_list(Base, SubK, V) ->
+%%     append_to_list(<<"data">>, Base, SubK, V).
+
+%% append_to_list(Tab, Base, SubK, V) ->
+%%     case last_in_list(Tab, Base) of
+%% 	[] ->
+%% 	    write(Tab, list_key(Base, 1), V),
+%% 	    1;
+%% 	[{K, _As, _}] ->
+%% 	    LastPos = list_key_pos(Base, K),
+%% 	    NewPos = LastPos+1,
+%% 	    NewKey = join_key(list_key(Base, NewPos),
+%% 			      to_binary(SubK)),
+%% 	    write(Tab, NewKey, V),
+%% 	    NewPos
+%%     end.
+
+-spec last_in_list(kvdb:key()) -> {ok, kvdb:obj()} | {error, any()}.
 last_in_list(Base) ->
     last_in_list(<<"data">>, Base).
 
+-spec last_in_list(kvdb:table(), kvdb:key()) ->
+			  {ok, kvdb:obj()} | {error, any()}.
 last_in_list(Tab, Base) ->
-    Sz = byte_size(Base),
-    case kvdb_conf:prev(Tab, <<Base/binary, "[:">>) of
-	{ok, {<<Base:Sz/binary, $[, _/binary>>, _, _} = Obj} ->
-	    [Obj];
-	_ ->
-	    []
-    end.
+    {ok, Last} = kvdb_conf:last_list_pos(Tab, Base),
+    read(Tab, list_key(Base, Last)).
 
-list_key_pos(Base, Key) ->
-    SzB = byte_size(Base),
-    <<Base:SzB/binary, Rest/binary>> = Key,
-    [Ix|_] = split_key(Rest),
-    SzI = byte_size(Ix),
-    N = SzI - 2,
-    <<"[", I:N/binary, "]">> = Ix,
-    id_key_to_integer(I).
+    %% Sz = byte_size(Base),
+    %% case kvdb_conf:prev(Tab, <<Base/binary, "[:">>) of
+    %% 	{ok, {<<Base:Sz/binary, $[, _/binary>>, _, _} = Obj} ->
+    %% 	    [Obj];
+    %% 	_ ->
+    %% 	    []
+    %% end.
+
+%% list_key_pos(Base, Key) ->
+%%     SzB = byte_size(Base),
+%%     <<Base:SzB/binary, Rest/binary>> = Key,
+%%     [Ix|_] = split_key(Rest),
+%%     SzI = byte_size(Ix),
+%%     N = SzI - 2,
+%%     <<"[", I:N/binary, "]">> = Ix,
+%%     id_key_to_integer(I).
 
 
 %% decr(infinity) ->

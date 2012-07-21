@@ -54,13 +54,13 @@ new_(AID0, UName, Options) ->
 	true ->
 	    {error, exists};
 	false ->
-	    insert(?TAB, Key,name, Name),
-	    insert(?TAB, Key,'__aid',   exodm_db:account_id_value(AID)),
-	    insert(?TAB, Key,fullname,      binary_opt(fullname,Options)),
-	    insert(?TAB, Key,phone,         binary_opt(phone,Options)),
-	    insert(?TAB, Key,email,         binary_opt(email,Options)),
-	    insert(?TAB, Key,skype,         binary_opt(skype,Options)),
-	    insert_password(?TAB, Key, password,
+	    insert(Key,name, Name),
+	    insert(Key,'__aid',   exodm_db:account_id_value(AID)),
+	    insert(Key,fullname,      binary_opt(fullname,Options)),
+	    insert(Key,phone,         binary_opt(phone,Options)),
+	    insert(Key,email,         binary_opt(email,Options)),
+	    insert(Key,skype,         binary_opt(skype,Options)),
+	    insert_password(Key, password,
 			    binary_opt(password, Options)),
 	    process_list_options(access, Key, Options),
 	    process_list_options(alias, Key, Options),
@@ -102,7 +102,9 @@ add_alias_(UID0, Alias) ->
 		false ->
 		    exodm_db:append_to_list(
 		      <<"user">>, exodm_db:join_key(UID, <<"alias">>),
-		      '__alias', to_binary(Alias));
+		      fun(LKey) ->
+			      insert(LKey, '__alias', to_binary(Alias))
+		      end);
 		true ->
 		    error(alias_exists, [UID0, Alias])
 	    end;
@@ -149,17 +151,16 @@ update(UID, Options) ->
       end).
 
 update_(UID, Options) ->
-    Tab = <<"user">>,
     Key = key(UID),
     F=fun
 	  ({fullname,Value}) ->
-	      insert(Tab,Key,fullname, to_binary(Value));
+	      insert(Key,fullname, to_binary(Value));
 	  ({phone,Value}) ->
-	      insert(Tab,Key,phone,    to_binary(Value));
+	      insert(Key,phone,    to_binary(Value));
 	  ({email,Value}) ->
-	      insert(Tab,Key,email,    to_binary(Value));
+	      insert(Key,email,    to_binary(Value));
 	  ({skype,Value}) ->
-	      insert(Tab,Key,skype,    to_binary(Value));
+	      insert(Key,skype,    to_binary(Value));
 	  %% ({account,Acct}) ->
 	  %% 	  Account = to_binary(Acct),
 	  %% 	  case exodm_db_system:get_aid_user(Account) of
@@ -169,7 +170,7 @@ update_(UID, Options) ->
 	  %% 		  insert(Key, account, Account)
 	  %% 	  end;
 	  ({password,Value}) ->
-	      insert_password(Tab,Key, password,
+	      insert_password(Key, password,
 			      to_binary(Value));
 	  (_) ->
 	      ignore
@@ -225,9 +226,9 @@ fold_users(F, Acc) ->
 key(UID) ->
     exodm_db:encode_id(UID).
 
-insert(Tab, Key, Item, Value) ->
+insert(Key, Item, Value) ->
     Key1 = exodm_db:join_key([Key, to_binary(Item)]),
-    exodm_db:write(Tab, Key1, Value).
+    exodm_db:write(?TAB, Key1, Value).
 
 add_access(AID, UName, RID) ->
     exodm_db:in_transaction(
@@ -276,8 +277,8 @@ insert_access(User, I, AID, ARole) when is_integer(I), I>=0 ->
 
 insert_access_(Base, Pos, AID, ARole) ->
     K = exodm_db:list_key(Base, Pos),
-    insert(?TAB, K, '__aid', exodm_db:account_id_value(AID)),
-    insert(?TAB, K, '__rid', exodm_db:role_id_value(ARole)).
+    insert(K, '__aid', exodm_db:account_id_value(AID)),
+    insert(K, '__rid', exodm_db:role_id_value(ARole)).
 
 list_access(UID0) when is_binary(UID0) ->
     UID = exodm_db:encode_id(UID0),
@@ -303,11 +304,11 @@ list_access(UID0) when is_binary(UID0) ->
     	      end
       end, [], exodm_db:join_key(UID, <<"access">>)).
 
-insert_password(Tab, Key, Item, Value) ->
+insert_password(Key, Item, Value) ->
     {ok, Salt} = bcrypt:gen_salt(),
     %% Expensive hash; expensive to create, expensive to check against
     {ok, Hash} = bcrypt:hashpw(Value, Salt),
-    insert(Tab, Key, Item, to_binary(Hash)).
+    insert(Key, Item, to_binary(Hash)).
 
 read(Tab, Key,Item) ->
     Key1 = exodm_db:join_key([Key, to_binary(Item)]),
