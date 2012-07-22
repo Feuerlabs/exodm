@@ -4,9 +4,13 @@
   {description, "utility functions for integrating and deploying ExoDM"},
   {vsn, git},
   {registered, []},
+  {mod, {exodm_app, []}},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+		  gproc,
+		  exodm_db,
+		  exodm_rpc
                  ]},
   {env,	[]}
  ]}.

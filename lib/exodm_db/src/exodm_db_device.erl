@@ -9,6 +9,7 @@
 
 -export([init/1]).
 -export([new/3, update/3, lookup/2, lookup_attr/3,
+	 add_config_data/3, list_config_data/2,
 	 exist/2]).
 -export([list_device_keys/1, list_device_keys/2,
 	 fold_devices/3, fold_devices/4]).
@@ -121,6 +122,34 @@ update_(AID0, DID0, Options) ->
 	  ({yang,Value}) ->
 	      insert(Tab,DID, yang, to_binary(Value))
       end, Options).
+
+add_config_data(AID, DID, CfgName) ->
+    exodm_db:in_transaction(fun(_) -> add_config_data_(AID, DID, CfgName) end).
+
+add_config_data_(AID0, DID0, CfgName) ->
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(DID0),
+    Tab = table(AID),
+    case exist(AID, DID) of
+	true ->
+	    insert(Tab, exodm_db:join_key(DID, <<"config_data">>),
+		   CfgName, <<>>);
+	false ->
+	    error({unknown_device, [AID, DID]})
+    end.
+
+list_config_data(AID0, DID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(DID0),
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      Set = kvdb_conf:fold_children(
+		      Tab, fun(K, Acc) ->
+				   [lists:last(exodm_db:split_key(K))|Acc]
+			   end, [], exodm_db:join_key(DID, <<"config_data">>)),
+	      lists:reverse(Set)
+      end).
 
 lookup(AID, DID) ->
     lookup_(table(AID), exodm_db:encode_id(DID)).

@@ -1,7 +1,8 @@
 
 RELNAME=exodm
 
-.PHONY: all compile clean release upgrade
+.PHONY: all compile clean release upgrade test node console start attach tar \
+	recompile dev devrun
 
 all: compile
 
@@ -108,7 +109,7 @@ else
 	exit 2
 endif
 
-test: release
+test:
 	rebar skip_deps=true eunit
 
 clean:

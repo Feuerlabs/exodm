@@ -14,8 +14,12 @@
 	 read_config_data/2,
 	 delete_config_data/1,
 	 delete_config_data/2,
-	 create_yang_module/3]).
+	 create_yang_module/3,
+	 add_config_data_members/2]).
 -export([table/1]).
+
+-include_lib("kvdb/include/kvdb_conf.hrl").
+
 %%
 %% /u<UID>/devices/x<DID>/config/<target>/<tree>
 %%
@@ -66,8 +70,8 @@ read_config_data(AID, Name0) ->
 	      case exists(Tab, NameKey) of
 		  true ->
 		     case kvdb_conf:read_tree(Tab, NameKey) of
-			 [{Name, _, _, L}] ->
-			     {ok, tree_to_values(L)};
+			 #conf_tree{} = CT ->
+			     {ok, CT};
 			 Other ->
 			     error({unexpected, Other})
 		     end;
@@ -103,6 +107,37 @@ create_yang_module(Repository0, File, Yang0) ->
 	    error(unauthorized)
     end.
 
+
+add_config_data_members(Name, DIDs) ->
+    AID = exodm_db_session:get_aid(),
+    add_config_data_members(AID, Name, DIDs).
+
+add_config_data_members(AID, Name0, DIDs) ->
+    Tab = table(AID),
+    Name = to_binary(Name0),
+    Key = exodm_db:join_key(Name, <<"members">>),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      case exists(Tab, Name) of
+		  true ->
+		      lists:foreach(
+			fun(DID0) ->
+				DID = exodm_db:encode_id(DID0),
+				case exodm_db_device:exist(AID, DID) of
+				    true ->
+					write(Tab, Key, DID, <<>>),
+					exodm_db_device:add_config_data(
+					  AID, DID, Name);
+				    false ->
+					error({unknown_device, [AID,DID]})
+				end
+			end, DIDs);
+		  false ->
+		      error({unknown_config_data, Name})
+	      end
+      end).
+
+
 exists(Tab, Name) ->
     Key = exodm_db:join_key([exodm_db:encode_id(Name), <<"name">>]),
     case exodm_db:read(Tab, Key) of
@@ -137,7 +172,7 @@ write_values_(Tab, Key, {struct, Elems}) ->
 	      write_values_(Tab, Key1, S);
 	 ({K,V}) ->
 	      Key1 = exodm_db:join_key(Key, to_id(K)),
-	      write(Tab, Key1, to_id(K), V)
+	      write(Tab, Key1, V)
       end, Elems);
 write_values_(Tab, Key, {array, Elems}) ->
     lists:foldl(
@@ -156,57 +191,57 @@ write_values_(Tab, Key, {array, Elems}) ->
 	      I+1
       end, 1, Elems).
 
-tree_to_values({Key, As, <<>>, L}) when is_list(L) ->
-    {decode_id(Key), As, tree_to_values(L)};
-tree_to_values({Key, As, V}) ->
-    Dec = decode_id(Key),
-    {Dec, As, V};
-tree_to_values([H|T]) ->
-    Key = element(1, H),
-    case is_list_key(exodm_db:decode_id(Key)) of
-	{true, Base, I1} ->
-	    {L1, L2} = pick_list(T, Base, [setelement(1, H, I1)]),
-	    [{Base, [], [tree_to_values(X) || X <- L1]} |
-	     [tree_to_values(X) || X <- L2]];
-	false ->
-	    [tree_to_values(H)|tree_to_values(T)]
-    end;
-tree_to_values([]) ->
-    [].
+%% tree_to_values({Key, As, <<>>, L}) when is_list(L) ->
+%%     {decode_id(Key), As, tree_to_values(L)};
+%% tree_to_values({Key, As, V}) ->
+%%     Dec = decode_id(Key),
+%%     {Dec, As, V};
+%% tree_to_values([H|T]) ->
+%%     Key = element(1, H),
+%%     case is_list_key(exodm_db:decode_id(Key)) of
+%% 	{true, Base, I1} ->
+%% 	    {L1, L2} = pick_list(T, Base, [setelement(1, H, I1)]),
+%% 	    [{Base, [], [tree_to_values(X) || X <- L1]} |
+%% 	     [tree_to_values(X) || X <- L2]];
+%% 	false ->
+%% 	    [tree_to_values(H)|tree_to_values(T)]
+%%     end;
+%% tree_to_values([]) ->
+%%     [].
 
 
-pick_list([H|T], Base, Acc) ->
-    K = exodm_db:decode_id(element(1,H)),
-    case is_list_key(K) of
-	{true, Base, I} ->
-	    pick_list(T, Base, [setelement(1, H, I)|Acc]);
-	false ->
-	    {lists:reverse(Acc), T}
-    end;
-pick_list([], _, Acc) ->
-    {lists:reverse(Acc), []}.
+%% pick_list([H|T], Base, Acc) ->
+%%     K = exodm_db:decode_id(element(1,H)),
+%%     case is_list_key(K) of
+%% 	{true, Base, I} ->
+%% 	    pick_list(T, Base, [setelement(1, H, I)|Acc]);
+%% 	false ->
+%% 	    {lists:reverse(Acc), T}
+%%     end;
+%% pick_list([], _, Acc) ->
+%%     {lists:reverse(Acc), []}.
 
-decode_id(I) when is_integer(I) ->
-    I;
-decode_id(B) when is_binary(B) ->
-    exodm_db:decode_id(B).
+%% decode_id(I) when is_integer(I) ->
+%%     I;
+%% decode_id(B) when is_binary(B) ->
+%%     exodm_db:decode_id(B).
 
-is_list_key(I) when is_integer(I) -> false;
-is_list_key(K) ->
-    case re:run(K, <<"\\[">>, [global]) of
-	{match, Ps} ->
-	    {P,_} = lists:last(lists:flatten(Ps)),
-	    Sz = byte_size(K),
-	    N = Sz - P -2,
-	    case K of
-		<<Base:P/binary, "[", Ib:N/binary, "]">> ->
-		    {true, Base, exodm_db:id_key_to_integer(Ib)};
-		_ ->
-		    false
-	    end;
-	_ ->
-	    false
-    end.
+%% is_list_key(I) when is_integer(I) -> false;
+%% is_list_key(K) ->
+%%     case re:run(K, <<"\\[">>, [global]) of
+%% 	{match, Ps} ->
+%% 	    {P,_} = lists:last(lists:flatten(Ps)),
+%% 	    Sz = byte_size(K),
+%% 	    N = Sz - P -2,
+%% 	    case K of
+%% 		<<Base:P/binary, "[", Ib:N/binary, "]">> ->
+%% 		    {true, Base, exodm_db:id_key_to_integer(Ib)};
+%% 		_ ->
+%% 		    false
+%% 	    end;
+%% 	_ ->
+%% 	    false
+%%     end.
 
 to_binary(X) when is_atom(X) -> atom_to_binary(X, latin1);
 to_binary(X) when is_binary(X) -> X;

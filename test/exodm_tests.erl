@@ -6,6 +6,7 @@
 -include("feuerlabs_eunit.hrl").
 
 -include_lib("parse_trans/include/codegen.hrl").
+-include_lib("kvdb/include/kvdb_conf.hrl").
 
 -define(my_t(E), ?_t(?dbg(E))).
 -define(rpc(M,F,A), rpc(Cfg, M, F, A)).
@@ -27,7 +28,9 @@ exodm_test_() ->
 		     ?my_t(populate(Config)),
 		     ?my_t(list_accounts(Config)),
 		     ?my_t(list_users(Config)),
-		     ?my_t(store_yang(Config))
+		     ?my_t(store_yang(Config)),
+		     ?my_t(store_config(Config)),
+		     ?my_t(add_config_data_member(Config))
 		    ]
      end}.
 
@@ -60,7 +63,15 @@ populate(Cfg) ->
 		      AID1, [{name, <<"feuerlabs">>},
 			     {url, "http://flcallback:8080/exodm/callback"}]
 		     ]),
-    ?debugFmt("AID1 = ~p; AID2 = ~p; GID = ~p~n", [AID1, AID2, GID]),
+    ok = ?rpc(exodm_db_device, new,
+	      [AID2, DID = <<"x00000001">>,
+	       [{'__ck',<<2,0,0,0,0,0,0,0>>},
+		{'__sk',<<1,0,0,0,0,0,0,0>>},
+		{msisdn,"070100000001"},
+		{groups, [GID]}
+	       ]]),
+    ?debugFmt("AID1 = ~p; AID2 = ~p; GID = ~p; DID = ~p~n",
+	      [AID1, AID2, GID, DID]),
     ok.
 
 list_users(Cfg) ->
@@ -103,6 +114,66 @@ store_yang_scr() ->
 	      ok
       end).
 
+store_config(Cfg) ->
+    {ok, #conf_tree{root = R, tree = T} = CT} =
+	rscript(Cfg, store_config_scr()),
+    R = <<"test">>,
+    T = [{<<"name">>, [], <<"test">>},
+	 {<<"values">>, [{<<"cksrv-address">>, [], <<"127.0.0.1">>},
+			 {<<"kill-switch">>, [], 0},
+			 {<<"wakeup-prof">>,
+			  [{1, [{<<"data">>, [], <<"01010102">>},
+				{<<"id">>, [], 1}]},
+			   {2, [{<<"data">>, [], <<"01010103">>},
+				{<<"id">>, [], 2}]}]}
+			]},
+	 {<<"yang">>, [], <<"ckp-cfg.yang">>}
+	],
+    ok.
+
+store_config_scr() ->
+    codegen:exprs(
+      fun() ->
+	      exodm_db:transaction(
+		fun(Db) ->
+			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			{ok, <<"test">>} =
+			    exodm_db_config:new_config_data(
+			      <<"test">>, <<"ckp-cfg.yang">>,
+			      {struct,
+			       [{<<"kill-switch">>, 0},
+				{<<"cksrv-address">>, <<"127.0.0.1">>},
+				{<<"wakeup-prof">>,
+				 {array, [
+					  {struct,
+					   [{<<"id">>,1},
+					    {<<"data">>, <<"01010102">>}]},
+					  {struct,
+					   [{<<"id">>,2},
+					    {<<"data">>, <<"01010103">>}]}
+					 ]}
+				}]}),
+			exodm_db_config:read_config_data(<<"test">>)
+		end)
+      end).
+
+add_config_data_member(Cfg) ->
+    ok = rscript(Cfg, add_config_data_member_scr()),
+    [<<"test">>] = ?rpc(exodm_db_device, list_config_data, [<<"a00000002">>,
+							    <<"x00000001">>]),
+    ok.
+
+add_config_data_member_scr() ->
+    codegen:exprs(
+      fun() ->
+	      exodm_db:transaction(
+		fun(Db) ->
+			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			exodm_db_config:add_config_data_members(
+			  <<"test">>, [<<"x00000001">>])
+		end)
+      end).
+
 %% Helpers
 
 get_node(Cfg) ->
@@ -142,16 +213,17 @@ try_rpc_(N, T, Node, M, F, A) when N > 0 ->
 
 await_started(Cfg) ->
     Node = get_node(Cfg),
-    await_started(3, Node).
+    await_started(6, Node).
 
 await_started(0, _) ->
     error(timeout);
 await_started(N, Node) when N > 0 ->
-    case try_rpc(3, 5000, Node, init, get_status, []) of
-	{starting, _} ->
-	    timer:sleep(5000),
+    case try_rpc(3, 3000, Node, application_controller, get_master, [exodm]) of
+	undefined ->
+	    io:fwrite(user, "waiting for exodm app (~p)...~n", [N]),
+	    timer:sleep(2000),
 	    await_started(N-1, Node);
-	{started,_} ->
+	P when is_pid(P) ->
 	    ok
     end.
 
