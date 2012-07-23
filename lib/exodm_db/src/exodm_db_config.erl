@@ -12,10 +12,12 @@
 	 new_config_data/4,
 	 read_config_data/1,
 	 read_config_data/2,
+	 read_config_data_values/2,
 	 delete_config_data/1,
 	 delete_config_data/2,
 	 create_yang_module/3,
-	 add_config_data_members/2]).
+	 add_config_data_members/2,
+	 list_config_data_members/1]).
 -export([table/1]).
 
 -include_lib("kvdb/include/kvdb_conf.hrl").
@@ -61,9 +63,8 @@ read_config_data(Name) ->
     AID = exodm_db_session:get_aid(),
     read_config_data(AID, Name).
 
-read_config_data(AID, Name0) ->
+read_config_data(AID, Name) ->
     Tab = table(AID),
-    Name = to_binary(Name0),
     NameKey = exodm_db:encode_id(Name),
     exodm_db:transaction(
       fun(_) ->
@@ -79,6 +80,25 @@ read_config_data(AID, Name0) ->
 		      {error, not_found}
 	      end
       end).
+
+read_config_data_values(AID, Name) ->
+    Tab = table(AID),
+    NameKey = exodm_db:join_key(exodm_db:encode_id(Name), <<"values">>),
+    exodm_db:transaction(
+      fun(_) ->
+	      case exists(Tab, NameKey) of
+		  true ->
+		     case kvdb_conf:read_tree(Tab, NameKey) of
+			 #conf_tree{} = CT ->
+			     {ok, CT};
+			 Other ->
+			     error({unexpected, Other})
+		     end;
+		  false ->
+		      {error, not_found}
+	      end
+      end).
+
 
 delete_config_data(Name) ->
     AID = exodm_db_session:get_aid(),
@@ -114,7 +134,7 @@ add_config_data_members(Name, DIDs) ->
 
 add_config_data_members(AID, Name0, DIDs) ->
     Tab = table(AID),
-    Name = to_binary(Name0),
+    Name = exodm_db:encode_id(Name0),
     Key = exodm_db:join_key(Name, <<"members">>),
     exodm_db:in_transaction(
       fun(_) ->
@@ -135,6 +155,24 @@ add_config_data_members(AID, Name0, DIDs) ->
 		  false ->
 		      error({unknown_config_data, Name})
 	      end
+      end).
+
+list_config_data_members(Name) ->
+    AID = exodm_db_session:get_aid(),
+    list_config_data_members(AID, Name).
+
+list_config_data_members(AID, Name0) ->
+    Tab = table(AID),
+    Name = to_binary(Name0),
+    Key = exodm_db:join_key(exodm_db:encode_id(Name), <<"members">>),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      lists:reverse(
+		kvdb_conf:fold_children(
+		  Tab,
+		  fun(K, Acc) ->
+			  [lists:last(exodm_db:split_key(K))|Acc]
+		  end, [], Key))
       end).
 
 
