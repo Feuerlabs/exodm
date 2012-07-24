@@ -2,4 +2,8 @@
 VSN = [_|_] = os:cmd("../exorel git_vsn $EXO_VSN").
 io:fwrite("CWD = ~p~n", [file:get_cwd()]).
 io:fwrite("VSN = ~s~n", [VSN]).
+%% We are in $TOP/rel/ - need to ensure app in $TOP/ebin can be found.
+%% Prefer this to adding "../.." in lib_dir, which is too inclusive.
+D = filename:dirname(filename:dirname(SCRIPT)).
+code:add_path(filename:join(D, "ebin")).
 lists:keystore(vsn, 1, CONFIG, {vsn, [C || C <- VSN, C=/=$\n]}).
