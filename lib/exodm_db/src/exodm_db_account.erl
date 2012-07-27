@@ -9,10 +9,12 @@
 
 -export([new/1, update/2, lookup/1, lookup_by_name/1, exist/1]).
 -export([create_role/3]).
+-export([register_protocol/2]).
 -export([list_account_keys/0]).
 -export([fold_accounts/2]).
 -export([list_users/1, list_users/2]).
 -export([list_groups/1, list_groups/2]).
+-export([system_specs/1]).
 -export([list_admins/1]).
 -export([key/1, group_key/2, new_group_id/1,
 	 table/0]).
@@ -125,6 +127,21 @@ create_role_(AID, RID, UName, Opts) ->
 	      end
       end, proplists:get_all_values(access, Opts)),
     {ok, exodm_db:role_id_num(RID)}.
+
+register_protocol(AID, Protocol) when is_binary(Protocol) ->
+    case exodm_rpc_protocol:info(Protocol) of
+	{true, Module, Mode} ->
+	    exodm_db:in_transaction(
+	      fun(_) ->
+		      Key = exodm_db:join([exodm_db:account_id_key(AID),
+					   <<"protocols">>, Protocol]),
+		      insert(Key, module, atom_to_list(Module)),
+		      insert(Key, mode, Mode)
+	      end);
+	false ->
+	    erlang:error({unknown_protocol, Protocol})
+    end.
+
 
 
 %% role_exists(AID, Role0) ->
@@ -281,6 +298,22 @@ list_groups(AID) ->
 
 list_groups(AID, Limit) ->
     exodm_db_group:list_group_keys(AID, Limit).
+
+%% System specs are YANG specs exposing a custom ExoDM API for RPCs.
+%% This could be used to enable premium services, or to allow custom
+%% development for highly valued customers or beta customers.
+%%
+system_specs(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      Set = kvdb_conf:fold_children(
+		      <<"data">>,
+		      fun(K, Acc) ->
+			      [lists:last(exodm_db:split_key(K))|Acc]
+		      end, [], exodm_db:join_key(AID, <<"system_specs">>)),
+	      lists:reverse(Set)
+      end).
 
 list_admins(AID0) ->
     AID = exodm_db:account_id_key(AID0),

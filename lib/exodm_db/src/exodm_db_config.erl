@@ -8,16 +8,18 @@
 -module(exodm_db_config).
 
 -export([init/1]).
--export([new_config_data/3,
-	 new_config_data/4,
-	 read_config_data/1,
-	 read_config_data/2,
-	 read_config_data_values/2,
-	 delete_config_data/1,
-	 delete_config_data/2,
-	 create_yang_module/3,
-	 add_config_data_members/2,
-	 list_config_data_members/1]).
+-export(
+   [new_config_data/5,         %% (AID, Name, Yang, Protocol, Values)
+    read_config_data/2,        %% (AID, Name)
+    read_config_data_values/2, %% (AID, Name)
+    get_yang_spec/2,           %% (AID, Name)
+    get_protocol/2,            %% (AID, Name) -> (AID, Name, <<"exodm_bert">>)
+    get_protocol/3,            %% (AID, Name, Default)
+    delete_config_data/2,      %% (AID, Name)
+    create_yang_module/4,      %% (AID, <<"user">>|<<"system">>, File, Yang)
+    add_config_data_members/3, %% (AID, CfgDataName, [DeviceID])
+    list_config_data_members/2 %% (AID, CfgDataName)
+   ]).
 -export([table/1]).
 
 -include_lib("kvdb/include/kvdb_conf.hrl").
@@ -36,11 +38,7 @@ table(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     <<AID/binary, "_config">>.
 
-new_config_data(Name, Yang, Values) ->
-    AID = exodm_db_session:get_aid(),
-    new_config_data(AID, Name, Yang, Values).
-
-new_config_data(AID, Name0, Yang0, Values) ->
+new_config_data(AID, Name0, Yang0, Protocol, Values) ->
     Tab = table(AID),
     Name = to_binary(Name0),
     Yang = to_binary(Yang0),
@@ -51,17 +49,14 @@ new_config_data(AID, Name0, Yang0, Values) ->
 		  true ->
 		      error(exists);
 		  false ->
-		      validate_config(Tab, AID, Yang, Values),
+		      validate_config(Tab, AID, Yang, Protocol, Values),
 		      write(Tab, NameKey, <<"name">>, Name),
 		      write(Tab, NameKey, <<"yang">>, Yang),
+		      write(Tab, NameKey, <<"protocol">>, Protocol),
 		      write_values(Tab, NameKey, Values),
 		      {ok, Name}
 	      end
       end).
-
-read_config_data(Name) ->
-    AID = exodm_db_session:get_aid(),
-    read_config_data(AID, Name).
 
 read_config_data(AID, Name) ->
     Tab = table(AID),
@@ -80,6 +75,29 @@ read_config_data(AID, Name) ->
 		      {error, not_found}
 	      end
       end).
+
+get_yang_spec(AID, Name) ->
+    Tab = table(AID),
+    NameKey = exodm_db:encode_id(Name),
+    case exodm_db:read(Tab, exodm_db:join_key(NameKey, <<"yang">>)) of
+	{ok, {_, _, Y}} ->
+	    {ok, Y};
+	{error, _} = E ->
+	    E
+    end.
+
+get_protocol(AID, Name) ->
+    get_protocol(AID, Name, <<"exodm_bert">>).
+
+get_protocol(AID, Name, Default) ->
+    Tab = table(AID),
+    NameKey = exodm_db:encode_id(Name),
+    case exodm_db:read(Tab, exodm_db:join_key(NameKey, <<"protocol">>)) of
+	{ok, {_, _, P}} ->
+	    P;
+	{error, _} ->
+	    Default
+    end.
 
 read_config_data_values(AID, Name) ->
     Tab = table(AID),
@@ -100,10 +118,6 @@ read_config_data_values(AID, Name) ->
       end).
 
 
-delete_config_data(Name) ->
-    AID = exodm_db_session:get_aid(),
-    delete_config_data(AID, Name).
-
 delete_config_data(AID, Name) ->
     Tab = table(AID),
     NameKey = exodm_db:encode_id(to_binary(Name)),
@@ -112,7 +126,8 @@ delete_config_data(AID, Name) ->
 	      kvdb_conf:delete_all(Tab, NameKey)
       end).
 
-create_yang_module(Repository0, File, Yang0) ->
+create_yang_module(AID, Repository0, File, Yang0) ->
+    check_access(AID),
     Repository = to_binary(Repository0),
     Yang = to_binary(Yang0),
     case Repository of
@@ -127,12 +142,8 @@ create_yang_module(Repository0, File, Yang0) ->
 	    error(unauthorized)
     end.
 
-
-add_config_data_members(Name, DIDs) ->
-    AID = exodm_db_session:get_aid(),
-    add_config_data_members(AID, Name, DIDs).
-
-add_config_data_members(AID, Name0, DIDs) ->
+add_config_data_members(AID0, Name0, DIDs) ->
+    AID = exodm_db:account_id_key(AID0),
     Tab = table(AID),
     Name = exodm_db:encode_id(Name0),
     Key = exodm_db:join_key(Name, <<"members">>),
@@ -185,7 +196,7 @@ exists(Tab, Name) ->
 	    true
     end.
 
-validate_config(_Tab, _AID, _Yang, _Values) ->
+validate_config(_Tab, _AID, _Yang, _Protocol, _Values) ->
     %% We don't yet do any validation. FIXME
     ok.
 
@@ -287,3 +298,6 @@ to_binary(X) when is_list(X) -> list_to_binary(X).
 
 to_id(X) ->
     exodm_db:encode_id(to_binary(X)).
+
+check_access(AID) ->
+    AID = exodm_db_session:get_aid().

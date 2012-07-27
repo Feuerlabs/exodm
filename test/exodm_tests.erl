@@ -30,7 +30,8 @@ exodm_test_() ->
 		     ?my_t(list_users(Config)),
 		     ?my_t(store_yang(Config)),
 		     ?my_t(store_config(Config)),
-		     ?my_t(add_config_data_member(Config))
+		     ?my_t(add_config_data_member(Config)),
+		     ?my_t(client_ping(Config))
 		    ]
      end}.
 
@@ -118,17 +119,18 @@ store_config(Cfg) ->
     {ok, #conf_tree{root = R, tree = T} = CT} =
 	rscript(Cfg, store_config_scr()),
     R = <<"test">>,
-    T = [{<<"name">>, [], <<"test">>},
-	 {<<"values">>, [{<<"cksrv-address">>, [], <<"127.0.0.1">>},
-			 {<<"kill-switch">>, [], 0},
-			 {<<"wakeup-prof">>,
-			  [{1, [{<<"data">>, [], <<"01010102">>},
-				{<<"id">>, [], 1}]},
-			   {2, [{<<"data">>, [], <<"01010103">>},
-				{<<"id">>, [], 2}]}]}
-			]},
-	 {<<"yang">>, [], <<"ckp-cfg.yang">>}
-	],
+    {T,T} = {T, [{<<"name">>, [], <<"test">>},
+		 {<<"protocol">>, [], <<"exodm_bert">>},
+		 {<<"values">>, [{<<"cksrv-address">>, [], <<"127.0.0.1">>},
+				 {<<"kill-switch">>, [], 0},
+				 {<<"wakeup-prof">>,
+				  [{1, [{<<"data">>, [], <<"01010102">>},
+					{<<"id">>, [], 1}]},
+				   {2, [{<<"data">>, [], <<"01010103">>},
+					{<<"id">>, [], 2}]}]}
+				]},
+		 {<<"yang">>, [], <<"ckp-cfg.yang">>}
+		]},
     ok.
 
 store_config_scr() ->
@@ -137,9 +139,12 @@ store_config_scr() ->
 	      exodm_db:transaction(
 		fun(Db) ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			AID = exodm_db_session:get_aid(),
 			{ok, <<"test">>} =
 			    exodm_db_config:new_config_data(
+			      AID,
 			      <<"test">>, <<"ckp-cfg.yang">>,
+			      <<"exodm_bert">>,
 			      {struct,
 			       [{<<"kill-switch">>, 0},
 				{<<"cksrv-address">>, <<"127.0.0.1">>},
@@ -153,7 +158,7 @@ store_config_scr() ->
 					    {<<"data">>, <<"01010103">>}]}
 					 ]}
 				}]}),
-			exodm_db_config:read_config_data(<<"test">>)
+			exodm_db_config:read_config_data(AID, <<"test">>)
 		end)
       end).
 
@@ -169,10 +174,29 @@ add_config_data_member_scr() ->
 	      exodm_db:transaction(
 		fun(Db) ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			AID = exodm_db_session:get_aid(),
 			exodm_db_config:add_config_data_members(
-			  <<"test">>, [<<"x00000001">>])
+			  AID, <<"test">>, [<<"x00000001">>])
 		end)
       end).
+
+client_ping(Cfg) ->
+    Auth = ?rpc(exodm_db_device, client_auth_config, [<<"a00000002">>,
+						      <<"x00000001">>]),
+    ?debugVal(Auth),
+    ok = application:load(exo),
+    ok = application:load(bert),
+    ok = application:load(kvdb),
+    ok = application:load(exoport),
+    [[application:set_env(A, K, V) || {K,V} <- L] ||
+	{A, L} <- [{exoport, [{exodm_address, {"localhost", 9900}},
+			      {bert_port, 9990}]} | Auth]],
+    ok = application:start(exo),
+    ok = application:start(bert),
+    ok = application:start(gproc),
+    ok = application:start(kvdb),
+    ok = application:start(exoport),
+    {reply, pong, []} = exoport:ping().
 
 %% Helpers
 

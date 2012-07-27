@@ -10,6 +10,7 @@
 -export([init/1]).
 -export([new/3, update/3, lookup/2, lookup_attr/3,
 	 add_config_data/3, list_config_data/2,
+	 yang_modules/2,
 	 exist/2]).
 -export([list_device_keys/1, list_device_keys/2,
 	 fold_devices/3, fold_devices/4]).
@@ -138,17 +139,31 @@ add_config_data_(AID0, DID0, CfgName) ->
 	    error({unknown_device, [AID, DID]})
     end.
 
+
 list_config_data(AID0, DID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(DID0),
+    Tab = table(AID),
+    exodm_db:in_transaction(fun(_) -> list_config_data_(Tab, DID) end).
+
+list_config_data_(Tab, DID) ->
+    Set = kvdb_conf:fold_children(
+	    Tab, fun(K, Acc) ->
+			 [lists:last(exodm_db:split_key(K))|Acc]
+		 end, [], exodm_db:join_key(DID, <<"config_data">>)),
+    lists:reverse(Set).
+
+
+yang_modules(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->
-	      Set = kvdb_conf:fold_children(
-		      Tab, fun(K, Acc) ->
-				   [lists:last(exodm_db:split_key(K))|Acc]
-			   end, [], exodm_db:join_key(DID, <<"config_data">>)),
-	      lists:reverse(Set)
+	      CDs = list_config_data_(Tab, DID),
+	      [{Name,
+		exodm_db_config:get_yang_spec(AID, Name),
+		exodm_db_config:get_protocol(AID, Name)} || Name <- CDs]
       end).
 
 lookup(AID, DID) ->
@@ -267,13 +282,13 @@ client_auth_config(AID0, DID0) ->
 		[] -> {error, not_found};
 		[{_, Cs}] ->
 		    ExtKey = enc_ext_key(AID, DID),
-		    {bert,
-		     [{auth, [
-			      {client, [{id, ExtKey},
-					{keys, {Ck, Cs}},
-					{mod, bert_challenge}]}
-			     ]},
-		      {reuse_mode, client}]}
+		    [{bert,
+		      [{auth, [
+			       {client, [{id, ExtKey},
+					 {keys, {Ck, Cs}},
+					 {mod, bert_challenge}]}
+			      ]},
+		       {reuse_mode, client}]}]
 	    end
     end.
 
