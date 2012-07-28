@@ -31,7 +31,14 @@ exodm_test_() ->
 		     ?my_t(store_yang(Config)),
 		     ?my_t(store_config(Config)),
 		     ?my_t(add_config_data_member(Config)),
-		     ?my_t(client_ping(Config))
+		     {setup,
+		      fun() -> start_client(Config) end,
+		      fun(Cfg1) ->
+			      stop_client(Cfg1)
+		      end,
+		      fun(Cfg1) ->
+			      [?my_t(client_ping(Cfg1))]
+		      end}
 		    ]
      end}.
 
@@ -180,23 +187,32 @@ add_config_data_member_scr() ->
 		end)
       end).
 
-client_ping(Cfg) ->
+%%% ==================================== Client BERT RPC Setup
+
+start_client(Cfg) ->
     Auth = ?rpc(exodm_db_device, client_auth_config, [<<"a00000002">>,
 						      <<"x00000001">>]),
     ?debugVal(Auth),
-    ok = application:load(exo),
-    ok = application:load(bert),
-    ok = application:load(kvdb),
-    ok = application:load(exoport),
+    Apps = [exo, bert, gproc, kvdb, exoport],
+    [{A,ok} = {A, application:load(A)} || A <- Apps],
     [[application:set_env(A, K, V) || {K,V} <- L] ||
 	{A, L} <- [{exoport, [{exodm_address, {"localhost", 9900}},
 			      {bert_port, 9990}]} | Auth]],
-    ok = application:start(exo),
-    ok = application:start(bert),
-    ok = application:start(gproc),
-    ok = application:start(kvdb),
-    ok = application:start(exoport),
+    [{A,ok} = {A, application:start(A)} || A <- Apps],
+    [{client_auth, Auth} | Cfg].
+
+stop_client(Cfg) ->
+    Apps = [exoport, kvdb, bert, gproc, exo],
+    [{A,ok} = {A, application:stop(A)} || A <- Apps],
+    [{A,ok} = {A, application:unload(A)} || A <- Apps],
+    ok.
+
+%%% ==================================== Client BERT RPC Tests
+
+client_ping(Cfg) ->
     {reply, pong, []} = exoport:ping().
+
+%%% ==================================== End client BERT RPC
 
 %% Helpers
 
