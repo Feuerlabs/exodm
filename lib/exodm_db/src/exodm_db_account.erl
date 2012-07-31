@@ -9,7 +9,7 @@
 
 -export([new/1, update/2, lookup/1, lookup_by_name/1, exist/1]).
 -export([create_role/3]).
--export([register_protocol/2]).
+-export([register_protocol/2, is_protocol_registered/2]).
 -export([list_account_keys/0]).
 -export([fold_accounts/2]).
 -export([list_users/1, list_users/2]).
@@ -129,20 +129,32 @@ create_role_(AID, RID, UName, Opts) ->
     {ok, exodm_db:role_id_num(RID)}.
 
 register_protocol(AID, Protocol) when is_binary(Protocol) ->
-    case exodm_rpc_protocol:info(Protocol) of
-	{true, Module, Mode} ->
+    case exodm_rpc_protocol:module(Protocol) of
+	undefined ->
+	    erlang:error({unknown_protocol, Protocol});
+	_ ->
 	    exodm_db:in_transaction(
 	      fun(_) ->
-		      Key = exodm_db:join([exodm_db:account_id_key(AID),
-					   <<"protocols">>, Protocol]),
-		      insert(Key, module, atom_to_list(Module)),
-		      insert(Key, mode, Mode)
+		      Key = exodm_db:join(exodm_db:account_id_key(AID),
+					  <<"protocols">>),
+		      insert(Key, Protocol, <<>>)
 	      end);
 	false ->
 	    erlang:error({unknown_protocol, Protocol})
     end.
 
-
+is_protocol_registered(AID, Protocol) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      case kvdb_conf:read(?TAB, exodm_db:join_key(
+					  [exodm_db:account_id_key(AID),
+					   <<"protocols">>, Protocol])) of
+		  {ok, _} ->
+		      true;
+		  {error, _} ->
+		      false
+	      end
+      end).
 
 %% role_exists(AID, Role0) ->
 %%     Role = exodm_db:encode_id(to_binary(Role0)),
@@ -312,7 +324,7 @@ system_specs(AID0) ->
 		      fun(K, Acc) ->
 			      [lists:last(exodm_db:split_key(K))|Acc]
 		      end, [], exodm_db:join_key(AID, <<"system_specs">>)),
-	      lists:reverse(Set)
+	      lists:usort(Set ++ exodm_rpc:std_specs())
       end).
 
 list_admins(AID0) ->

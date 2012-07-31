@@ -19,6 +19,7 @@
          write_system/2
         ]).
 
+-include_lib("lager/include/log.hrl").
 -define(DB, kvdb_conf).
 
 init() ->
@@ -76,7 +77,7 @@ attrs_([], Acc) ->
 read(Y) -> read(get_aid(), Y).
 
 read(AID0, Y) ->
-    AID = exodm_db:account_id_key(AID0),
+    {AID, _Key} = file_key(AID0, Y),
     yang_parser:parse(Y, [{open_hook, fun(F, Opts) ->
 					      open_file_hook(AID, F, Opts)
 				      end}]).
@@ -91,17 +92,14 @@ write(AID, File, Y) ->
       end).
 
 write_system(File, Y) ->
-    case exodm_db_session:is_trusted_proc() of
-        true ->
-            exodm_db:in_transaction(
-              fun(_) ->
-                      write_(system, File, Y)
-              end);
-        false ->
-            error(unauthorized)
-    end.
+    exodm_db:in_transaction(
+      fun(_) ->
+              write_(system, File, Y)
+      end).
 
-write_(AID, File0, Y) ->
+write_(AID0, File0, Y) ->
+    {AID, _Key} = file_key(AID0, File0),
+    check_access(write, AID),
     File = to_string(File0),
     Opts = [{open_hook, fun(F, Os) when F == File ->
 				open_bin_hook(AID, F, [{data,Y}|Os]);
@@ -119,24 +117,52 @@ write_(AID, File0, Y) ->
 	    Error
     end.
 
+check_access(read, system) -> ok;
+check_access(write, system) ->
+    case exodm_db_session:is_trusted_proc() of
+        true ->
+            ok;
+        false ->
+            ?debug("is not trusted proc (~p)~n", [get()]),
+            error(unauthorized)
+    end;
+check_access(_, AID) ->
+    case exodm_db:account_id_key(exodm_db_session:get_aid()) of
+        AID ->
+            ok;
+        Other ->
+            error({unauthorized, [AID, Other]})
+    end.
+
+
 delete(File) ->
     delete(get_aid(), File).
 
-delete(AID, File) ->
+delete(AID0, File) ->
+    {AID, Key} = file_key(AID0, File),
     exodm_db:in_transaction(
       fun(_) ->
-              kvdb:delete(?DB, tab_name(AID), File)
+              kvdb:delete(?DB, tab_name(AID), Key)
       end).
 
 rpcs(File) ->
     rpcs(get_aid(), File).
 
-rpcs(AID, File) ->
-    case kvdb:get_attrs(?DB, tab_name(AID), file_key(File), [rpcs]) of
+rpcs(AID0, File) ->
+    ?debug("rpcs(~p, ~p)~n", [AID0, File]),
+    {AID, Key} = file_key(AID0, File),
+    check_access(read, AID),
+    case kvdb:get_attrs(?DB, tab_name(AID), Key, [rpcs]) of
         {ok, Res} ->
             Res;
         {error,not_found} ->
-            []
+            case filename:basename(File) of
+                <<"system.", _/binary>> -> [];
+                <<"user.", _/binary>>   -> [];
+                _ ->
+                    ?debug("trying system repository (~p)~n", [Key]),
+                    rpcs(AID, <<"system.", Key/binary>>)
+            end
     end.
 
 specs() ->
@@ -149,17 +175,30 @@ store(AID, File, {module, _, M, L} = Mod, RPCs, Src) ->
     Checksum = compute_checksum(Mod),
     io:fwrite("Specs with same checksum: ~p~n",
 	      [find(AID, '__checksum', Checksum)]),
-    kvdb:put(?DB, tab_name(AID),
-	     {file_key(File),
-	      [{'__checksum', Checksum},
-	       {rpcs, RPCs}
-	       |attrs(M, L)],
+    {Tab, FName} = case to_binary(filename:basename(File)) of
+                       <<"system.", Rest/binary>> ->
+                           {tab_name(system), Rest};
+                       <<"user.", Rest/binary>> ->
+                           {tab_name(AID), Rest};
+                       Other ->
+                           {tab_name(AID), Other}
+                   end,
+    kvdb:put(?DB, Tab,
+	     {FName, [{'__checksum', Checksum},
+                      {rpcs, RPCs}
+                      |attrs(M, L)],
 	      to_binary(Src)}).
 
-file_key(File) when is_binary(File) ->
-    File;
-file_key(File) ->
-    to_binary(filename:basename(File)).
+file_key(AID, File) ->
+    case filename:basename(to_binary(File)) of
+        <<"system.", Key/binary>> -> {system, Key};
+        <<"user.", Key/binary>>   -> {account_id_key(AID), Key};
+        _ -> {account_id_key(AID), File}
+    end.
+
+account_id_key(system) -> system;
+account_id_key(ID) ->
+    exodm_db:account_id_key(ID).
 
 compute_checksum(Term) ->
     erlang:md5(term_to_binary(Term)).

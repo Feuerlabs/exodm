@@ -179,6 +179,12 @@ module exodm {
 	    length "1..32";
 	  }
 	}
+	leaf protocol {
+	  description "Name of the ExoDM protocol used to talk to the device.";
+	  type string {
+	    length "1..32";
+	  }
+	}
 	anyxml values {
 	  description "Configuration values (validated against the yang spec)";
 	}

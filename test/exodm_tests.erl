@@ -11,15 +11,30 @@
 -define(my_t(E), ?_t(?dbg(E))).
 -define(rpc(M,F,A), rpc(Cfg, M, F, A)).
 
+-define(loglevels, '__log_levels').
+-define(loglevel(L,E),
+	push_loglevel(Cfg),
+	try  set_loglevel(L, Cfg),
+	     E
+	after
+	    pop_loglevel(Cfg)
+	end).
+
 exodm_test_() ->
     {setup,
      fun() ->
-	     {ok, CWD} = file:get_cwd(),
-	     Top = filename:dirname(CWD),
-	     make(Top),
-	     Cfg = start_exodm(Top),
-	     ok = await_started(Cfg),
-	     Cfg
+	     try
+		 {ok, CWD} = file:get_cwd(),
+		 Top = filename:dirname(CWD),
+		 make(Top),
+		 Cfg = start_exodm(Top),
+		 ok = await_started(Cfg),
+		 ok = set_loglevel(Cfg),
+		 Cfg
+	     catch
+		 error:E ->
+		     error({E, erlang:get_stacktrace()})
+	     end
      end,
      fun(Config) ->
 	     ?debugVal(stop_exodm(Config))
@@ -29,15 +44,27 @@ exodm_test_() ->
 		     ?my_t(list_accounts(Config)),
 		     ?my_t(list_users(Config)),
 		     ?my_t(store_yang(Config)),
+		     ?my_t(store_exodm_yang(Config)),
 		     ?my_t(store_config(Config)),
 		     ?my_t(add_config_data_member(Config)),
 		     {setup,
-		      fun() -> start_client(Config) end,
+		      fun() -> start_http_client(Config) end,
+		      fun(Cfg1) -> stop_http_client(Cfg1) end,
 		      fun(Cfg1) ->
-			      stop_client(Cfg1)
+			      [
+			       ?my_t(json_rpc1(Config))
+			      ]
+		      end},
+		     {setup,
+		      fun() -> start_rpc_client(Config) end,
+		      fun(Cfg1) ->
+			      stop_rpc_client(Cfg1)
 		      end,
 		      fun(Cfg1) ->
-			      [?my_t(client_ping(Cfg1))]
+			      %% Here, we have a BERT RPC client up and running
+			      [
+			       ?my_t(client_ping(Cfg1))
+			      ]
 		      end}
 		    ]
      end}.
@@ -117,7 +144,27 @@ store_yang_scr() ->
 			{ok, Bin} = file:read_file(
 				      filename:join(code:priv_dir(ck3),
 						    "yang/exosense.yang")),
-			exodm_db_yang:write("exosense.yang", Bin)
+			exodm_db_yang:write("exosense.yang", Bin),
+			exodm_db_session:logout()
+		end),
+	      ok
+      end).
+
+store_exodm_yang(Cfg) ->
+    ok = rscript(Cfg, store_exodm_yang_scr()).
+
+store_exodm_yang_scr() ->
+    codegen:exprs(
+      fun() ->
+	      exodm_db:transaction(
+		fun(Db) ->
+			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			exodm_db_session:set_trusted_proc(),
+			{ok, Bin} = file:read_file(
+				      filename:join(code:priv_dir(exodm_db),
+				      "yang/exodm.yang")),
+			exodm_db_yang:write("system.exodm.yang", Bin),
+			exodm_db_session:logout()
 		end),
 	      ok
       end).
@@ -189,7 +236,7 @@ add_config_data_member_scr() ->
 
 %%% ==================================== Client BERT RPC Setup
 
-start_client(Cfg) ->
+start_rpc_client(Cfg) ->
     Auth = ?rpc(exodm_db_device, client_auth_config, [<<"a00000002">>,
 						      <<"x00000001">>]),
     ?debugVal(Auth),
@@ -201,7 +248,7 @@ start_client(Cfg) ->
     [{A,ok} = {A, application:start(A)} || A <- Apps],
     [{client_auth, Auth} | Cfg].
 
-stop_client(Cfg) ->
+stop_rpc_client(Cfg) ->
     Apps = [exoport, kvdb, bert, gproc, exo],
     [{A,ok} = {A, application:stop(A)} || A <- Apps],
     [{A,ok} = {A, application:unload(A)} || A <- Apps],
@@ -214,7 +261,54 @@ client_ping(Cfg) ->
 
 %%% ==================================== End client BERT RPC
 
+
+%%% ==================================== JSON-RPC Tests
+
+start_http_client(_Cfg) ->
+    application:start(crypto),
+    application:start(public_key),
+    ok = application:start(ssl),
+    ok = lhttpc:start().
+
+stop_http_client(_Cfg) ->
+    ok = lhttpc:stop(),
+    ok = application:stop(ssl),
+    application:stop(public_key),
+    application:stop(crypto).
+
+json_rpc1(Cfg) ->
+    ?loglevel(
+       debug,
+       post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+		     "exodm:create-config-data", "1",
+		     {struct,[{"name","test_cfg_1"},
+			      {"yang", "exosense.yang"},
+			      {"protocol","exodm_bert"},
+			      {"values",{struct,[{"a", "1"},
+						 {"b", "xx"}
+						]}}
+			     ]})).
+
+
+post_json_rpc({Port, User, Pwd, Path}, Method, ID, Params) ->
+    URL = lists:concat(["https://", User, ":", Pwd, "@localhost:",
+			integer_to_list(Port), Path]),
+    Body = json2:encode({struct, [{"json-rpc", "2.0"},
+				  {"method", Method},
+				  {"id", ID},
+				  {"params", Params}]}),
+    Res = lhttpc:request(URL, "POST",
+			 [{"Content-Length", integer_to_list(
+					       iolist_size(Body))},
+			  {"Content-Type", "application/json-rpc"},
+			  {"Host", "localhost"}],
+			 Body, 3000),
+    io:fwrite(user, "HTTP Res = ~p~n", [Res]),
+    Res.
+
 %% Helpers
+
+
 
 get_node(Cfg) ->
     {_, Node} = lists:keyfind(node, 1, Cfg),
@@ -267,13 +361,54 @@ await_started(N, Node) when N > 0 ->
 	    ok
     end.
 
+set_loglevel(Cfg) ->
+    case os:getenv("LOGLEVEL") of
+	L when L=="debug"; L=="info"; L=="crash" ->
+	    set_loglevel(list_to_atom(L), Cfg);
+	_ ->
+	    ok
+    end.
+
+set_loglevel(Level, Cfg) ->
+    ?rpc(lager, set_loglevel, [lager_console_backend, Level]),
+    ok.
+
+get_loglevel(Cfg) ->
+    ?rpc(lager, get_loglevel, [lager_console_backend]).
+
+push_loglevel(Cfg) ->
+    Cur = get_loglevel(Cfg),
+    case get(?loglevels) of
+	undefined ->
+	    put(?loglevels, [Cur]);
+	L when is_list(L) ->
+	    put(?loglevels, [Cur|L])
+    end.
+
+pop_loglevel(Cfg) ->
+    [Prev|L] = get(?loglevels),
+    set_loglevel(Prev, Cfg),
+    put(?loglevels, L),
+    ok.
+
 make(Top) ->
     in_dir(Top, fun() ->
-			os:cmd("make dev")
+			%% os:cmd("make dev")
+			output("make release", fun() ->
+						       os:cmd("make release")
+					       end),
+			output("make generate", fun() ->
+							os:cmd("make generate")
+						end)
 		end).
+
+output(Cmd, F) ->
+    io:fwrite(user, "Cmd: ~s~n", [Cmd]),
+    io:fwrite(user, "~s~n", [F()]).
 
 start_exodm(Top) ->
     net_kernel:start([exodm_test, longnames]),
+    erlang:set_cookie(node(), 'exodm'),
     Dir = filename:absname("exodm_tmp"),
     NodeStr = "exodm_n1@" ++ hostname(),
     case filelib:is_dir(Dir) of
@@ -282,9 +417,15 @@ start_exodm(Top) ->
     end,
     ok = file:make_dir(Dir),
     DevRun = filename:join(Top, "devrun"),
+    MakeNode = filename:join(Top, "make_node"),
+    Rel = filename:join(Top, "rel/exodm"),
     in_dir(Dir, fun() ->
+			%% ?debugVal(
+			%%    os:cmd(DevRun ++ " -name " ++ NodeStr ++ " -detached"))
 			?debugVal(
-			   os:cmd(DevRun ++ " -name " ++ NodeStr ++ " -detached"))
+			   os:cmd(MakeNode ++ " -target " ++ Dir
+				  ++ " -rel " ++ Rel ++ " -- -name " ++ NodeStr)),
+			?debugVal(os:cmd(Rel ++ "/bin/exodm start"))
 		end),
     [{dir, Dir},
      {node, list_to_atom(NodeStr)}].
