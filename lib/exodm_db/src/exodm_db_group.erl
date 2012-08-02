@@ -103,9 +103,9 @@ list_group_keys(AID) ->
     list_group_keys(AID, 30).
 
 list_group_keys(AID, Limit) ->
-    fold_groups(fun(GID, Acc) ->
-			[GID|Acc]
-		end, [], AID, Limit).
+    lists:reverse(fold_groups(fun(GID, Acc) ->
+				      [GID|Acc]
+			      end, [], AID, Limit)).
 
 fold_groups(F, Acc, AID) ->
     fold_groups(F, Acc, AID, 30).

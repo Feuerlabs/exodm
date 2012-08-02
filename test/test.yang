@@ -1,0 +1,51 @@
+module test {
+
+  namespace "http://feuerlabs.com/test";
+  prefix test;
+
+  import exosense {
+    prefix exo;
+  }
+
+  description "Dummy spec for exodm system test";
+
+  list interfaces {
+    description "Interface list";
+    key "id";
+
+    leaf id {
+      description "I/f id - numeric";
+      type uint32;
+    }
+
+    leaf descr {
+      description "I/f description";
+      type string;
+    }
+  }
+
+  rpc echo {
+    description "Simple echo RPC";
+    input {
+      leaf device-id {
+	type string {
+	  length "1..32";
+	}
+	description "Target device. Can also be a group,";
+      }
+      leaf message {
+	type string;
+      }
+    }
+
+    output {
+      uses exo:std-callback;
+      }
+    }
+
+  notification echo-callback {
+    leaf message {
+      type string;
+    }
+  }
+}

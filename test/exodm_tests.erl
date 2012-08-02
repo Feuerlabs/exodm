@@ -2,6 +2,8 @@
 
 -ifdef(TEST).
 
+-export([test_echo/1]).
+
 -include_lib("eunit/include/eunit.hrl").
 -include("feuerlabs_eunit.hrl").
 
@@ -42,28 +44,34 @@ exodm_test_() ->
      fun(Config) -> [
 		     ?my_t(populate(Config)),
 		     ?my_t(list_accounts(Config)),
+		     ?my_t(list_groups(Config)),
+		     ?my_t(list_group_notifications(Config)),
 		     ?my_t(list_users(Config)),
+		     ?my_t(store_exosense_yang(Config)),
 		     ?my_t(store_yang(Config)),
 		     ?my_t(store_exodm_yang(Config)),
 		     ?my_t(store_config(Config)),
+		     ?my_t(store_config2(Config)),
 		     ?my_t(add_config_data_member(Config)),
 		     {setup,
 		      fun() -> start_http_client(Config) end,
 		      fun(Cfg1) -> stop_http_client(Cfg1) end,
 		      fun(Cfg1) ->
 			      [
-			       ?my_t(json_rpc1(Config))
-			      ]
-		      end},
-		     {setup,
-		      fun() -> start_rpc_client(Config) end,
-		      fun(Cfg1) ->
-			      stop_rpc_client(Cfg1)
-		      end,
-		      fun(Cfg1) ->
-			      %% Here, we have a BERT RPC client up and running
-			      [
-			       ?my_t(client_ping(Cfg1))
+			       ?my_t(json_rpc1(Cfg1)),
+			       {setup,
+				fun() -> start_rpc_client(Config) end,
+				fun(Cfg2) ->
+					stop_rpc_client(Cfg2)
+				end,
+				fun(Cfg2) ->
+					%% Here, we have a BERT RPC client
+					%% (and HTTP client) up and running
+					[
+					 ?my_t(client_ping(Cfg2)),
+					 ?my_t(device_json_rpc1(Cfg2))
+					]
+				end}
 			      ]
 		      end}
 		    ]
@@ -93,20 +101,25 @@ populate(Cfg) ->
 				 {fullname, <<"Ulf Wiger">>},
 				 {password, <<"wiger">>}]}
 		       ]]),
-    {ok, GID} = ?rpc(exodm_db_group,new,
+    {ok, GID1} = ?rpc(exodm_db_group,new,
 		     [
-		      AID1, [{name, <<"feuerlabs">>},
-			     {url, "http://flcallback:8080/exodm/callback"}]
+		      AID2, [{name, <<"feuerlabs">>},
+			     {url, "https://ulf:wiger@localhost:8000/exodm/test_callback"}]
+		     ]),
+    {ok, GID2} = ?rpc(exodm_db_group,new,
+		     [
+		      AID2, [{name, <<"travelping">>},
+			     {url, "https://ulf:wiger@localhost:8000/exodm/test_callback2"}]
 		     ]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID = <<"x00000001">>,
 	       [{'__ck',<<2,0,0,0,0,0,0,0>>},
 		{'__sk',<<1,0,0,0,0,0,0,0>>},
 		{msisdn,"070100000001"},
-		{groups, [GID]}
+		{groups, [GID1, GID2]}
 	       ]]),
-    ?debugFmt("AID1 = ~p; AID2 = ~p; GID = ~p; DID = ~p~n",
-	      [AID1, AID2, GID, DID]),
+    ?debugFmt("AID1 = ~p; AID2 = ~p; GID1 = ~p; GID2 = ~p; DID = ~p~n",
+	      [AID1, AID2, GID1, GID2, DID]),
     ok.
 
 list_users(Cfg) ->
@@ -132,6 +145,18 @@ list_accounts(Cfg) ->
 	rpc(Cfg, exodm_db_account, lookup, [<<"a00000002">>]),
     ok.
 
+list_groups(Cfg) ->
+    [<<"a00000002*groups*g00000001">>,
+     <<"a00000002*groups*g00000002">>] =
+	?rpc(exodm_db_account,list_groups, [2]),
+    ok.
+
+list_group_notifications(Cfg) ->
+    [<<"https://ulf:wiger@localhost:8000/exodm/test_callback2">>,
+     <<"https://ulf:wiger@localhost:8000/exodm/test_callback">>] =
+	?rpc(exodm_db_device,lookup_group_notifications, [2, <<"x00000001">>]),
+    ok.
+
 store_yang(Cfg) ->
     ok = rscript(Cfg, store_yang_scr()).
 
@@ -142,13 +167,36 @@ store_yang_scr() ->
 		fun(Db) ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
 			{ok, Bin} = file:read_file(
-				      filename:join(code:priv_dir(ck3),
-						    "yang/exosense.yang")),
-			exodm_db_yang:write("exosense.yang", Bin),
+				      filename:join(
+					filename:dirname(
+					  filename:dirname(setup:home())),
+					"test/test.yang")),
+			exodm_db_yang:write("test.yang", Bin),
 			exodm_db_session:logout()
 		end),
 	      ok
       end).
+
+store_exosense_yang(Cfg) ->
+    ok = rscript(Cfg, store_exosense_yang_scr()).
+
+store_exosense_yang_scr() ->
+    codegen:exprs(
+      fun() ->
+	      exodm_db:transaction(
+		fun(Db) ->
+			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			exodm_db_session:set_trusted_proc(),
+			{ok, Bin} = file:read_file(
+				      filename:join(code:priv_dir(ck3),
+				      "yang/exosense.yang")),
+			exodm_db_yang:write("system.exosense.yang", Bin),
+			exodm_db_session:logout()
+		end),
+	      ok
+      end).
+
+
 
 store_exodm_yang(Cfg) ->
     ok = rscript(Cfg, store_exodm_yang_scr()).
@@ -170,7 +218,7 @@ store_exodm_yang_scr() ->
       end).
 
 store_config(Cfg) ->
-    {ok, #conf_tree{root = R, tree = T} = CT} =
+    {ok, #conf_tree{root = R, tree = T}} =
 	rscript(Cfg, store_config_scr()),
     R = <<"test">>,
     {T,T} = {T, [{<<"name">>, [], <<"test">>},
@@ -216,10 +264,39 @@ store_config_scr() ->
 		end)
       end).
 
+store_config2(Cfg) ->
+    {ok, #conf_tree{root = R, tree = T}} =
+	rscript(Cfg, store_config_scr2()),
+    R = <<"test2">>,
+    {T,T} = {T, [{<<"name">>, [], <<"test2">>},
+		 {<<"protocol">>, [], <<"exodm_bert">>},
+		 %% no 'values' entry
+		 {<<"yang">>, [], <<"test.yang">>}
+		]},
+    ok.
+
+store_config_scr2() ->
+    codegen:exprs(
+      fun() ->
+	      exodm_db:transaction(
+		fun(Db) ->
+			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			AID = exodm_db_session:get_aid(),
+			{ok, <<"test2">>} =
+			    exodm_db_config:new_config_data(
+			      AID,
+			      <<"test2">>, <<"test.yang">>,
+			      <<"exodm_bert">>,
+			      {array, []}),
+			exodm_db_config:read_config_data(AID, <<"test2">>)
+		end)
+      end).
+
 add_config_data_member(Cfg) ->
     ok = rscript(Cfg, add_config_data_member_scr()),
-    [<<"test">>] = ?rpc(exodm_db_device, list_config_data, [<<"a00000002">>,
-							    <<"x00000001">>]),
+    [<<"test">>, <<"test2">>] =
+	?rpc(exodm_db_device, list_config_data, [<<"a00000002">>,
+						 <<"x00000001">>]),
     ok.
 
 add_config_data_member_scr() ->
@@ -230,7 +307,9 @@ add_config_data_member_scr() ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
 			AID = exodm_db_session:get_aid(),
 			exodm_db_config:add_config_data_members(
-			  AID, <<"test">>, [<<"x00000001">>])
+			  AID, <<"test">>, [<<"x00000001">>]),
+			exodm_db_config:add_config_data_members(
+			  AID, <<"test2">>, [<<"x00000001">>])
 		end)
       end).
 
@@ -248,7 +327,7 @@ start_rpc_client(Cfg) ->
     [{A,ok} = {A, application:start(A)} || A <- Apps],
     [{client_auth, Auth} | Cfg].
 
-stop_rpc_client(Cfg) ->
+stop_rpc_client(_Cfg) ->
     Apps = [exoport, kvdb, bert, gproc, exo],
     [{A,ok} = {A, application:stop(A)} || A <- Apps],
     [{A,ok} = {A, application:unload(A)} || A <- Apps],
@@ -256,8 +335,39 @@ stop_rpc_client(Cfg) ->
 
 %%% ==================================== Client BERT RPC Tests
 
-client_ping(Cfg) ->
-    {reply, pong, []} = exoport:ping().
+client_ping(_Cfg) ->
+       {reply, pong, []} = exoport:ping().
+
+
+set_access(Cfg) ->
+    load_this_module(Cfg),
+    {ok, {Host, Port}} = application:get_env(exoport, exodm_address),
+    {ok, Sn} = bert_rpc_exec:get_session(
+		 Host, Port, [tcp], [{auto_connect,false}], 10000),
+    A = gen_server:call(Sn, get_access),
+    io:fwrite(user, "Old Access = ~p~n", [A]),
+    ok = gen_server:call(
+	   Sn, {set_access, [{redirect, [{{test,echo,1},
+					  {?MODULE,test_echo,1}}]}]}),
+    io:fwrite(user, "New Access = ~p~n", [gen_server:call(Sn, get_access)]),
+    ok.
+
+load_this_module(Cfg) ->
+    {ok, Bin} = file:read_file(code:which(?MODULE)),
+    {module, ?MODULE} =
+	?rpc(code, load_binary,
+	     [?MODULE, atom_to_list(?MODULE) ++ ".beam", Bin]),
+    ok.
+
+test_echo(Args) ->
+    io:fwrite(user, "test_echo(~p)~n", [Args]),
+    device_json_rpc1 ! {self(), got, Args},
+    receive
+	{answer, A} ->
+	    A
+    after 10000 ->
+	    error(timeout)
+    end.
 
 %%% ==================================== End client BERT RPC
 
@@ -276,18 +386,38 @@ stop_http_client(_Cfg) ->
     application:stop(public_key),
     application:stop(crypto).
 
-json_rpc1(Cfg) ->
+json_rpc1(_Cfg) ->
+    post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+		  "exodm:create-config-data", "1",
+		  {struct,[{"name","test_cfg_1"},
+			   {"yang", "exosense.yang"},
+			   {"protocol","exodm_bert"},
+			   {"values",{struct,[{"a", "1"},
+					      {"b", "xx"}
+					     ]}}
+			  ]}).
+
+device_json_rpc1(Cfg) ->
     ?loglevel(
        debug,
-       post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
-		     "exodm:create-config-data", "1",
-		     {struct,[{"name","test_cfg_1"},
-			      {"yang", "exosense.yang"},
-			      {"protocol","exodm_bert"},
-			      {"values",{struct,[{"a", "1"},
-						 {"b", "xx"}
-						]}}
-			     ]})).
+       begin
+	   set_access(Cfg),
+	   spawn_link(fun() ->
+			      register(device_json_rpc1, self()),
+			      receive
+				  {Pid, got, Args} ->
+				      Msg = proplists:get_value(message, Args,
+								<<"huh?">>),
+				      Reply = {notify, 'echo-callback',
+					       [{message, Msg}]},
+				      Pid ! {answer, Reply}
+			      end
+		      end),
+	   post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+			 "test:echo", "2",
+			 {struct, [{"device-id", "x00000001"},
+				   {"message", "hello"}]})
+       end).
 
 
 post_json_rpc({Port, User, Pwd, Path}, Method, ID, Params) ->
@@ -393,18 +523,18 @@ pop_loglevel(Cfg) ->
 
 make(Top) ->
     in_dir(Top, fun() ->
-			%% os:cmd("make dev")
-			output("make release", fun() ->
-						       os:cmd("make release")
-					       end),
-			output("make generate", fun() ->
-							os:cmd("make generate")
-						end)
+			run("make release"),
+			run("make generate")
 		end).
 
-output(Cmd, F) ->
+run(Cmd) ->
     io:fwrite(user, "Cmd: ~s~n", [Cmd]),
-    io:fwrite(user, "~s~n", [F()]).
+    case exodm_test_lib:os_cmd(Cmd, {print, user}) of
+	{0, _} ->
+	    ok;
+	{Err, _} ->
+	    error({aborted, [Err, Cmd]})
+    end.
 
 start_exodm(Top) ->
     net_kernel:start([exodm_test, longnames]),
