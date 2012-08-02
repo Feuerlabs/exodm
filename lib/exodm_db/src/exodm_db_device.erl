@@ -161,9 +161,12 @@ yang_modules(AID0, DID0) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      CDs = list_config_data_(Tab, DID),
-	      [{Name,
-		exodm_db_config:get_yang_spec(AID, Name),
-		exodm_db_config:get_protocol(AID, Name)} || Name <- CDs]
+	      lists:map(
+		fun(Name) ->
+			{ok, Y} = exodm_db_config:get_yang_spec(AID, Name),
+			{Name, Y,
+			 exodm_db_config:get_protocol(AID, Name)}
+		end, CDs)
       end).
 
 lookup(AID, DID) ->
@@ -212,24 +215,31 @@ fold_devices(F, Acc, AID, Limit) when
 lookup_groups(AID, DID0) ->
     Tab = table(AID),
     DID = exodm_db:encode_id(DID0),
-    exodm_db:fold_list2(
-      Tab,
-      fun(I,Key,Acc) ->
-	      case read_uint32(Tab, Key, '__gid') of
-		  [{_,GID}] -> [{group,{I,GID}} | Acc];
-		  [] -> Acc
-	      end
-      end, [], DID, groups).
+    lists:reverse(
+      exodm_db:fold_list2(
+	Tab,
+	fun(I,Key,Acc) ->
+		case read_uint32(Tab, Key, '__gid') of
+		    [{_,GID}] -> [{group,{I,GID}} | Acc];
+		    [] -> Acc
+		end
+	end, [], DID, groups)).
 
 
-lookup_group_notifications(AID, DID) ->
+lookup_group_notifications(AID0, DID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(DID0),
     lists:foldl(
-      fun({group,{_I,GID}},Acc) ->
-	      Props = exodm_db_group:lookup(AID, GID),
-	      case proplists:get_value(url, Props, <<>>) of
-		  <<>> -> Acc;
-		  Url -> [Url | Acc]
-		       end
+      fun({group,{_I,GID0}},Acc) ->
+	      GID = exodm_db:group_id_key(GID0),
+	      case exodm_db:read(
+		     exodm_db_account:table(),
+		     exodm_db:join_key([AID,<<"groups">>,GID,<<"url">>])) of
+		  {ok, {_, _, URL}} ->
+		      [URL | Acc];
+		  {error, _} ->
+		      Acc
+	      end
       end,[],lookup_groups(AID, DID)).
 
 %% find last known position or {0,0,0} if not found
