@@ -31,6 +31,7 @@ exodm_test_() ->
 		 make(Top),
 		 Cfg = start_exodm(Top),
 		 ok = await_started(Cfg),
+		 ok = store_os_pid(Cfg),
 		 ok = set_loglevel(Cfg),
 		 Cfg
 	     catch
@@ -491,6 +492,15 @@ await_started(N, Node) when N > 0 ->
 	    ok
     end.
 
+store_os_pid(Cfg) ->
+    Pid = ?rpc(os, getpid, []),
+    io:fwrite(user, "store_os_pid(); Pid = ~p~n", [Pid]),
+    {dir, D} = lists:keyfind(dir, 1, Cfg),
+    ok = file:write_file(
+	   File = filename:join(D, "curpid.data"), list_to_binary(D)),
+    io:fwrite(user, "wrote ~p to file ~p~n", [Pid, File]).
+
+
 set_loglevel(Cfg) ->
     case os:getenv("LOGLEVEL") of
 	L when L=="debug"; L=="info"; L=="crash" ->
@@ -537,12 +547,14 @@ run(Cmd) ->
     end.
 
 start_exodm(Top) ->
-    net_kernel:start([exodm_test, longnames]),
+    {ok, _} = net_kernel:start([exodm_test, longnames]),
     erlang:set_cookie(node(), 'exodm'),
     Dir = filename:absname("exodm_tmp"),
     NodeStr = "exodm_n1@" ++ hostname(),
     case filelib:is_dir(Dir) of
-	true -> os:cmd("rm -r " ++ Dir);
+	true ->
+	    kill_old(Dir),
+	    os:cmd("rm -r " ++ Dir);
 	false -> ok
     end,
     ok = file:make_dir(Dir),
@@ -550,8 +562,6 @@ start_exodm(Top) ->
     MakeNode = filename:join(Top, "make_node"),
     Rel = filename:join(Top, "rel/exodm"),
     in_dir(Dir, fun() ->
-			%% ?debugVal(
-			%%    os:cmd(DevRun ++ " -name " ++ NodeStr ++ " -detached"))
 			?debugVal(
 			   os:cmd(MakeNode ++ " -target " ++ Dir
 				  ++ " -rel " ++ Rel ++ " -- -name " ++ NodeStr)),
@@ -560,9 +570,20 @@ start_exodm(Top) ->
     [{dir, Dir},
      {node, list_to_atom(NodeStr)}].
 
+kill_old(Dir) ->
+    case file:read_file(filename:join(Dir, "curpid.data")) of
+	{ok, <<P/binary>>} ->
+	    io:fwrite(user, "kill pid ~p if still around~n", [P]),
+	    exodm_test_lib:os_cmd(<<"kill ", P/binary>>, {print,user});
+	{error, _} ->
+	    ok
+    end.
+
 stop_exodm(Cfg) ->
     Node = proplists:get_value(node, Cfg),
     {badrpc, _} = rpc:call(Node, erlang, halt, []),
+    {dir, D} = lists:keyfind(dir, 1, Cfg),
+    file:delete(filename:join(D, "curpid.data")),
     ok.
 
 hostname() ->
