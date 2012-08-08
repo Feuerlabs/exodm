@@ -164,6 +164,50 @@ module exodm {
 	}
     }
 
+    rpc create-yang-module {
+      description "RPC to store a YANG module either in user or system space";
+      input {
+	leaf repository {
+	  description "Where to store the module: Currently 'system' or 'user'";
+	  type string {
+	    length "1..32";
+	  }
+	}
+	leaf name {
+	  description "Name, including extension, e.g. 'rfzone.yang'";
+	  type string {
+	    length "1..32";
+	  }
+	}
+	leaf yang-module {
+	  description "The actual source of the YANG module specification";
+	  type string;
+	}
+      }
+      output {
+	leaf result {
+	  type enumeration {
+	    enum complete {
+	      description "Operation has completed successfully.";
+	      value 0;
+	    }
+	    enum unauthorized {
+	      description "Insufficient privileges to perform operation.";
+	      value 1;
+	    }
+	    enum validation-error {
+	      description "An error occurred validating the YANG module.";
+	      value 2;
+	    }
+	  }
+      }
+	leaf info {
+	  description "Additional information about the outcome.";
+	  type string;
+	}
+      }
+    }
+
     rpc create-config-data {
       description "RPC to create device config data";
       input {
