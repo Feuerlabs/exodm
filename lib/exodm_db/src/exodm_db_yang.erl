@@ -26,7 +26,12 @@ init() ->
     exodm_db:in_transaction(
       fun(_) ->
               add_table(tab_name(system)),
-              add_table(tab_name(shared))
+              add_table(tab_name(shared)),
+              exodm_db_session:set_trusted_proc(),
+              {ok, Bin} = file:read_file(
+                            filename:join(code:priv_dir(exodm_db),
+                                          "yang/exodm.yang")),
+              write_system("exodm.yang", Bin)
       end).
 
 init(AID) ->
