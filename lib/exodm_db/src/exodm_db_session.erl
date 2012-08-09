@@ -9,6 +9,7 @@
 -export([spawn_child/1, spawn_link_child/1, spawn_monitor_child/1]).
 
 -export([set_auth_as_user/1, set_auth_as_user/2,
+         set_auth_as_device/1,
          set_trusted_proc/0,
          is_trusted_proc/0]).
 
@@ -36,6 +37,7 @@
 -define(INACTIVITY_TIMER, 5*60000).  % should be configurable?
 
 -include_lib("lager/include/log.hrl").
+-define(dbg(F,A), ?debug("~p " ++ F, [self()|A])).
 
 %% @spec authenticate(Username, Password) -> {true, AID} | false
 authenticate(User, Pwd) ->
@@ -97,7 +99,11 @@ is_active(User) ->
     case get('$exodm_trusted_proc') of
         true -> true;
         _ ->
-            ets:member(?TAB, to_binary(User))
+            K = case User of
+                    {did,_} -> User;
+                    _ -> to_binary(User)
+                end,
+            ets:member(?TAB, K)
     end.
 
 set_trusted_proc() ->
@@ -132,6 +138,12 @@ set_auth_as_user(User, Db) ->
             {true, AID, Role}
     end.
 
+set_auth_as_device(DID0) ->
+    ?dbg("set_auth_as_device(~p)~n", [DID0]),
+    {AID, DID} = exodm_db_device:dec_ext_key(DID0),
+    put_auth_({{did,DID}, AID, undefined}),
+    {true, AID, undefined}.
+
 
 to_binary(X) when is_binary(X) ->
     X;
@@ -147,11 +159,15 @@ get_aid()  -> if_active_(get_auth_(), fun({_,X,_}) -> X end).
 get_role() -> if_active_(get_auth_(), fun({_,_,X}) -> X end).
 get_auth() -> if_active_(get_auth_(), fun(X) -> X end).
 
+if_active_({{did,_},_,_} = X, Ret) ->
+    Ret(X);
 if_active_({UName,_,_} = X, Ret) ->
+    ?dbg("if_active_(~p, Ret)~n", [X]),
     case is_active(UName) of
         true ->
             Ret(X);
         false ->
+            ?dbg("NOT active (~p)~n", [UName]),
             erlang:error(unauthorized)
     end;
 if_active_(_, _) ->

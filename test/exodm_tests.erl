@@ -70,6 +70,7 @@ exodm_test_() ->
 					%% (and HTTP client) up and running
 					[
 					 ?my_t(client_ping(Cfg2)),
+					 ?my_t(test_notification(Cfg2)),
 					 ?my_t(device_json_rpc1(Cfg2))
 					]
 				end}
@@ -336,9 +337,10 @@ stop_rpc_client(_Cfg) ->
 
 %%% ==================================== Client BERT RPC Tests
 
-client_ping(_Cfg) ->
-       {reply, pong, []} = exoport:ping().
-
+client_ping(Cfg) ->
+    ?loglevel(
+       debug,
+       {reply, pong, []} = exoport:ping()).
 
 set_access(Cfg) ->
     load_this_module(Cfg),
@@ -370,6 +372,15 @@ test_echo(Args) ->
 	    error(timeout)
     end.
 
+test_notification(Cfg) ->
+    ?loglevel(
+       debug,
+       notification_()).
+
+notification_() ->
+       exoport:rpc(exodm_rpc, notification, [test, 'echo-callback',
+					     [{message, "howdy"}]]).
+
 %%% ==================================== End client BERT RPC
 
 
@@ -399,26 +410,22 @@ json_rpc1(_Cfg) ->
 			  ]}).
 
 device_json_rpc1(Cfg) ->
-    ?loglevel(
-       debug,
-       begin
-	   set_access(Cfg),
-	   spawn_link(fun() ->
-			      register(device_json_rpc1, self()),
-			      receive
-				  {Pid, got, Args} ->
-				      Msg = proplists:get_value(message, Args,
-								<<"huh?">>),
-				      Reply = {notify, 'echo-callback',
-					       [{message, Msg}]},
-				      Pid ! {answer, Reply}
-			      end
-		      end),
-	   post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
-			 "test:echo", "2",
-			 {struct, [{"device-id", "x00000001"},
-				   {"message", "hello"}]})
-       end).
+    set_access(Cfg),
+    spawn_link(fun() ->
+		       register(device_json_rpc1, self()),
+		       receive
+			   {Pid, got, Args} ->
+			       Msg = proplists:get_value(message, Args,
+							 <<"huh?">>),
+			       Reply = {notify, 'echo-callback',
+					[{message, Msg}]},
+			       Pid ! {answer, Reply}
+		       end
+	       end),
+    post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+		  "test:echo", "2",
+		  {struct, [{"device-id", "x00000001"},
+			    {"message", "hello"}]}).
 
 
 post_json_rpc({Port, User, Pwd, Path}, Method, ID, Params) ->
