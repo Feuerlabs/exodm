@@ -1,8 +1,8 @@
-%% -*- erlang; erlang-indent-level: 4; indent-tabs-mode: nil -*-
+%% -*- erlang -*-
 {application, exodm_web,
  [
   {description, ""},
-  {vsn, "1"},
+  {vsn, git},
   {registered, []},
   {applications, [
                   kernel,
