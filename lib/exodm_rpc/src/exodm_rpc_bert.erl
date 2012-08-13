@@ -16,7 +16,7 @@ dispatch(Req, Env, AID, DID, Pid) ->
 		      Method, Elems, Env, Req, AID, DID);
 		{reply, ok, _} ->
 		    ok;
-		Other ->
+		_Other ->
 		    error
 	    end
     end.

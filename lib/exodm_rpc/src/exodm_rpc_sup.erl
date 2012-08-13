@@ -29,19 +29,6 @@ init([]) ->
     {ok, { {one_for_one, 5, 10}, base_children() }};
 init({_Spec, _FromDevice, _ToDevice}) ->
     {ok, { {one_for_one, 5, 10}, base_children() }}.
-	   %% base_children()
-	   %% ++ [
-	   %%     {exodm_rpc_spec, {exodm_rpc_spec, start_link, [Spec]},
-	   %% 	permanent, 5000, worker, [exodm_rpc_spec]},
-	   %%     {ck3_to_device, {exodm_rpc_dispatcher, start_link,
-	   %% 		    [onf, a2b(ToDevice), ToDevice,
-	   %% 		     exodm_rpc_to_device]},
-	   %% 	permanent, 5000, worker, [exodm_rpc_dispatcher]},
-	   %%     {ck3_from_device, {exodm_ck3_dispatcher, start_link,
-	   %% 			  [kvdb_conf, a2b(FromDevice), FromDevice,
-	   %% 		       exodm_rpc_from_device]},
-	   %% 	permanent, 5000, worker, [exodm_ck3_dispatcher]}
-	   %%    ]}}.
 
 base_children() ->
     BertOpts = case application:get_env(exodm_rpc, bert_server) of
@@ -65,6 +52,3 @@ base_children() ->
 		     exodm_rpc_from_device]},
       permanent, 5000, worker, [exodm_rpc_dispatcher]}
     ].
-
-a2b(A) when is_atom(A) ->
-    atom_to_binary(A, latin1).

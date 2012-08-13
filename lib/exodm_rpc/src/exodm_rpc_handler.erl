@@ -85,7 +85,7 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 		    ?info("Method spec (~p): ~p~n"
 			   "Module = ~p~n", [Method, Spec, Module]),
 		    Env1 = [{yang, Yang},
-			    {device_id, DID},
+			    {'device-id', DID},
 			    {protocol, Protocol}|Env0],
 		    case validate_request(
 			   ShortMeth, Module, Request, Spec) of
@@ -293,7 +293,7 @@ do_validate(Method, Module, Args, Spec) ->
 queue_message(Db, AID, Tab, Env, {Type, Attrs, _} = Msg) when Type==request;
 							  Type==notify;
 							  Type==reply ->
-    {_, DeviceID} = lists:keyfind(device_id, 1, Attrs ++ Env),
+    {_, DeviceID} = lists:keyfind('device-id', 1, Attrs ++ Env),
     Q = exodm_db_device:enc_ext_key(AID, DeviceID),
     Ret = case kvdb:push(Db, Tab, Q,
 			 _Obj = {<<>>, Env, Msg}) of
@@ -397,21 +397,30 @@ accept_response(Attrs, {_, _, {reply, {struct, Elems}}} = Spec) ->
     end.
 
 post_json(Env, JSON) ->
-    {_, DID} = lists:keyfind(device_id, 1, Env),
+    {_, DID} = lists:keyfind('device-id', 1, Env),
     {_, AID} = lists:keyfind(aid, 1, Env),
     case exodm_db_device:lookup_group_notifications(AID, DID) of
 	[] ->
+	    ?debug("No group notifications for (~p, ~p)~n", [AID, DID]),
 	    ok;
 	[_|_] = URLs ->
+	    ?debug("Group notifications (~p, ~p): ~p~n", [AID,DID,URLs]),
 	    Body = json2:encode(JSON),
 	    Hdrs = [
 		    {"content-length", integer_to_list(iolist_size(Body))},
 		    {"host", "localhost"}
 		   ],
-	    [lhttpc:request(
-	       binary_to_list(URL), "POST", Hdrs, Body, 1000) || URL <- URLs],
+	    [post_request(URL, Hdrs, Body) || URL <- URLs],
 	    ok
     end.
+
+post_request(URL, Hdrs, Body) ->
+    Res =
+	lhttpc:request(
+	  binary_to_list(URL), "POST", Hdrs, Body, 1000),
+    ?debug("post_request(~p, ...) ->~n  ~p~n", [URL, Res]),
+    Res.
+
 
 to_json({struct, L}, Attrs, Reply) ->
     {struct, to_json_(L, Attrs, Reply, [])};

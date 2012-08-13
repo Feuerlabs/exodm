@@ -35,7 +35,7 @@ process_entry({_,_,{request,_Env,Call}} = _Entry, Pid) ->
     case nice_bert_rpc:call(Pid, Mod, Fun, Args) of
 	{reply, Reply, _} ->
 	    io:fwrite("GOT REPLY: ~p~n", [Reply]),
-	    exodm_rpc:queue_message(from_device, [{device_id, DID}],
+	    exodm_rpc:queue_message(from_device, [{'device-id', DID}],
 				    Reply),
 	    ok;
 	Other ->
@@ -43,17 +43,3 @@ process_entry({_,_,{request,_Env,Call}} = _Entry, Pid) ->
 	    error
     end.
 
-
-%% device_is_up(DID, Pid) ->
-%%     case kvdb:prel_pop(kvdb_conf, <<"exodm_rpc_to_device">>, DID) of
-%% 	{ok, Entry, AbsKey} ->
-%% 	    case process_entry(Entry, Pid) of
-%% 		ok ->
-%% 		    kvdb:delete(Db, Tab, AbsKey),
-%% 		    device_is_up(DID, Pid);
-%% 		Other ->
-%% 		    io:fwrite("Failed RPC attempt: ~p~n", [Other])
-%% 	    end;
-%% 	_ ->
-%% 	    done
-%%     end.

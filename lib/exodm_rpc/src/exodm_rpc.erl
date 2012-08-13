@@ -51,7 +51,7 @@ notification(Module, Method, Elems) ->
     Yang = <<(to_binary(Module))/binary, ".yang">>,
     exodm_rpc_handler:notification(
       Method, Elems, [{yang, Yang},
-		      {device_id, DID},
+		      {'device-id', DID},
 		      {aid, AID}], [], AID, DID).
 
 to_binary(A) when is_atom(A) ->
