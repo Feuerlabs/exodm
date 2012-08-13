@@ -1,0 +1,71 @@
+%% -*- erlang -*-
+{application, exodm_rpc,
+ [
+  {description, "Exosense DM JSON RPC dispatch application"},
+  {vsn, git},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+		  bert,
+		  exodm_db
+                 ]},
+  {mod, { exodm_rpc_app, []}},
+  %% {start_phases, [{init, []}]},
+  {env, [
+	 %% {kvdb_databases, [{exodm_rpc_queues,
+	 %% 		    [{file, "$DATA_DIR/$APP/exodm_rpc_queues.db"},
+	 %% 		     {backend, leveldb},
+	 %% 		     {schema, kvdb_schema_events},
+	 %% 		     {tables,
+	 %% 		      [{to_device, [
+	 %% 				    {type, fifo},
+	 %% 				    {encoding, {sext,sext,sext}}
+	 %% 				   ]},
+	 %% 		       {from_device, [
+	 %% 				      {type, fifo},
+	 %% 				      {encoding, {sext, sext, sext}}
+	 %% 				     ]}
+	 %% 		      ]}
+	 %% 		    ]}]},
+	 {yaws_sconf, [
+		       {id, "EXODM_RPC"},
+		       {appmods, [{"/exodm", exodm_rpc_yaws_appmod}]},
+		       {xtra_docroots, ["/exodm/rpc","$PRIV_DIR/www"]},
+		       {port, 8000},
+		       {auth, [{mod, exodm_rpc_yaws_auth},
+			       {realm, "exodm@feuerlabs.com"},
+			       {dir, "/exodm"}]},
+		       {listen, {127,0,0,1}},
+		       {ssl, [{keyfile, "$PRIV_DIR/keys/server.key"},
+			      {certfile, "$PRIV_DIR/keys/server.crt"},
+			      {password, "Exosense"}]}
+		      ]},
+
+	 {jobs, [
+		 {queues, [
+			   {exodm_rpc_from_web, standard_rate, 100},
+			   {exodm_rpc_to_device, standard_counter, 5},
+			   {exodm_rpc_from_device, standard_counter, 5}
+			  ]}
+		]},
+	 {bert_server, [{port, 9900},
+			{exo,
+			 [
+			  {reuse_mode, server},
+			  {auth,
+			   [{role, server},
+			    {server, [{mod, exodm_rpc_bert_challenge},
+				      {id, <<"exodm">>},
+				      {keys, dynamic}
+				     ]}
+			   ]}
+			 ]}
+		       ]}
+         %% {bert_servers, [{exodm_rpc,
+         %%                    [
+	 %% 		     {port, 9900}
+	 %% 		    ]}
+	 %% 		]}
+	 ]}
+ ]}.

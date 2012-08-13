@@ -225,6 +225,7 @@ module exodm {
 	}
       }
     }
+
     rpc create-config-data {
       description "RPC to create device config data";
       input {
