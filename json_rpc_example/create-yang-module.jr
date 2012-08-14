@@ -1,0 +1,11 @@
+{
+    "json-rpc": "2.0", 
+    "method": "exodm:create-yang-module", 
+    "id": "1", 
+    "params": 
+    {
+        "repository": "user",
+        "name": "tty-device.yang",
+        "yang-module": "module tty-device { grouping tty { leaf port { type string; } leaf baud-rate { type uint32; } leaf bits { type enumeration { enum seven; enum eight; } } leaf parity { type enumeration { enum none; enum even; enum odd; } } leaf stop-bits { type enumeration { enum one; enum two; } } } }"
+    }
+}
