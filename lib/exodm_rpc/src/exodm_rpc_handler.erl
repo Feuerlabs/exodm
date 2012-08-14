@@ -134,14 +134,18 @@ handle_exodm_rpc(Protocol, Env, RPC, Session, Spec) ->
     ?debug("handle_exodm_rpc(~p, ~p, ~p, ~p, ~p)~n"
 	   "Mod = ~p~n", [Protocol, Env, RPC, Session, Spec, Mod]),
     try Mod:json_rpc(RPC, Env) of
-	{ok, Result} = _OK ->
+	{ok, Result} = _OK when is_list(Result) ->
 	    ?debug("~p:json_rpc(...) -> ~p~n", [?MODULE, _OK]),
 	    Resp = success_response(Result, Env, RPC, Spec),
 	    ?debug("Resp = ~p~n", [Resp]),
 	    {true, 0, Session, {response, Resp}};
 	{error, Err} = _Error ->
 	    ?debug("~p:json_rpc(...) -> ~p~n", [?MODULE, _Error]),
-	    {false, error_response(convert_error(Err, RPC))}
+	    {false, error_response(convert_error(Err, RPC))};
+	Other ->
+	    ?error("Erroneous callback return:~n"
+		   "~p:json_rpc(~p, ~p) -> ~p~n", [Mod,RPC,Env,Other]),
+	    error({bad_callback_return, Other})
     catch error:E ->
 	    ?debug("~p:json_rpc(...) -> *ERROR*:~p~n",
 		   [?MODULE, {E, erlang:get_stacktrace()}]),
@@ -373,7 +377,7 @@ json_error_message(_) -> "json error".
 
 
 success_response(Result, Env, {request, Attrs, _},
-		 {_, _, {reply, {struct, Elems}}}) ->
+		 {_, _, {reply, {struct, Elems}}}) when is_list(Result) ->
     ?debug("success_response(~p, Env = ~p, Attrs = ~p, Elems = ~p)~n",
 	   [Result, Env, Attrs, Elems]),
     {_, {struct, ResultSpec}} = lists:keyfind("result", 1, Elems),
@@ -384,7 +388,7 @@ success_response(Result, Env, {request, Attrs, _},
 
 
 accept_response(Attrs, {_, _, {reply, {struct, Elems}}} = Spec) ->
-    ?debug("success_response(~p, ~p)~n", [Attrs, Spec]),
+    ?debug("accept_response(~p, ~p)~n", [Attrs, Spec]),
     case lists:keyfind("result", 1, Elems) of
 	{_, void} ->
 	    "\"ok\"";
