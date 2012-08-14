@@ -1,0 +1,16 @@
+{
+    "json-rpc": "2.0", 
+    "method": "exodm:create-config-data", 
+    "id": "1", 
+    "params": 
+    {
+        "name": "test11", 
+        "yang": "exosense.yang", 
+        "protocol": "exodm_bert", 
+        "values": 
+        [
+            {"key1": "val1" },
+            { "key2": "val2" }
+        ]
+    }
+}
