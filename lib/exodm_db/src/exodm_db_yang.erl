@@ -31,8 +31,13 @@ init() ->
               {ok, Bin} = file:read_file(
                             filename:join(code:priv_dir(exodm_db),
                                           "yang/exodm.yang")),
-              write_system("exodm.yang", Bin)
+              write_system("exodm.yang", Bin),
+              {ok, Bin1} = file:read_file(
+                             filename:join(code:priv_dir(exodm_db),
+                                          "yang/ietf-inet-types.yang")),
+              write_system("ietf-inet-types.yang", Bin1)
       end).
+
 
 init(AID) ->
     exodm_db:in_transaction(
