@@ -37,6 +37,11 @@ module exodm {
                 description "No object with the given identifier has been found.";
                 value 4;
             }
+
+            enum device-not-found {
+                description "No device with the given identifier has been found.";
+                value 5;
+            }
         }
     }
 

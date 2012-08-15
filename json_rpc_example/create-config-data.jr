@@ -1,13 +1,13 @@
 {
-    "json-rpc": "2.0", 
-    "method": "exodm:create-config-data", 
-    "id": "1", 
-    "params": 
+    "json-rpc": "2.0",
+    "method": "exodm:create-config-data",
+    "id": "1",
+    "params":
     {
-        "name": "test12", 
-        "yang": "exodm.yang", 
-        "protocol": "exodm_bert", 
-        "values": 
+        "config-data": "test11",
+        "yang": "exodm.yang",
+        "protocol": "exodm_bert",
+        "values":
         [
             { "key1": "val1" },
             { "key2": "val2" }
