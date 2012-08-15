@@ -55,7 +55,9 @@ new_config_data(AID, Name0, Yang0, Protocol, Values) ->
 		      write(Tab, NameKey, <<"name">>, Name),
 		      write(Tab, NameKey, <<"yang">>, Yang),
 		      write(Tab, NameKey, <<"protocol">>, Protocol),
-		      write_values(Tab, NameKey, Values),
+		      ValsToWrite = value_tree(NameKey, Values),
+		      %% write_values(Tab, NameKey, Values),
+		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
 		      {ok, Name}
 	      end
       end).
@@ -68,21 +70,25 @@ update_config_data(AID, Name0, Values) ->
     Name = to_binary(Name0),
     NameKey = exodm_db:encode_id(Name),
     Protocol = get_protocol(AID, Name0),
-    case get_yang_spec(AID, NameKey) of 
+    case get_yang_spec(AID, NameKey) of
         {ok, YangSpec} ->
             exodm_db:transaction(
               fun(_) ->
                       case exists(Tab, NameKey) of
                           true ->
-                              validate_config(Tab, AID, YangSpec, Protocol, Values),
-                              write_values(Tab, NameKey, Values),
+			      CT = kvdb_conf:read_tree(Tab, NameKey),
+                              validate_config(
+				Tab, AID, YangSpec, Protocol, Values),
+			      ValsToWrite =
+				  update_value_tree(Values, CT),
+			      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
                               {ok, Name};
 
                           false ->
                               { error, not_found }
                       end
               end);
-        E -> 
+        E ->
             { error, E }
     end.
 
@@ -235,6 +241,130 @@ write(Tab, Name, AKey, Value) ->
 write(Tab, Key, Value) ->
     exodm_db:write(Tab, Key, Value).
 
+%% This doesn't actually produce a tree, but a *flattened* tree consisting
+%% only of the objects under <<"values">>.
+value_tree(Root, Values) ->
+    kvdb_conf:flatten_tree(
+      #conf_tree{root = Root,
+		 tree = [{<<"values">>, to_tree_(Values)}]}).
+
+update_value_tree(Values, #conf_tree{root = Root, tree = T} = Tree) ->
+    {<<"values">>, Vs} = lists:keyfind(<<"values">>, 1, T),
+    NewVs = update_tree_(Values, Vs),
+    kvdb_conf:flatten_tree(#conf_tree{root = Root,
+				      tree = [{<<"values">>, NewVs}]}).
+    %% T1 = lists:keyreplace(<<"values">>, 1, T, {<<"values">>, NewVs}),
+    %% Tree#conf_tree{tree = T1}.
+
+update_tree_({struct, Elems}, Tree) ->
+    lists:foldl(
+      fun({K0,V}, Acc) ->
+	      K = to_binary(K0),
+	      case lists:keyfind(K, 1, Acc) of
+		  {_, SubT} ->
+		      lists:keyreplace(
+			K, 1, Acc, update_node(K, V, SubT));
+		  {_, As, _} ->
+		      lists:keyreplace(K, 1, Acc, update_node(K, V, []));
+		  false ->
+		      ordered_insert(K, V, Acc)
+	      end
+      end, Tree, Elems);
+update_tree_({array, Elems} = A, Tree) ->
+    case lists:all(fun(X) -> is_integer(element(1,X)) end, Tree) of
+	true ->
+	    update_array(Elems, Tree);
+	false ->
+	    to_tree_(A)
+    end;
+update_tree_({K0,V}, Tree) ->
+    K = to_binary(K0),
+    case is_array(Tree) of
+	true ->
+	    [{K, [], V}];
+	false ->
+	    case lists:keyfind(K, 1, Tree) of
+		false ->
+		    ordered_insert(K, V, Tree);
+		{_, SubT} ->
+		    lists:keyreplace(K, 1, Tree, update_node(K, V, SubT));
+		{_, _, _} ->
+		    lists:keyreplace(K, 1, Tree, update_node(K, V, []))
+	    end
+    end.
+
+update_array([{struct, [{K0,V}]}|Elems], Array) ->
+    K = to_binary(K0),
+    update_array(Elems, keystore_array(K, V, Array));
+update_array([{struct,_} = S|Elems], Array) ->
+    update_array(Elems, append_to_array(Array, S));
+update_array([{array,_} = A|Elems], Array) ->
+    update_array(Elems, append_to_array(Array, A));
+update_array([{K0,V}|Elems], Array) ->
+    K = to_binary(K0),
+    update_array(Elems, keystore_array(K, V, Array));
+update_array([X|Elems], Array) ->
+    update_array(Elems, append_to_array(Array, X));
+update_array([], Array) ->
+    Array.
+
+append_to_array(A, X) -> A ++ [{length(A)+1, to_tree_(X)}].
+
+keystore_array(K, V, [{P, [{K,_,_}]}|A]) ->
+    [{P, [update_node(K, V, [])]}|A];
+keystore_array(K, V, [Last]) ->
+    P = element(1, Last),
+    [Last, {P+1, [update_node(K, V, [])]}];
+keystore_array(K, V, [H|T]) ->
+    [H | keystore_array(K, V, T)];
+keystore_array(K, V, []) ->
+    [{1, update_node(K, V, [])}].
+
+is_array(Tree) ->
+    lists:all(fun(X) -> is_integer(element(1,X)) end, Tree).
+
+update_node(K, {struct,_} = S, T) ->
+    {K, update_tree_(S, T)};
+update_node(K, {array,_} = A, T) ->
+    {K, update_tree_(A, T)};
+update_node(K, V, _) ->
+    {K, [], V}.
+
+ordered_insert(K, V, [H|T]) when element(1,H) < K ->
+    [H|ordered_insert(K, V, T)];
+ordered_insert(K, V, T) ->
+    H = case V of
+	    {struct,_} -> {K, to_tree_(V)};
+	    {array,_}  -> {K, to_tree_(V)};
+	    _ ->
+		{K, [], V}
+	end,
+    [H|T].
+
+
+
+to_tree_({struct, Elems}) ->
+    lists:map(
+       fun({T,_} = X) when T==array; T==struct ->
+ 	      to_tree_(X);
+ 	 ({K,V}) ->
+ 	      {to_binary(K), [], V}
+       end, Elems);
+to_tree_({array, Elems}) ->
+    {SubTree, _} = lists:mapfoldl(
+ 		     fun({T,_} = X, P) when T==array; T==struct ->
+ 			     {{P, to_tree_(X)}, P+1};
+ 			({K,V}, P) ->
+ 			     {{P, to_tree_({K,V})}, P+1};
+			(X, P) ->
+			     {{P, [], X}, P+1}
+ 		     end, 1, Elems),
+    SubTree;
+to_tree_({K,V}) ->
+    [{K, [], V}].
+
+
+
 write_values(Tab, Name, Values) ->
     Key = exodm_db:join_key([Name, <<"values">>]),
     write_values_(Tab, Key, Values).
@@ -267,6 +397,7 @@ write_values_(Tab, Key, {array, Elems}) ->
 	      write(Tab, Key1, V),
 	      I+1
       end, 1, Elems).
+
 
 %% tree_to_values({Key, As, <<>>, L}) when is_list(L) ->
 %%     {decode_id(Key), As, tree_to_values(L)};
