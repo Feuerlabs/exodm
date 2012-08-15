@@ -4,12 +4,12 @@
     "id": "1", 
     "params": 
     {
-        "name": "test11", 
-        "yang": "exosense.yang", 
+        "name": "test12", 
+        "yang": "exodm.yang", 
         "protocol": "exodm_bert", 
         "values": 
         [
-            {"key1": "val1" },
+            { "key1": "val1" },
             { "key2": "val2" }
         ]
     }

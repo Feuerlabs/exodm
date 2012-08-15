@@ -45,6 +45,23 @@ json_rpc_({request, _ReqEnv,
     end;
 
 json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'set-config-value',
+	    [{'cfg-data', C},
+	     {values, JSON}]}} = RPC, _Env) ->
+    ?debug("set-config-data: cfg-data: ~p values:~p~n", [C, JSON]),
+    AID = exodm_db_session:get_aid(),
+    case exodm_db_config:update_config_data(AID, C, JSON) of
+	{ok, _} ->
+	    ?debug("set_config_data(...) -> ok~n", []),
+	    {ok, result_code(ok)};
+
+        {error, Error} ->
+	    ?debug("RPC = ~p; ERROR = ~p~n", [RPC, Error]),
+	    {error, Error}
+    end;
+
+
+json_rpc_({request, _ReqEnv,
 	   {call, exodm, 'create-yang-module',
 	    [{repository, R},
 	     {name, N},
@@ -53,14 +70,28 @@ json_rpc_({request, _ReqEnv,
 
     Res = exodm_db_yang:write(N, Y),
     io:format("YANG WRITE: ~p\n", [Res]),
-    {ok, ok};
+    {ok, result_code(ok)};
+
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'create-yang-module',
+	   {call, exodm, 'provision-device',
+	    [{'new-device-id', I}]}} = _RPC, _Env) ->
+    ?debug("provision-device() device-id():~p ~n", [ I ]),
+    exodm_db_device:new(exodm_db_session:get_aid(), I, []),
+    {ok, result_code(ok)};
+
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'add-config-data-members',
 	    [{repository, R},
 	     {name, N},
 	     {'yang-module', Y}]}} = _RPC, _Env) ->
-    ?debug("'create-yang-module'~n", []),
-
+    ?debug("create-yang-module~n", []),
     io:format("YANG WRONG REPO: Name:~p Repo:~p Yang:~p\n", [N,R,Y]),
-    {ok, result_code('permission-denied') }.
+    {ok, result_code('permission-denied') };
+
+json_rpc_(RPC, _ENV) ->
+
+
+    ?error("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),
+    {ok, result_code('validation-failed')}.
+

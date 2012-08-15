@@ -10,6 +10,7 @@
 -export([init/1]).
 -export(
    [new_config_data/5,         %% (AID, Name, Yang, Protocol, Values)
+    update_config_data/3,      %% (AID, Name0, Values)
     read_config_data/2,        %% (AID, Name)
     read_config_data_values/2, %% (AID, Name)
     get_yang_spec/2,           %% (AID, Name)
@@ -18,7 +19,8 @@
     delete_config_data/2,      %% (AID, Name)
     create_yang_module/4,      %% (AID, <<"user">>|<<"system">>, File, Yang)
     add_config_data_members/3, %% (AID, CfgDataName, [DeviceID])
-    list_config_data_members/2 %% (AID, CfgDataName)
+    list_config_data_members/2,%% (AID, CfgDataName)
+    list_config_data_members/1 %% (Name)
    ]).
 -export([table/1]).
 
@@ -57,6 +59,32 @@ new_config_data(AID, Name0, Yang0, Protocol, Values) ->
 		      {ok, Name}
 	      end
       end).
+
+%% FIXME: If you add a key/val pair that was not present in the
+%%        new_config_data() call, the entire config entry gets corrupted.
+%%
+update_config_data(AID, Name0, Values) ->
+    Tab = table(AID),
+    Name = to_binary(Name0),
+    NameKey = exodm_db:encode_id(Name),
+    Protocol = get_protocol(AID, Name0),
+    case get_yang_spec(AID, NameKey) of 
+        {ok, YangSpec} ->
+            exodm_db:transaction(
+              fun(_) ->
+                      case exists(Tab, NameKey) of
+                          true ->
+                              validate_config(Tab, AID, YangSpec, Protocol, Values),
+                              write_values(Tab, NameKey, Values),
+                              {ok, Name};
+
+                          false ->
+                              { error, not_found }
+                      end
+              end);
+        E -> 
+            { error, E }
+    end.
 
 read_config_data(AID, Name) ->
     Tab = table(AID),

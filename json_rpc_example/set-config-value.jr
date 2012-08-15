@@ -1,0 +1,13 @@
+{
+    "json-rpc": "2.0", 
+    "method": "exodm:set-config-value", 
+    "id": "1", 
+    "params": 
+    {
+        "cfg-data": "test12", 
+        "values": 
+        [
+            { "key1": "val112" }
+        ]
+    }
+}

@@ -1,0 +1,9 @@
+{
+    "json-rpc": "2.0", 
+    "method": "exodm:provision-device", 
+    "id": "1", 
+    "params": 
+    {
+        "new-device-id": "1234"
+    }
+}

@@ -463,7 +463,7 @@ to_json_([{K, [], _, Type} = H|T], Attrs, Reply, Hist) ->
 		    [{K, X1}
 		     | to_json_(T, Attrs, Reply, keep_history(H, Hist))];
 		_ ->
-		    error({cannot_convert_to_json, Reply})
+		    error({cannot_convert_to_json, [{missing_term, Ka} |{available_terms, [Reply]}]})
 	    end
     end;
 to_json_([{K, {array,[Ch]}, _, _}|T], Attrs, Reply, Hist) ->
