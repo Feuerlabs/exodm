@@ -1,0 +1,10 @@
+{
+    "jsonrpc": "2.0",
+    "method": "exodm:create-yang-module",
+    "id": "1",
+    "params": { 
+        "repository": "user",  
+        "name": "dilo", 
+        "yang-module": "module dilo_tst { description: \"test\", prefix dilo_tst;  notification swipe { leaf device_id { type string; } leaf data { type string; } } }"
+    }
+}
