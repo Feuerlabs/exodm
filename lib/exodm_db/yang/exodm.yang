@@ -290,6 +290,14 @@ module exodm {
                     length "1..64";
                 }
             }
+            leaf server-key {
+                description "Server key";
+                type uint64;
+            }
+            leaf device-key {
+                description "Device key";
+                type uint64;
+            }
         }
 
         output {
@@ -323,4 +331,21 @@ module exodm {
         }
     }
 
+    rpc push-config-data {
+        description "Push the given configuration data to all member devices";
+        input {
+            leaf config-data {
+                description "Configuration data to push.";
+                type string {
+                    length "1..32";
+                }
+            }
+        }
+
+        output {
+            leaf result {
+                type result-code;
+            }
+        }
+    }
 }

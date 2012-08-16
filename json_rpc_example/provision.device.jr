@@ -4,6 +4,8 @@
     "id": "1",
     "params":
     {
-        "dev-id": "1235"
+        "dev-id": "1235",
+        "server-key": 1,
+        "device-key": 2
     }
 }
