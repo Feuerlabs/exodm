@@ -505,7 +505,7 @@ msg_to_json(request, Method, Attrs, Msg) ->
 	{ok, {_, _RAttrs, Spec}} ->
 	    io:format("request spec: ~p\n", [Spec]),
 	    {struct,
-	     [{"json-rpc", "2.0"},
+	     [{"jsonrpc", "2.0"},
 	      {"id", integer_to_list(incr_id())},
 	      {"method", atom_to_list(Method)},
 	      {"params", {struct, to_json_(Spec, Attrs, Msg, [])}}
@@ -521,7 +521,7 @@ msg_to_json(notify, Method0, Attrs, Msg) ->
     case lookup({Method, notify}) of
 	{ok, {_, _RAttrs, Spec}} ->
 	    {struct,
-	     [{"json-rpc", "2.0"},
+	     [{"jsonrpc", "2.0"},
 	      {"method", atom_to_list(Method)},
 	      {"params", {struct, to_json_(Spec, Attrs, Msg, [])}}
 	     ]};

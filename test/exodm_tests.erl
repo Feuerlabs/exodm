@@ -50,7 +50,7 @@ exodm_test_() ->
 		     ?my_t(list_users(Config)),
 		     ?my_t(store_exosense_yang(Config)),
 		     ?my_t(store_yang(Config)),
-		     ?my_t(store_exodm_yang(Config)),
+		     %% ?my_t(store_exodm_yang(Config)),
 		     ?my_t(store_config(Config)),
 		     ?my_t(store_config2(Config)),
 		     ?my_t(add_config_data_member(Config)),
@@ -106,12 +106,14 @@ populate(Cfg) ->
     {ok, GID1} = ?rpc(exodm_db_group,new,
 		     [
 		      AID2, [{name, <<"feuerlabs">>},
-			     {url, "https://ulf:wiger@localhost:8000/exodm/test_callback"}]
+			     %% {url, "https://ulf:wiger@localhost:8000/exodm/test_callback"}]
+			     {url, "http://localhost:8898/"}]
 		     ]),
     {ok, GID2} = ?rpc(exodm_db_group,new,
 		     [
 		      AID2, [{name, <<"travelping">>},
-			     {url, "https://ulf:wiger@localhost:8000/exodm/test_callback2"}]
+			     %% {url, "https://ulf:wiger@localhost:8000/exodm/test_callback2"}]
+			     {url, "http://localhost:8899/"}]
 		     ]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID = <<"x00000001">>,
@@ -154,8 +156,10 @@ list_groups(Cfg) ->
     ok.
 
 list_group_notifications(Cfg) ->
-    [<<"https://ulf:wiger@localhost:8000/exodm/test_callback2">>,
-     <<"https://ulf:wiger@localhost:8000/exodm/test_callback">>] =
+    %% [<<"https://ulf:wiger@localhost:8000/exodm/test_callback2">>,
+    %%  <<"https://ulf:wiger@localhost:8000/exodm/test_callback">>] =
+    [<<"http://localhost:8899/">>,
+     <<"http://localhost:8898/">>] =
 	?rpc(exodm_db_device,lookup_group_notifications, [2, <<"x00000001">>]),
     ok.
 
@@ -200,24 +204,24 @@ store_exosense_yang_scr() ->
 
 
 
-store_exodm_yang(Cfg) ->
-    ok = rscript(Cfg, store_exodm_yang_scr()).
+%% store_exodm_yang(Cfg) ->
+%%     ok = rscript(Cfg, store_exodm_yang_scr()).
 
-store_exodm_yang_scr() ->
-    codegen:exprs(
-      fun() ->
-	      exodm_db:transaction(
-		fun(Db) ->
-			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
-			exodm_db_session:set_trusted_proc(),
-			{ok, Bin} = file:read_file(
-				      filename:join(code:priv_dir(exodm_db),
-				      "yang/exodm.yang")),
-			exodm_db_yang:write("system.exodm.yang", Bin),
-			exodm_db_session:logout()
-		end),
-	      ok
-      end).
+%% store_exodm_yang_scr() ->
+%%     codegen:exprs(
+%%       fun() ->
+%% 	      exodm_db:transaction(
+%% 		fun(Db) ->
+%% 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+%% 			exodm_db_session:set_trusted_proc(),
+%% 			{ok, Bin} = file:read_file(
+%% 				      filename:join(code:priv_dir(exodm_db),
+%% 				      "yang/exodm.yang")),
+%% 			exodm_db_yang:write("system.exodm.yang", Bin),
+%% 			exodm_db_session:logout()
+%% 		end),
+%% 	      ok
+%%       end).
 
 store_config(Cfg) ->
     {ok, #conf_tree{root = R, tree = T}} =
@@ -348,11 +352,11 @@ set_access(Cfg) ->
     {ok, Sn} = bert_rpc_exec:get_session(
 		 Host, Port, [tcp], [{auto_connect,false}], 10000),
     A = gen_server:call(Sn, get_access),
-    io:fwrite(user, "Old Access = ~p~n", [A]),
+    %% io:fwrite(user, "Old Access = ~p~n", [A]),
     ok = gen_server:call(
 	   Sn, {set_access, [{redirect, [{{test,echo,1},
 					  {?MODULE,test_echo,1}}]}]}),
-    io:fwrite(user, "New Access = ~p~n", [gen_server:call(Sn, get_access)]),
+    %% io:fwrite(user, "New Access = ~p~n", [gen_server:call(Sn, get_access)]),
     ok.
 
 load_this_module(Cfg) ->
@@ -375,22 +379,31 @@ test_echo(Args) ->
 test_notification(Cfg) ->
     ?loglevel(
        debug,
-       notification_()).
+       notification_(Cfg)).
 
-notification_() ->
-       exoport:rpc(exodm_rpc, notification, [test, 'echo-callback',
-					     [{message, "howdy"}]]).
+notification_(Cfg) ->
+    exodm_test_lib:ask_http_servers(reset, Cfg),
+    exoport:rpc(exodm_rpc, notification, [test, 'echo-callback',
+					  [{message, "howdy"}]]),
+    Fetched = fetch_json(Cfg),
+    %% io:fwrite(user, "Fetched (howdy): ~p~n", [Fetched]),
+    Rep = {struct, [{"jsonrpc","2.0"},
+		    {"method","test:echo-callback"},
+		    {"params", {struct, [{"message", "howdy"}]}}]},
+    [{8898, Rep}, {8899, Rep}] = Fetched,
+    ok.
 
 %%% ==================================== End client BERT RPC
 
 
 %%% ==================================== JSON-RPC Tests
 
-start_http_client(_Cfg) ->
+start_http_client(Cfg) ->
     application:start(crypto),
     application:start(public_key),
     ok = application:start(ssl),
-    ok = lhttpc:start().
+    ok = lhttpc:start(),
+    Cfg.
 
 stop_http_client(_Cfg) ->
     ok = lhttpc:stop(),
@@ -398,16 +411,22 @@ stop_http_client(_Cfg) ->
     application:stop(public_key),
     application:stop(crypto).
 
-json_rpc1(_Cfg) ->
-    post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
-		  "exodm:create-config-data", "1",
-		  {struct,[{"name","test_cfg_1"},
-			   {"yang", "exosense.yang"},
-			   {"protocol","exodm_bert"},
-			   {"values",{struct,[{"a", "1"},
-					      {"b", "xx"}
-					     ]}}
-			  ]}).
+json_rpc1(Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:create-config-data", "1",
+				{struct,[{"config-data","test_cfg_1"},
+					 {"yang", "exosense.yang"},
+					 {"protocol","exodm_bert"},
+					 {"values",{struct,[{"a", "1"},
+							    {"b", "xx"}
+							   ]}}
+					]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct,[{"result","0"}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
 
 device_json_rpc1(Cfg) ->
     set_access(Cfg),
@@ -422,16 +441,37 @@ device_json_rpc1(Cfg) ->
 			       Pid ! {answer, Reply}
 		       end
 	       end),
-    post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
-		  "test:echo", "2",
-		  {struct, [{"device-id", "x00000001"},
-			    {"message", "hello"}]}).
+    exodm_test_lib:ask_http_servers(reset, Cfg),
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"test:echo", "2",
+				{struct, [{"device-id", "x00000001"},
+					  {"message", "hello"}]}),
+    %% io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct, [{"transaction-id",_},
+				   {"rpc-status", "0"},
+				   {"rpc-status-string",
+				    "Operation has been accepted" ++ _},
+				   {"final","0"}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    Fetched = fetch_json(Cfg),
+    Notification = {struct, [{"jsonrpc","2.0"},
+			     {"method","test:echo-callback"},
+			     {"params", {struct,[{"message","hello"}]}}]},
+    [{8898, Notification}, {8899, Notification}] = Fetched,
+    ok.
 
+fetch_json(Cfg) ->
+    [{Port, ok(json2:decode_string(binary_to_list(Body)))} ||
+	{Port,Body} <- exodm_test_lib:ask_http_servers(fetch_content, Cfg)].
+
+ok({ok, Res}) ->
+    Res.
 
 post_json_rpc({Port, User, Pwd, Path}, Method, ID, Params) ->
     URL = lists:concat(["https://", User, ":", Pwd, "@localhost:",
 			integer_to_list(Port), Path]),
-    Body = json2:encode({struct, [{"json-rpc", "2.0"},
+    Body = json2:encode({struct, [{"jsonrpc", "2.0"},
 				  {"method", Method},
 				  {"id", ID},
 				  {"params", Params}]}),
@@ -441,8 +481,9 @@ post_json_rpc({Port, User, Pwd, Path}, Method, ID, Params) ->
 			  {"Content-Type", "application/json-rpc"},
 			  {"Host", "localhost"}],
 			 Body, 3000),
-    io:fwrite(user, "HTTP Res = ~p~n", [Res]),
-    Res.
+    %% io:fwrite(user, "HTTP request Res = ~p~n", [Res]),
+    {ok, {{200,_OK},_Hdrs,JSON}} = Res,
+    {ok, ok(json2:decode_string(binary_to_list(JSON)))}.
 
 %% Helpers
 
@@ -565,7 +606,8 @@ start_exodm(Top) ->
 	false -> ok
     end,
     ok = file:make_dir(Dir),
-    DevRun = filename:join(Top, "devrun"),
+    %% _DevRun = filename:join(Top, "devrun"),
+
     MakeNode = filename:join(Top, "make_node"),
     Rel = filename:join(Top, "rel/exodm"),
     in_dir(Dir, fun() ->
@@ -574,8 +616,12 @@ start_exodm(Top) ->
 				  ++ " -rel " ++ Rel ++ " -- -name " ++ NodeStr)),
 			?debugVal(os:cmd(Rel ++ "/bin/exodm start"))
 		end),
+    Http1 = exodm_test_lib:http_server(8898),
+    Http2 = exodm_test_lib:http_server(8899),
     [{dir, Dir},
-     {node, list_to_atom(NodeStr)}].
+     {node, list_to_atom(NodeStr)},
+     {http, {8898,Http1}},
+     {http, {8899,Http2}}].
 
 kill_old(Dir) ->
     case file:read_file(filename:join(Dir, "curpid.data")) of

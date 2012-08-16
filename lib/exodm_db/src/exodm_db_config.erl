@@ -248,7 +248,7 @@ value_tree(Root, Values) ->
       #conf_tree{root = Root,
 		 tree = [{<<"values">>, to_tree_(Values)}]}).
 
-update_value_tree(Values, #conf_tree{root = Root, tree = T} = Tree) ->
+update_value_tree(Values, #conf_tree{root = Root, tree = T}) ->
     {<<"values">>, Vs} = lists:keyfind(<<"values">>, 1, T),
     NewVs = update_tree_(Values, Vs),
     kvdb_conf:flatten_tree(#conf_tree{root = Root,
@@ -264,7 +264,7 @@ update_tree_({struct, Elems}, Tree) ->
 		  {_, SubT} ->
 		      lists:keyreplace(
 			K, 1, Acc, update_node(K, V, SubT));
-		  {_, As, _} ->
+		  {_, [], _} ->
 		      lists:keyreplace(K, 1, Acc, update_node(K, V, []));
 		  false ->
 		      ordered_insert(K, V, Acc)
@@ -348,55 +348,69 @@ to_tree_({struct, Elems}) ->
        fun({T,_} = X) when T==array; T==struct ->
  	      to_tree_(X);
  	 ({K,V}) ->
- 	      {to_binary(K), [], V}
+	       to_node_({K,V})
        end, Elems);
 to_tree_({array, Elems}) ->
     {SubTree, _} = lists:mapfoldl(
  		     fun({T,_} = X, P) when T==array; T==struct ->
  			     {{P, to_tree_(X)}, P+1};
  			({K,V}, P) ->
- 			     {{P, to_tree_({K,V})}, P+1};
+			     case V of 
+				 {T1,_} when T1==array; T1==struct ->
+				     {{P, [{K, to_tree_(V)}]}, P+1};
+				 _ ->
+				     {{P, [to_node_({K,V})]}, P+1}
+			     end;
 			(X, P) ->
 			     {{P, [], X}, P+1}
  		     end, 1, Elems),
     SubTree;
-to_tree_({K,V}) ->
-    [{K, [], V}].
+to_tree_({_,_} = X) ->
+    [to_node_(X)].
+
+to_node_({K0,V}) ->
+    K = to_binary(K0),
+    case V of
+	{T,_} when T==array; T==struct ->
+	    {K, to_tree_(V)};
+	_ ->
+	    {K, [], V}
+    end.
 
 
 
-write_values(Tab, Name, Values) ->
-    Key = exodm_db:join_key([Name, <<"values">>]),
-    write_values_(Tab, Key, Values).
+%% write_values(Tab, Name, Values) ->
+%%     Key = exodm_db:join_key([Name, <<"values">>]),
+%%     write_values_(Tab, Key, Values).
 
-write_values_(Tab, Key, {struct, Elems}) ->
-    lists:foreach(
-      fun({K,{array,_} = A}) ->
-	      Key1 = exodm_db:join_key(Key, to_id(K)),
-	      write_values_(Tab, Key1, A);
-	 ({K, {struct,_} = S}) ->
-	      Key1 = exodm_db:join_key(Key, to_id(K)),
-	      write_values_(Tab, Key1, S);
-	 ({K,V}) ->
-	      Key1 = exodm_db:join_key(Key, to_id(K)),
-	      write(Tab, Key1, V)
-      end, Elems);
-write_values_(Tab, Key, {array, Elems}) ->
-    lists:foldl(
-      fun({array,__} = A, I) ->
-	      Key1 = exodm_db:list_key(Key, I),
-	      write_values_(Tab, Key1, A),
-	      I+1;
-	 ({struct,_} = S, I) ->
-	      Key1 = exodm_db:list_key(Key, I),
-	      write_values_(Tab, Key1, S),
-	      I+1;
-	 ({K, V}, I) ->
-	      Key1 = exodm_db:join_key(
-		       exodm_db:list_key(Key, I), to_id(K)),
-	      write(Tab, Key1, V),
-	      I+1
-      end, 1, Elems).
+%% write_values_(Tab, Key, {struct, Elems}) ->
+%%     lists:foreach(
+%%       fun({K,{array,_} = A}) ->
+%% 	      Key1 = exodm_db:join_key(Key, to_id(K)),
+%% 	      write_values_(Tab, Key1, A);
+%% 	 ({K, {struct,_} = S}) ->
+%% 	      Key1 = exodm_db:join_key(Key, to_id(K)),
+%% 	      write_values_(Tab, Key1, S);
+%% 	 ({K,V}) ->
+%% 	      Key1 = exodm_db:join_key(Key, to_id(K)),
+%% 	      write(Tab, Key1, V)
+%%       end, Elems);
+%% write_values_(Tab, Key, {array, Elems}) ->
+%%     lists:foldl(
+%%       fun({array,__} = A, I) ->
+%% 	      Key1 = exodm_db:list_key(Key, I),
+%% 	      write_values_(Tab, Key1, A),
+%% 	      I+1;
+%% 	 ({struct,_} = S, I) ->
+%% 	      Key1 = exodm_db:list_key(Key, I),
+%% 	      write_values_(Tab, Key1, S),
+%% 	      I+1;
+%% 	 ({K, V}, I) ->
+%% 	      Key1 = exodm_db:join_key(
+%% 		       exodm_db:list_key(Key, I), to_id(K)),
+%% 	      write(Tab, Key1, V),
+%% 	      I+1
+%%       end, 1, Elems).
 
 
 %% tree_to_values({Key, As, <<>>, L}) when is_list(L) ->
@@ -455,8 +469,8 @@ to_binary(X) when is_atom(X) -> atom_to_binary(X, latin1);
 to_binary(X) when is_binary(X) -> X;
 to_binary(X) when is_list(X) -> list_to_binary(X).
 
-to_id(X) ->
-    exodm_db:encode_id(to_binary(X)).
+%% to_id(X) ->
+%%     exodm_db:encode_id(to_binary(X)).
 
 check_access(AID) ->
     AID = exodm_db_session:get_aid().

@@ -1,5 +1,5 @@
 {
-    "json-rpc": "2.0", 
+    "jsonrpc": "2.0", 
     "method": "exodm:create-yang-module", 
     "id": "1", 
     "params": 

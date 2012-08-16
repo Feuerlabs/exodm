@@ -190,7 +190,7 @@ mod(Yang) ->
 
 
 is_exodm_method(Method, AID) ->
-    case binary:split(atom_to_binary(Method, latin1), <<":">>) of
+    case binary:split(list_to_binary(Method), <<":">>) of
 	[MethodBin] ->
 	    Mod = <<"exodm">>,
 	    ?debug("Mod = ~p; MethodBin = ~p~n", [Mod, MethodBin]),
@@ -220,7 +220,7 @@ find_method_spec(Method, AID, DevID) ->
     ?debug("find_method_spec(~p, ~p)~n", [Method, DevID]),
     DID = exodm_db:encode_id(DevID),
     YangSpecs = exodm_db_device:yang_modules(AID, DID),
-    case binary:split(atom_to_binary(Method, latin1), <<":">>) of
+    case binary:split(list_to_binary(Method), <<":">>) of
 	[MethodBin] ->
 	    Mod = get_default_module(AID, DID),
 	    find_method_spec_(Mod, YangSpecs, MethodBin);

@@ -1,5 +1,5 @@
 {
-    "json-rpc": "2.0",
+    "jsonrpc": "2.0",
     "method": "exodm:push-config-data",
     "id": "1",
     "params":
