@@ -19,17 +19,20 @@
 %% ===================================================================
 
 start_link() ->
+    Sconfs = find_sconfs(),
     #conf{
       id = Id,
       gconf = GconfList,
       docroot = Docroot,
-      sconf = SconfList
+      sconf = Sconfs0
      } = yaws_conf(),
+    AllSconfs = default_sconfs(Sconfs0) ++ Sconfs,
     {ok, SC, GC, ChildSpecs} =
-        yaws_api:embedded_start_conf(Docroot, SconfList, GconfList, Id),
+        yaws_api:embedded_start_conf(Docroot, AllSconfs, GconfList, Id),
     io:fwrite("Yaws:~n"
 	      "  SC = ~p~n"
 	      "  GC = ~p~n", [SC, GC]),
+    set_exodm_options(Sconfs),
     {ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, ChildSpecs),
     yaws_api:setconf(GC, SC),
     {ok, Pid}.
@@ -41,6 +44,9 @@ start_link() ->
 init(ChildSpecs) ->
     {ok, { {one_for_one, 5, 10}, ChildSpecs} }.
 
+default_sconfs(undefined) -> [];
+default_sconfs(L) when is_list(L) -> L.
+
 yaws_conf() ->
     Id = env(id, "embedded"),
     Docroot = env(docroot, filename:join(my_priv_dir(), "www")),
@@ -48,10 +54,9 @@ yaws_conf() ->
     setup:verify_dir(LogDir),
     Port = env(port, 8888),
     io:fwrite("Port = ~p~n", [Port]),
-    ServerName = env(servername, "exodm_http"),
-    Listen = env(listen, {0,0,0,0}),
-    AppMods = env(appmods, [{"/ck3", exodm_ck3_appmod}]),
-    Confs = find_sessions(),
+    %% ServerName = env(servername, "exodm_http"),
+    %% Listen = env(listen, {0,0,0,0}),
+    %% AppMods = env(appmods, [{"/ck3", exodm_ck3_appmod}]),
     #conf{
 	   id = Id,
 	   gconf = [
@@ -60,13 +65,12 @@ yaws_conf() ->
 		    {ebin_dir, [Docroot]},
 		    {include_dir, [Docroot]}
 		   ],
-	   docroot = Docroot,
+	   docroot = Docroot
 	   %% sconf = [{port, Port},
 	   %% 	    {servername, ServerName},
 	   %% 	    {listen, Listen},
 	   %% 	    {docroot, Docroot},
 	   %% 	    {appmods, AppMods}]
-	   sconf = Confs
 	 }.
 
 env(K, Def) ->
@@ -95,7 +99,28 @@ my_priv_dir() ->
 	    code:priv_dir(A)
     end.
 
-find_sessions() ->
+set_exodm_options(Sconfs) ->
+    Opts = lists:flatmap(
+	     fun(Conf) ->
+		     case lists:keyfind(exodm_options, 1, Conf) of
+			 {_, Opts} ->
+			     {_, Port} = lists:keyfind(port, 1, Conf),
+			     [{Port, Opts}];
+			 false ->
+			     []
+		     end
+	     end, Sconfs),
+    OldOpts = case application:get_env(exodm_http, session_opts) of
+		  {ok, Opts0} when is_list(Opts0) -> Opts0;
+		  _ -> []
+	      end,
+    NewOpts = lists:foldl(fun({K,V}, Acc) -> orddict:store(K, V, Acc) end,
+			  orddict:from_list(OldOpts), Opts),
+    application:set_env(exodm_http, session_opts, NewOpts),
+    io:fwrite("set_exodm_options(...) -> ~p~n", [NewOpts]),
+    ok.
+
+find_sconfs() ->
     %% TODO: Use setup:find_env_vars/1 instead, as it does exactly this, and then some.
     As = application:loaded_applications(),
     lists:reverse(

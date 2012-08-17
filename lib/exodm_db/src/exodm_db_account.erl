@@ -135,8 +135,8 @@ register_protocol(AID, Protocol) when is_binary(Protocol) ->
 	_ ->
 	    exodm_db:in_transaction(
 	      fun(_) ->
-		      Key = exodm_db:join(exodm_db:account_id_key(AID),
-					  <<"protocols">>),
+		      Key = exodm_db:join_key(exodm_db:account_id_key(AID),
+					      <<"protocols">>),
 		      insert(Key, Protocol, <<>>)
 	      end);
 	false ->

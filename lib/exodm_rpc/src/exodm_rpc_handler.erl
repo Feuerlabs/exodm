@@ -152,10 +152,13 @@ handle_exodm_rpc(Protocol, Env, RPC, Session, Spec) ->
 	    {false, error_response(convert_error(E, RPC))}
     end.
 
+notification(Method, Elems, Env, _Req, AID, DID) ->
+    %% Should be removed.
+    notification(Method, Elems, Env, AID, DID).
 
-notification(Method, Elems, Env, Req, AID, DID) ->
-    ?debug("notification(~p, ~p, ~p, ~p, ~p, ~p)~n",
-	   [Method, Elems, Env, Req, AID, DID]),
+notification(Method, Elems, Env, AID, DID) ->
+    ?debug("notification(~p, ~p, ~p, ~p, ~p)~n",
+	   [Method, Elems, Env, AID, DID]),
     {_, Yang} = lists:keyfind(yang, 1, Env),
     case exodm_db_yang:rpcs(Yang) of
 	[] ->
@@ -188,9 +191,14 @@ mod(Yang) ->
     <<M:SzA/binary, ".yang">> = Y,
     M.
 
+to_binary(A) when is_atom(A) ->
+    atom_to_binary(A, latin1);
+to_binary(L) when is_list(L) ->
+    list_to_binary(L).
+
 
 is_exodm_method(Method, AID) ->
-    case binary:split(list_to_binary(Method), <<":">>) of
+    case binary:split(to_binary(Method), <<":">>) of
 	[MethodBin] ->
 	    Mod = <<"exodm">>,
 	    ?debug("Mod = ~p; MethodBin = ~p~n", [Mod, MethodBin]),
@@ -220,7 +228,7 @@ find_method_spec(Method, AID, DevID) ->
     ?debug("find_method_spec(~p, ~p)~n", [Method, DevID]),
     DID = exodm_db:encode_id(DevID),
     YangSpecs = exodm_db_device:yang_modules(AID, DID),
-    case binary:split(list_to_binary(Method), <<":">>) of
+    case binary:split(to_binary(Method), <<":">>) of
 	[MethodBin] ->
 	    Mod = get_default_module(AID, DID),
 	    find_method_spec_(Mod, YangSpecs, MethodBin);

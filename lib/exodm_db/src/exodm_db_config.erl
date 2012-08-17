@@ -243,6 +243,8 @@ write(Tab, Key, Value) ->
 
 %% This doesn't actually produce a tree, but a *flattened* tree consisting
 %% only of the objects under <<"values">>.
+value_tree(_, []) ->
+    [];
 value_tree(Root, Values) ->
     kvdb_conf:flatten_tree(
       #conf_tree{root = Root,

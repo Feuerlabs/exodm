@@ -69,19 +69,19 @@ run_ga() ->
     exodm_db:in_transaction(fun(Db) -> run_ga_(Db) end).
 
 create_account(ga) ->
-    {ok, AID} = exodm_db_account:new(
-		  [
-		   {name, <<"getaround">>},
-		   {admin, [
-			    {uname, <<"ga">>},
-			    {fullname, <<"Getaround">>},
-			    {password, <<"wewontechcrunch2011">>}
-			   ]}]).
+    {ok, _AID} = exodm_db_account:new(
+		   [
+		    {name, <<"getaround">>},
+		    {admin, [
+			     {uname, <<"ga">>},
+			     {fullname, <<"Getaround">>},
+			     {password, <<"wewontechcrunch2011">>}
+			    ]}]).
 
 create_group(ga, AID) ->
-    {ok, GID} = exodm_db_group:new(
-		  AID, [{name, <<"gagroup">>},
-			{url, "http://gacallback:8080/exodm/callback"}]).
+    {ok, _GID} = exodm_db_group:new(
+		   AID, [{name, <<"gagroup">>},
+			 {url, "http://gacallback:8080/exodm/callback"}]).
 
 create_device(AID, GID, 4711) ->
     exodm_db_device:new(AID,
@@ -99,20 +99,25 @@ create_device(AID, GID, 4711) ->
 run_ga_(Db) ->
     %% Don't know why this is needed...
     {ok, AID} = create_account(ga),
+    exodm_db_account:register_protocol(AID, <<"ga_ck3">>),
     {ok, GID} = create_group(ga, AID),
     store_ck3_yang(Db),
-    lists:foreach(
-      fun(DID0) ->
-	      DID = devid(DID0),
-	      exodm_db_device:new(?GA_CUSTOMER_ID, DID,
-				  [{'__ck',<<2,0,0,0,0,0,0,0>>},
-				   {'__sk',<<1,0,0,0,0,0,0,0>>},
-				   {msisdn,"0701"++integer_to_list(DID0)},
-				   {groups, [GID]}
-				  ]),
-	      exodm_ck3_config:new(AID, DID, candidate, []),
-	      exodm_ck3_config:new(AID, DID, running, [])
-      end, lists:seq(100, 123)).
+    {ok,_} = exodm_db_config:new_config_data(
+	       AID, <<"ck3">>, <<"ckp.yang">>, <<"ga_ck3">>, []),
+    DIDs = lists:map(
+	     fun(DID0) ->
+		     DID = devid(DID0),
+		     exodm_db_device:new(?GA_CUSTOMER_ID, DID,
+					 [{'__ck',<<2,0,0,0,0,0,0,0>>},
+					  {'__sk',<<1,0,0,0,0,0,0,0>>},
+					  {msisdn,"0701"++integer_to_list(DID0)},
+					  {groups, [GID]}
+					 ]),
+		     exodm_ck3_config:new(AID, DID, candidate, []),
+		     exodm_ck3_config:new(AID, DID, running, []),
+		     DID
+	     end, lists:seq(100, 123)),
+    exodm_db_config:add_config_data_members(AID, <<"ck3">>, DIDs).
 
 devid(I) when is_integer(I) ->
     list_to_binary(integer_to_list(I)).

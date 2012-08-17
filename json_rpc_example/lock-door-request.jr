@@ -1,0 +1,12 @@
+{
+    "jsonrpc": "2.0",
+    "method": "ckp:lock-door-request",
+    "id": "1",
+    "params":
+    {
+        "timeout": "30",
+        "notification-url": "",
+     	"device-id": "123",
+        "transaction-id": "1"
+    }
+}

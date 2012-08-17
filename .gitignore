@@ -1,5 +1,6 @@
 ebin
 ebin/*
+.eunit
 rel/reltool.config
 deps
 rel/files
