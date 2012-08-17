@@ -3,7 +3,7 @@
 -compile(export_all).
 -export([handler_session/1]).
 %% -export([load_specs/0, reload_specs/0]).
--export([notification/6,
+-export([notification/5, notification/6,    % don't use notification/6!
 	 queue_message/5]).
 
 -export([to_json_/4]). % for testing
