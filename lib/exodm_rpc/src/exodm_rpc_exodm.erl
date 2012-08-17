@@ -75,8 +75,22 @@ json_rpc_({request, _ReqEnv,
 	     {name, N},
 	     {'yang-module', Y}]}} = _RPC, _Env) when R =:= ?USER_REPOSITORY->
     ?debug("~p:json_rpc(create-yang-module) repository:~p name:~p~n", [ ?MODULE, R, N ]),
-    _Res = exodm_db_yang:write(N, Y),
-    {ok, result_code(ok)};
+    Res = exodm_db_yang:write(N, Y),
+    io:format("YANG_RES: ~p\n", [ Res]),
+    case Res of
+        ok ->
+            {ok, result_code(ok)};
+
+        {error, {Line, Fmt, Arg } } ->
+            ?info("~p:json_rpc(create-yang-module): Error: Line: ~p: ~p\n",
+                 [?MODULE, Line, io_lib:fwrite(Fmt, Arg) ]),
+            {ok, result_code('validation-failed')};
+
+        Err ->
+            ?info("~p:json_rpc(create-yang-module): Error: ~p\n",
+                 [?MODULE, Err ]),
+            {ok, result_code('validation-failed')}
+    end;
 
 
 json_rpc_({request, _ReqEnv,
@@ -84,7 +98,7 @@ json_rpc_({request, _ReqEnv,
 	    [{'dev-id', I},
              {'server-key', SK},
              {'device-key', DK}]}} = _RPC, _Env) ->
-    ?debug("~p:json_rpc(provision-device) device-id:~p server-key:~p device-key:~p~n",
+    ?debug("~p:json_rpc(provision-device) dev-id:~p server-key:~p device-key:~p~n",
            [ ?MODULE, I, SK, DK ]),
 
     exodm_db_device:new(exodm_db_session:get_aid(), I, [{'__ck', <<DK:64/little>>},
@@ -92,11 +106,33 @@ json_rpc_({request, _ReqEnv,
     {ok, result_code(ok)};
 
 
+
+
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'add-config-data-members',
+	    [{'config-data', {array, CfgDataList}},
+             {'dev-id', {array, DevIdList}}]}} = _RPC, _Env) ->
+    ?debug("~p:json_rpc(add-config-data-members) dev-id:~p config-data:~p~n",
+           [ ?MODULE, CfgDataList, DevIdList ]),
+    AID = exodm_db_session:get_aid(),
+
+    try [ fun(CfgData) ->
+                  exodm_db_config:add_config_data_members(AID, CfgData, DevIdList)
+          end
+          || CfgData <- CfgDataList] of
+        _Res -> {ok, result_code(ok)}
+    catch error:E ->
+	    ?debug("RPC = ~p; ERROR = ~p~n",
+		   [_RPC, {E, erlang:get_stacktrace()}]),
+	    {error, E}
+    end;
+
 json_rpc_({request, _ReqEnv,
 	   {call, exodm, 'push-config-data',
 	    [{'config-data', Cfg}]}} = _RPC, _Env) ->
     ?debug("~p:json_rpc(push-config-data) config-data:~p ~n", [ ?MODULE, Cfg ]),
-    _AID = exodm_db_session:get_aid(),
+    AID = exodm_db_session:get_aid(),
+
     {ok, result_code(ok)};
 
 json_rpc_(RPC, _ENV) ->

@@ -4,7 +4,7 @@
     "id": "1",
     "params":
     {
-        "config-data": ["test12", "test11"],
-        "dev-id": [ "1234", "1235" ]
+        "config-data": ["test11"],
+        "dev-id": [ "1235" ]
     }
 }
