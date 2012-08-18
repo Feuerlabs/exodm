@@ -153,24 +153,24 @@ spawn_dispatcher(Q, Db, From, #st{tab = Tab, pids = Pids, queues = Qs,
 
 dispatch(Db, Tab, Q, From) ->
     ?debug("dispatch(~p, ~p)~n", [Tab, Q]),
-    case exodm_rpc:is_device_active(Q) of
-	{true, Pid} ->
-	    pop_and_dispatch(From, Db, Tab, Q, Pid);
-	false ->
+    case exodm_rpc_handler:device_sessions(Q) of
+	[_|_] = Sessions ->
+	    pop_and_dispatch(From, Db, Tab, Q, Sessions);
+	[] ->
 	    done(From)
     end.
 
-pop_and_dispatch(undefined, Db, Tab, Q, Pid) ->
+pop_and_dispatch(undefined, Db, Tab, Q, Sessions) ->
     kvdb:transaction(
       Db,
       fun(Db1) ->
-	      until_done(Db1, Tab, Q, Pid)
+	      until_done(Db1, Tab, Q, Sessions)
 	   end);
-pop_and_dispatch(From, Db, Tab, Q, Pid) ->
+pop_and_dispatch(From, Db, Tab, Q, Sessions) ->
     case kvdb:in_transaction(
 	   Db,
 	   fun(Db1) ->
-		   pop_and_dispatch_(From, Db1, Tab, Q, Pid)
+		   pop_and_dispatch_(From, Db1, Tab, Q, Sessions)
 	   end) of
 	done ->
 	    done;
@@ -178,14 +178,14 @@ pop_and_dispatch(From, Db, Tab, Q, Pid) ->
 	    kvdb:transaction(
 	      kvdb_conf,
 	      fun(Db1) ->
-		      until_done(Db1, Tab, Q, Pid)
+		      until_done(Db1, Tab, Q, Sessions)
 	      end)
     end.
 
-until_done(Db, Tab, Q, Pid) ->
-    case pop_and_dispatch_(undefined, Db, Tab, Q, Pid) of
+until_done(Db, Tab, Q, Sessions) ->
+    case pop_and_dispatch_(undefined, Db, Tab, Q, Sessions) of
 	done -> done;
-	next -> until_done(Db, Tab, Q, Pid)
+	next -> until_done(Db, Tab, Q, Sessions)
     end.
 
 done(undefined) ->
@@ -198,8 +198,9 @@ done({Pid, _}) ->
 %% store, and need to ack to the transaction master that we're done. Note that
 %% *we* delete the object if successful, so the master may be committing an
 %% empty set (which is ok).
-pop_and_dispatch_(From, Db, Tab, Q, Pid) ->
-    ?debug("pop_and_dispatch_(~p, ~p, ~p, ~p, ~p)~n", [Db, Tab, Q, Pid, From]),
+pop_and_dispatch_(From, Db, Tab, Q, Sessions) ->
+    ?debug("pop_and_dispatch_(~p, ~p, ~p, ~p, ~p)~n",
+	   [Db, Tab, Q, Sessions, From]),
     case kvdb:prel_pop(Db, Tab, Q) of
 	done ->
 	    done(From);
@@ -208,14 +209,24 @@ pop_and_dispatch_(From, Db, Tab, Q, Pid) ->
 		   "   AbsKey = ~p~n", [Entry, AbsKey]),
 	    set_user(Env, Db),
 	    {_, Protocol} = lists:keyfind(protocol, 1, Env),
-	    {AID, DID} = exodm_db_device:dec_ext_key(Q),
-	    Mod = exodm_rpc_protocol:module(Protocol),
-	    case Mod:dispatch(Req, Env, AID, DID, Pid) of
-		ok ->
-		    kvdb:delete(Db, Tab, AbsKey),
-		    done(From),
-		    next;
-		error ->
+	    case lists:keyfind(Protocol, 2, Sessions) of
+		{Pid, _} ->
+		    {AID, DID} = exodm_db_device:dec_ext_key(Q),
+		    Mod = exodm_rpc_protocol:module(Protocol),
+		    ?debug("Calling ~p:dispatch(~p, ~p, ~p, ~p)~n",
+			   [Mod, Env, AID, DID, Pid]),
+		    case Mod:dispatch(Req, Env, AID, DID, Pid) of
+			ok ->
+			    kvdb:delete(Db, Tab, AbsKey),
+			    done(From),
+			    next;
+			error ->
+			    done(From)
+		    end;
+		false ->
+		    ?error("No matching protocol session for ~p (~p)~n"
+			   "Entry now blocking queue~n",
+			   [Entry, Sessions]),
 		    done(From)
 	    end
     end.

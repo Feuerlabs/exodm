@@ -15,7 +15,6 @@
 	 terminate/2,
 	 code_change/3]).
 -export([to_json_/4]). % for testing
--export([is_device_active/1, is_device_active/2]).
 -export([ping/0,
 	 notification/3]).
 -export([std_specs/0]).
@@ -29,21 +28,6 @@
 
 ping() ->
     pong.
-
-is_device_active(AID, DID) ->
-    ExtID = exodm_db_device:enc_ext_key(AID, DID),
-    is_device_active(ExtID).
-
-is_device_active(ExtID) ->
-    case gproc:select(p, [{{{p,l,{exodm_rpc, active_device, ExtID}}, '_', '_'},
-			   [], ['$_']}]) of
-	[{_, Pid, _Data}] ->
-	    ?debug("is_device_active(~p) -> ~p~n", [ExtID, {true,Pid}]),
-	    {true, Pid};
-	[] ->
-	    ?debug("is_device_active(~p) -> ~p~n", [ExtID, false]),
-	    false
-    end.
 
 notification(Module, Method, Elems) ->
     {did, DID} = exodm_db_session:get_user(),

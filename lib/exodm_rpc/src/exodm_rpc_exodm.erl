@@ -116,10 +116,9 @@ json_rpc_({request, _ReqEnv,
            [ ?MODULE, CfgDataList, DevIdList ]),
     AID = exodm_db_session:get_aid(),
 
-    try [ fun(CfgData) ->
-                  exodm_db_config:add_config_data_members(AID, CfgData, DevIdList)
-          end
-          || CfgData <- CfgDataList] of
+    try [ exodm_db_config:add_config_data_members(
+	    AID, CfgD, DevIdList)
+          || CfgD <- CfgDataList] of
         _Res -> {ok, result_code(ok)}
     catch error:E ->
 	    ?debug("RPC = ~p; ERROR = ~p~n",
@@ -131,8 +130,7 @@ json_rpc_({request, _ReqEnv,
 	   {call, exodm, 'push-config-data',
 	    [{'config-data', Cfg}]}} = _RPC, _Env) ->
     ?debug("~p:json_rpc(push-config-data) config-data:~p ~n", [ ?MODULE, Cfg ]),
-    AID = exodm_db_session:get_aid(),
-
+    _AID = exodm_db_session:get_aid(),
     {ok, result_code(ok)};
 
 json_rpc_(RPC, _ENV) ->

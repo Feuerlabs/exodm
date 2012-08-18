@@ -22,6 +22,7 @@ authenticate(S, Role, Arg) ->
 	    %% given time, but this is only true if we have a reusable session.
 	    %% TODO: think this through.
 	    ?dbg("remote ID = ~p~n", [ID]),
+	    exodm_rpc_handler:add_device_session(ID, <<"exodm_bert">>),
 	    gproc:reg(_Prop = {p,l,{exodm_rpc, active_device, ID}}),
 	    ?dbg("regged with gproc: ~p~n", [_Prop]),
 	    exodm_rpc_dispatcher:check_queue(<<"to_device">>, ID),

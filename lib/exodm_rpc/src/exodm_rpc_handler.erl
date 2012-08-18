@@ -7,30 +7,39 @@
 	 queue_message/5]).
 
 -export([to_json_/4]). % for testing
--export([is_device_active/1, is_device_active/2]).
--export([ping/0]).
+-export([device_sessions/1, device_sessions/2]).
+-export([add_device_session/2, add_device_session/3]).
+-export([rm_device_session/2, rm_device_session/3]).
 -export([std_specs/0]).
 
 -include_lib("lager/include/log.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
 
-ping() ->
-    pong.
 
-is_device_active(AID, DID) ->
+add_device_session(AID, DID, Protocol) ->
     ExtID = exodm_db_device:enc_ext_key(AID, DID),
-    is_device_active(ExtID).
+    add_device_session(ExtID, Protocol).
 
-is_device_active(ExtID) ->
-    case gproc:select(p, [{{{p,l,{exodm_rpc, active_device, ExtID}}, '_', '_'},
-			   [], ['$_']}]) of
-	[{_, Pid, _Data}] ->
-	    ?debug("is_device_active(~p) -> ~p~n", [ExtID, {true,Pid}]),
-	    {true, Pid};
-	[] ->
-	    ?debug("is_device_active(~p) -> ~p~n", [ExtID, false]),
-	    false
-    end.
+add_device_session(ExtID, Protocol) ->
+    gproc:reg({p,l,{exodm_rpc, active_device, ExtID, Protocol}}).
+
+rm_device_session(AID, DID, Protocol) ->
+    rm_device_session(exodm_db_device:enc_ext_key(AID, DID), Protocol).
+
+rm_device_session(ExtID, Protocol) ->
+    catch gproc:unreg({p,l,{exodm_rpc, active_device, ExtID, Protocol}}),
+    true.
+
+device_sessions(AID, DID) ->
+    ExtID = exodm_db_device:enc_ext_key(AID, DID),
+    device_sessions(ExtID).
+
+device_sessions(ExtID) ->
+    Res = gproc:select(p, [{ {{p,l,{exodm_rpc, active_device, ExtID, '$2'}},
+			      '$1', '_'},
+			     [], [{{'$1', '$2'}}] }]),
+    ?debug("device_sessions(~p) -> ~p~n", [ExtID, Res]),
+    Res.
 
 %% @doc Handle a JSON-RPC request; once go-ahead is given from load control.
 handler_session(Arg) ->
@@ -396,7 +405,7 @@ success_response(Result, Env, {request, Attrs, _},
 
 
 accept_response(Attrs, {_, _, {reply, {struct, Elems}}} = Spec) ->
-    ?debug("accept_response(~p, ~p)~n", [Attrs, Spec]),
+    ?debug("~p:accept_response(~p, ~p)~n", [?MODULE, Attrs, Spec]),
     case lists:keyfind("result", 1, Elems) of
 	{_, void} ->
 	    "\"ok\"";
