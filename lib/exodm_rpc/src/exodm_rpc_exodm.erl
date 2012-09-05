@@ -126,12 +126,41 @@ json_rpc_({request, _ReqEnv,
 	    {error, E}
     end;
 
-json_rpc_({request, _ReqEnv,
+json_rpc_({request, ReqEnv,
 	   {call, exodm, 'push-config-data',
 	    [{'config-data', Cfg}]}} = _RPC, _Env) ->
     ?debug("~p:json_rpc(push-config-data) config-data:~p ~n", [ ?MODULE, Cfg ]),
-    _AID = exodm_db_session:get_aid(),
-    {ok, result_code(ok)};
+    TID = proplists:get_value(transaction_id, ReqEnv),
+    AID = exodm_db_session:get_aid(),
+    User = exodm_db_session:get_user(),
+    exodm_db:in_transaction(
+      fun(Db) ->
+	      case exodm_db_config:list_config_data_members(AID, Cfg) of
+		  [_|_] = Devices ->
+		      {ok, Yang} = exodm_db_config:get_yang_spec(AID, Cfg),
+		      {ok, Proto} = exodm_db_config:get_protocol(AID, Cfg),
+		      Module = filename:basename(Yang, ".yang"),
+		      {ok, Ref} = exodm_db_config:cache_values(AID, Cfg),
+		      RPC = {request, [{'transaction-id', TID}],
+			     {call, binary_to_atom(Module, [latin1]),
+			      'push-config-data',
+			      [{'config-data', Cfg},
+			       {'reference', Ref}]}},
+		      Env = [{aid, AID}, {user, User}, {protocol, Proto}],
+		      lists:foreach(
+			fun(DID) ->
+				exodm_db_config:map_device_to_cached_values(
+				  AID, Cfg, Ref, DID),
+				exodm_rpc_handler:queue_message(
+				  Db, AID, to_device,
+				  [{'device-id', DID}|Env], RPC)
+			end, Devices),
+		      {ok, result_code(ok)};
+		  [] ->
+		      %% Is this an error or ok?
+		      {ok, result_code(ok)}
+	      end
+      end);
 
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),

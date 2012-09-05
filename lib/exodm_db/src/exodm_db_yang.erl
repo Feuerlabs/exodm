@@ -116,13 +116,16 @@ write_(AID0, File0, Y) ->
 			   (F, Os) ->
 				open_file_hook(AID, F, Os)
 			end}],
+    %% TODO: we should deep_parse the modules once that's ready
     case yang_parser:parse(File, Opts) of
-	{ok, [Module]} ->
+	{ok, [{module,_,_,_} = Module]} ->
 	    RPCs = case yang_json:json_rpc(File, Opts) of
 		       [{module,_,RPCs1}] -> RPCs1;
 		       _ -> []
 		   end,
 	    store(AID, File, Module, RPCs, Y);
+        {ok, [{submodule,_,_,_} = SubMod]} ->
+            store(AID, File, SubMod, [], Y);
 	{error,_} = Error ->
 	    Error
     end.
@@ -181,10 +184,12 @@ specs() ->
 specs(AID) ->
     exodm_db:select(tab_name(AID), [{ {'$1','_','_'}, [], ['$1'] }]).
 
-store(AID, File, {module, _, M, L} = Mod, RPCs, Src) ->
+store(AID, File, {Tag, _, M, L} = Mod, RPCs, Src) when
+      Tag==module; Tag==submodule ->
     Checksum = compute_checksum(Mod),
     io:fwrite("Specs with same checksum: ~p~n",
 	      [find(AID, '__checksum', Checksum)]),
+    Revision = get_revision(L),
     {Tab, FName} = case to_binary(filename:basename(File)) of
                        <<"system.", Rest/binary>> ->
                            {tab_name(system), Rest};
@@ -194,10 +199,23 @@ store(AID, File, {module, _, M, L} = Mod, RPCs, Src) ->
                            {tab_name(AID), Other}
                    end,
     kvdb:put(?DB, Tab,
-	     {FName, [{'__checksum', Checksum},
+	     {set_revision(FName, Revision), [{'__checksum', Checksum},
                       {rpcs, RPCs}
                       |attrs(M, L)],
 	      to_binary(Src)}).
+
+get_revision(L) ->
+    case [R || {revision,_,R,_} <- L] of
+        [] ->
+            <<>>;
+        [_|_] = Rs ->
+            lists:max(Rs)
+    end.
+
+set_revision(F, Rev) ->
+    Base = filename:basename(F, <<".yang">>),
+    [Name|_] = binary:split(Base, <<"@">>),
+    <<Name/binary, "@", Rev/binary, ".yang">>.
 
 file_key(AID, File) ->
     case filename:basename(to_binary(File)) of
@@ -207,6 +225,7 @@ file_key(AID, File) ->
     end.
 
 account_id_key(system) -> system;
+account_id_key(superuser) -> system;
 account_id_key(ID) ->
     exodm_db:account_id_key(ID).
 
@@ -237,16 +256,37 @@ open_file_hook(AID, File, Opts) ->
     end.
 
 try_file(AID, File, Opts) ->
-    try case kvdb:get(?DB, tab_name(AID), File) of
-	    {ok, {_, _, Bin}} ->
-		open_bin_hook(AID, File, [{data,Bin}|Opts]);
-	    {error, _} = Err ->
-                Err
-	end
+    try try_file_(AID, File, Opts)
     catch
 	error:_ ->
 	    {error, einval}
     end.
+
+try_file_(AID, File, Opts) ->
+    Tab = tab_name(AID),
+    case re:run(File, <<"(^[^@]+)@([-0-9]*)\\.yang\$">>,
+                [{capture, all_but_first, binary}]) of
+        {match, [Base, Date]} ->
+            ?debug("Looking for yang file ~s.yang, rev ~s~n", [Base, Date]),
+            case kvdb:get(?DB, Tab, File) of
+                {ok, {_, _, Bin}} ->
+                    open_bin_hook(AID, File, [{data,Bin}|Opts]);
+                {error, _} = Err ->
+                    Err
+            end;
+        nomatch ->
+            ?debug("No revision given (~s)~n", [File]),
+            Base = filename:basename(File, <<".yang">>),
+            Sz = byte_size(Base),
+            case kvdb:prev(?DB, Tab, <<Base/binary, "@:">>) of
+                {ok, {<<Base:Sz/binary, _/binary>> = FullName, _, Bin}} ->
+                    ?debug("Latest version: ~s~n", [FullName]),
+                    open_bin_hook(AID, FullName, [{data,Bin}|Opts]);
+                _ ->
+                    {error, enoent}
+            end
+    end.
+
 
 open_bin_hook(AID0, File, Opts) ->
     AID = if AID0 == system -> <<"system">>;

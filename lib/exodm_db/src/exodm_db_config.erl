@@ -9,18 +9,21 @@
 
 -export([init/1]).
 -export(
-   [new_config_data/5,         %% (AID, Name, Yang, Protocol, Values)
-    update_config_data/3,      %% (AID, Name0, Values)
-    read_config_data/2,        %% (AID, Name)
-    read_config_data_values/2, %% (AID, Name)
-    get_yang_spec/2,           %% (AID, Name)
-    get_protocol/2,            %% (AID, Name) -> (AID, Name, <<"exodm_bert">>)
-    get_protocol/3,            %% (AID, Name, Default)
-    delete_config_data/2,      %% (AID, Name)
-    create_yang_module/4,      %% (AID, <<"user">>|<<"system">>, File, Yang)
-    add_config_data_members/3, %% (AID, CfgDataName, [DeviceID])
-    list_config_data_members/2,%% (AID, CfgDataName)
-    list_config_data_members/1 %% (Name)
+   [new_config_data/5,          %% (AID, Name, Yang, Protocol, Values)
+    update_config_data/3,       %% (AID, Name0, Values)
+    read_config_data/2,         %% (AID, Name)
+    read_config_data_values/2,  %% (AID, Name)
+    get_yang_spec/2,            %% (AID, Name)
+    get_protocol/2,             %% (AID, Name) -> (AID, Name, <<"exodm_bert">>)
+    get_protocol/3,             %% (AID, Name, Default)
+    delete_config_data/2,       %% (AID, Name)
+    create_yang_module/4,       %% (AID, <<"user">>|<<"system">>, File, Yang)
+    add_config_data_members/3,  %% (AID, CfgDataName, [DeviceID])
+    list_config_data_members/2, %% (AID, CfgDataName)
+    list_config_data_members/1, %% (Name)
+    cache_values/2,
+    map_device_to_cached_values/4,
+    get_cached/4
    ]).
 -export([table/1]).
 
@@ -33,12 +36,17 @@
 init(AID) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      kvdb_conf:add_table(table(AID), [{encoding,{raw,sext,term}}])
+	      kvdb_conf:add_table(table(AID), [{encoding,{raw,sext,term}}]),
+	      kvdb_conf:add_table(cache(AID), [{encoding,{raw,sext,term}}])
       end).
 
 table(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     <<AID/binary, "_config">>.
+
+cache(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    <<AID/binary, "_conf_cache">>.
 
 new_config_data(AID, Name0, Yang0, Protocol, Values) ->
     Tab = table(AID),
@@ -150,6 +158,69 @@ read_config_data_values(AID, Name) ->
 		      {error, not_found}
 	      end
       end).
+
+cache_values(AID0, Name0) ->
+    AID = exodm_db:account_id_key(AID0),
+    Name = exodm_db:encode_id(Name0),
+    Cache = cache(AID),
+    exodm_db:in_transaction(
+      fun(_Db) ->
+	      case read_config_data_values(AID, Name) of
+		  {ok, CT} ->
+		      Key = exodm_db:join_key(Name, <<"values">>),
+		      Last = kvdb_conf:last_list_pos(Cache, Key),
+		      Ref = Last+1,
+		      exodm_db:write(Cache, exodm_db:list_key(Key, Ref), CT),
+		      {ok, Ref};
+		  {error, not_found} = Err ->
+		      Err
+	      end
+      end).
+
+map_device_to_cached_values(AID0, Name0, Ref, DID) ->
+    AID = exodm_db:account_id_key(AID0),
+    Name = exodm_db:encode_id(Name0),
+    Cache = cache(AID),
+    exodm_db:in_transaction(
+      fun(_Db) ->
+	      Key = exodm_db:join_key(Name, <<"values">>),
+	      RefKey = exodm_db:list_key(Key, Ref),
+	      case kvdb_conf:read(Cache, RefKey) of
+		  {ok, _} ->
+		      DIDKey = exodm_db:join_key(
+				 [RefKey, <<"did">>, DID]),
+		      exodm_db:write(Cache, DIDKey, <<>>),
+		      ok;
+		  {error, _} ->
+		      error(illegal_map_to_cache)
+	      end
+      end).
+
+get_cached(AID0, Name0, Ref, DID) ->
+    AID = exodm_db:account_id_key(AID0),
+    Name = exodm_db:encode_id(Name0),
+    Cache = cache(AID),
+    exodm_db:in_transaction(
+      fun(_Db) ->
+	      Key = exodm_db:join_key(Name, <<"values">>),
+	      RefKey = exodm_db:list_key(Key, Ref),
+	      case kvdb_conf:read(Cache, RefKey) of
+		  {ok, CT} ->
+		      DIDKey = exodm_db:join_key(
+				 [RefKey, <<"did">>, DID]),
+		      kvdb_conf:delete(Cache, DIDKey),
+		      case kvdb_conf:first_child(
+			     Cache, exodm_db:join_key(Key, <<"did">>)) of
+			  {ok, _} -> ok;
+			  done ->
+			      kvdb_conf:delete_all(Cache, RefKey)
+		      end,
+		      {ok, CT};
+		  {error, _} = Error ->
+		      Error
+	      end
+      end).
+
 
 
 delete_config_data(AID, Name) ->
