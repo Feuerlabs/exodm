@@ -161,8 +161,9 @@ delete(AID0, File) ->
 rpcs(File) ->
     rpcs(get_aid(), File).
 
-rpcs(AID0, File) ->
-    ?debug("rpcs(~p, ~p)~n", [AID0, File]),
+rpcs(AID0, File0) ->
+    ?debug("rpcs(~p, ~p)~n", [AID0, File0]),
+    File = internal_filename(File0),
     {AID, Key} = file_key(AID0, File),
     check_access(read, AID),
     case kvdb:get_attrs(?DB, tab_name(AID), Key, [rpcs]) of
@@ -283,10 +284,19 @@ try_file_(AID, File, Opts) ->
                     ?debug("Latest version: ~s~n", [FullName]),
                     open_bin_hook(AID, FullName, [{data,Bin}|Opts]);
                 _ ->
-                    {error, enoent}
+                    {error, not_found}
             end
     end.
 
+internal_filename(File) ->
+    case re:run(File, <<"(^[^@]+)@([-0-9]*)\\.yang\$">>,
+                [{capture, all_but_first, binary}]) of
+        {match, [_Base, _Date]} ->
+            File;
+        nomatch ->
+            Base = filename:basename(File, ".yang"),
+            <<Base/binary, "@.yang">>
+    end.
 
 open_bin_hook(AID0, File, Opts) ->
     AID = if AID0 == system -> <<"system">>;

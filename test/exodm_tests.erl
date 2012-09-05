@@ -434,6 +434,7 @@ device_json_rpc1(Cfg) ->
 		       register(device_json_rpc1, self()),
 		       receive
 			   {Pid, got, Args} ->
+			       io:fwrite(user, "Pid got Args = ~p~n", [Args]),
 			       Msg = proplists:get_value(message, Args,
 							 <<"huh?">>),
 			       Reply = {notify, 'echo-callback',
@@ -580,10 +581,15 @@ pop_loglevel(Cfg) ->
     ok.
 
 make(Top) ->
-    in_dir(Top, fun() ->
-			run("make release"),
-			run("make generate")
-		end).
+    case os:getenv("EXODM_SKIP_MAKE") of
+	Y when Y==false; Y=="0"; Y=="false"  ->
+	    in_dir(Top, fun() ->
+				run("make release"),
+				run("make generate")
+			end);
+	_ ->
+	    ok
+    end.
 
 run(Cmd) ->
     io:fwrite(user, "Cmd: ~s~n", [Cmd]),
