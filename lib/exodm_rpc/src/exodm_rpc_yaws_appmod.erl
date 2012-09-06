@@ -12,11 +12,23 @@ out(#arg{req = #http_request{
 out(#arg{req = #http_request{
 	   path = {abs_path, "/exodm/test_callback2"}}} = A) ->
     yaws_rpc:handler_session(A, {?MODULE, test_callback2});
-out(#arg{req = #http_request{method = 'POST',
-			     path = {abs_path,"/exodm/rpc"}}} = A) ->
+out(#arg{req = #http_request{method = 'POST'},
+         pathinfo = "/rpc"} = A) ->
+    ?debug("~p: Redirected request:~n~s~n", [?MODULE, pp_arg(A)]),
     exodm_rpc_handler:handler_session(A);
-out(_) ->
+out(_Other) ->
+    ?debug("~p: Unrecognized request:~n~s~n", [?MODULE, pp_arg(_Other)]),
     [{status,404}].
+
+pp_arg(Arg) ->
+    Sz = tuple_size(Arg) -1,
+    RF = fun(arg, Size) when Size == Sz ->
+                 record_info(fields, arg);
+            (_, _) ->
+                 no
+         end,
+    io_lib_pretty:print(Arg, RF).
+
 
 %% handling the ck3/test_callback requests
 ck3_callback(_St, {call, 'waypoint-request', Req}, Session) ->

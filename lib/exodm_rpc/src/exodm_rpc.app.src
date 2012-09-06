@@ -30,7 +30,7 @@
 	 %% 		    ]}]},
 	 {yaws_sconf, [
 		       {id, "EXODM_RPC"},
-		       {appmods, [{"/exodm", exodm_rpc_yaws_appmod}]},
+		       {appmods, [{"exodm", exodm_rpc_yaws_appmod}]},
 		       {xtra_docroots, ["/exodm/rpc","$PRIV_DIR/www"]},
 		       {port, 8000},
 		       {auth, [{mod, exodm_rpc_yaws_auth},
