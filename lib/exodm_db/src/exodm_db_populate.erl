@@ -104,6 +104,8 @@ run_ga_(Db) ->
     store_ck3_yang(Db),
     {ok,_} = exodm_db_config:new_config_data(
 	       AID, <<"ck3">>, <<"ckp.yang">>, <<"ga_ck3">>, []),
+    {ok,_} = exodm_db_config:new_config_data(
+	       AID, <<"ck3_exo">>, <<"exosense.yang">>, <<"ga_ck3">>, []),
     DIDs = lists:map(
 	     fun(DID0) ->
 		     DID = devid(DID0),
@@ -117,7 +119,8 @@ run_ga_(Db) ->
 		     exodm_ck3_config:new(AID, DID, running, []),
 		     DID
 	     end, lists:seq(100, 123)),
-    exodm_db_config:add_config_data_members(AID, <<"ck3">>, DIDs).
+    exodm_db_config:add_config_data_members(AID, <<"ck3">>, DIDs),
+    exodm_db_config:add_config_data_members(AID, <<"ck3_exo">>, DIDs).
 
 devid(I) when is_integer(I) ->
     list_to_binary(integer_to_list(I)).
@@ -147,9 +150,9 @@ run_ga_old() ->
     exodm_db:in_transaction(fun(_) -> run_ga_old_() end).
 
 run_ga_old_() ->
-    exodm_db_group:new(?GA_CUSTOMER_ID, 1, 
+    exodm_db_group:new(?GA_CUSTOMER_ID, 1,
 		       [{name, "default"},{url,  ""}]),
-    exodm_db_group:new(?GA_CUSTOMER_ID, 2, 
+    exodm_db_group:new(?GA_CUSTOMER_ID, 2,
 		       [{name, "group1"},
 			{url, "http://localhost:8080/ck3/test_callback"}]),
     exodm_db_user:new(?GA_CUSTOMER_ID, <<"ga">>,
@@ -161,7 +164,7 @@ run_ga_old_() ->
 		      ]),
     lists:foreach(
       fun(DID) ->
-	      exodm_db_device:new(?GA_CUSTOMER_ID, DID, 
+	      exodm_db_device:new(?GA_CUSTOMER_ID, DID,
 				  [{'__ck',<<2,0,0,0,0,0,0,0>>},
 				   {'__sk',<<1,0,0,0,0,0,0,0>>},
 				   {msisdn,"0701"++integer_to_list(DID)},
@@ -189,7 +192,7 @@ run_tony_() ->
 		      ]),
     lists:foreach(
       fun(DID) ->
-	      exodm_db_device:new(12, DID, 
+	      exodm_db_device:new(12, DID,
 				  [{'__ck',<<1:32, DID:32>>},
 				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07012"++integer_to_list(DID)},
@@ -197,10 +200,10 @@ run_tony_() ->
 				  ]),
 	      exodm_ck3_config:new(12, DID, candidate, []),
 	      exodm_ck3_config:new(12, DID, running, [])
-      end, lists:seq(1000, 1099)),   
+      end, lists:seq(1000, 1099)),
     lists:foreach(
       fun(DID) ->
-	      exodm_db_device:new(12, DID, 
+	      exodm_db_device:new(12, DID,
 				  [{'__ck',<<1:32, DID:32>>},
 				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07012"++integer_to_list(DID)},
@@ -211,7 +214,7 @@ run_tony_() ->
       end, lists:seq(1100, 1150)),
     lists:foreach(
       fun(DID) ->
-	      exodm_db_device:new(12, DID, 
+	      exodm_db_device:new(12, DID,
 				  [{'__ck',<<1:32, DID:32>>},
 				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07012"++integer_to_list(DID)},
@@ -236,11 +239,11 @@ run_love_() ->
 		       {email, "magnus@feuerlabs.com"},
 		       {access, {1,13,1,rw}},
 		       %% read access to tony's devices gid=2
-		       {access, {2,12,2,r}} 
+		       {access, {2,12,2,r}}
 		      ]),
     lists:foreach(
       fun(DID) ->
-	      exodm_db_device:new(13, DID, 
+	      exodm_db_device:new(13, DID,
 				  [{'__ck',<<1:32, DID:32>>},
 				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07013"++integer_to_list(DID)},
@@ -265,7 +268,7 @@ run_ulf_() ->
 		      ]),
     lists:foreach(
       fun(DID) ->
-	      exodm_db_device:new(14, DID, 
+	      exodm_db_device:new(14, DID,
 				  [{'__ck',<<1:32, DID:32>>},
 				   {'__sk',<<2:32, DID:32>>},
 				   {msisdn,"07014"++integer_to_list(DID)},
@@ -319,5 +322,3 @@ run() ->
 
 	      ok
       end).
-
-

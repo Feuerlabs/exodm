@@ -1,10 +1,10 @@
 -module(exodm_rpc_bert).
 
--export([dispatch/5]).
+-export([dispatch/6]).
 
 -include_lib("lager/include/log.hrl").
 
-dispatch(Req, Env, AID, DID, Pid) ->
+dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
     ?debug("~p:dispatch(~p, ~p, ..., ~p)~n", [?MODULE, Req, Env, Pid]),
     case Req of
 	{request, _, {call, M, 'push-config-data', [{'config-data', Cfg},
@@ -13,10 +13,11 @@ dispatch(Req, Env, AID, DID, Pid) ->
 	      fun(_Db) ->
 		      case exodm_db_config:get_cached(AID, Cfg, Ref, DID) of
 			  {ok, Values} ->
-			      bert_rpc(Pid, exoport_config, push_config_data,
-				       [[{module, M},
-					 {config_data, Cfg},
-					 {values, Values}]], Req, Env, AID, DID);
+			      bert_rpc(
+				Pid, exoport_config, push_config_data,
+				[[{module, M},
+				  {config_data, Cfg},
+				  {values, Values}]], Req, Env, AID, DID);
 			  _ ->
 			      error
 		      end

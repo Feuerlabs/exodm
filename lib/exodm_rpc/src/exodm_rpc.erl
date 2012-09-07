@@ -5,7 +5,8 @@
 -export([handler_session/1]).
 %% -export([load_specs/0, reload_specs/0]).
 -export([notification/6,
-	 queue_message/5]).
+	 queue_message/5,
+	 queue_notification/5]).
 
 -export([start_link/0]).
 -export([init/1,
@@ -37,6 +38,21 @@ notification(Module, Method, Elems) ->
       Method, Elems, [{yang, Yang},
 		      {'device-id', DID},
 		      {aid, AID}], [], AID, DID).
+
+queue_notification(Module, Type, Env0, Method, Elems) when
+      Type == notify; Type == reverse_request ->
+    User = exodm_db_session:get_user(),
+    AID = exodm_db_session:get_aid(),
+    Yang = <<(to_binary(Module))/binary, ".yang">>,
+    Env = [{yang, Yang},
+	   {user, User},
+	   {aid, exodm_db:account_id_key(AID)}|Env0],
+    exodm_db:in_transaction(
+      fun(Db) ->
+	      exodm_rpc_handler:queue_message(
+		Db, AID, from_device, Env, {Type, Method, Elems})
+      end).
+
 
 to_binary(A) when is_atom(A) ->
     atom_to_binary(A, latin1);
@@ -808,4 +824,3 @@ terminate(_Reason, _S) ->
 
 code_change(_FromVsn, S, _Extra) ->
     {ok, S}.
-

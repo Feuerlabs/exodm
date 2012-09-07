@@ -201,12 +201,11 @@ done({Pid, _}) ->
 pop_and_dispatch_(From, Db, Tab, Q, Sessions) ->
     ?debug("pop_and_dispatch_(~p, ~p, ~p, ~p, ~p)~n",
 	   [Db, Tab, Q, Sessions, From]),
-    case kvdb:prel_pop(Db, Tab, Q) of
+    case kvdb:pop(Db, Tab, Q) of
 	done ->
 	    done(From);
-	{ok, {_, Env, Req} = Entry, AbsKey} ->
-	    ?debug("PREL_POP: Entry = ~p~n"
-		   "   AbsKey = ~p~n", [Entry, AbsKey]),
+	{ok, {_, Env, Req} = Entry} ->
+	    ?debug("POP: Entry = ~p~n", [Entry]),
 	    set_user(Env, Db),
 	    {_, Protocol} = lists:keyfind(protocol, 1, Env),
 	    case lists:keyfind(Protocol, 2, Sessions) of
@@ -215,9 +214,8 @@ pop_and_dispatch_(From, Db, Tab, Q, Sessions) ->
 		    Mod = exodm_rpc_protocol:module(Protocol),
 		    ?debug("Calling ~p:dispatch(~p, ~p, ~p, ~p)~n",
 			   [Mod, Env, AID, DID, Pid]),
-		    case Mod:dispatch(Req, Env, AID, DID, Pid) of
+		    case Mod:dispatch(Tab, Req, Env, AID, DID, Pid) of
 			ok ->
-			    kvdb:delete(Db, Tab, AbsKey),
 			    done(From),
 			    next;
 			error ->

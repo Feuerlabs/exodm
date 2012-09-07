@@ -8,7 +8,7 @@
 -export([get_user/0, get_role/0, get_aid/0, get_auth/0]).
 -export([spawn_child/1, spawn_link_child/1, spawn_monitor_child/1]).
 
--export([set_auth_as_user/1, set_auth_as_user/2,
+-export([set_auth_as_user/1, set_auth_as_user/2, set_auth_as_user/3,
          set_auth_as_device/1,
          set_trusted_proc/0,
          is_trusted_proc/0]).
@@ -118,9 +118,12 @@ is_trusted_proc() ->
 
 
 set_auth_as_user(User) ->
-    set_auth_as_user(User, kvdb_conf).
+    set_auth_as_user(User, kvdb_conf, false).
 
 set_auth_as_user(User, Db) ->
+    set_auth_as_user(User, Db, false).
+
+set_auth_as_user(User, Db, Sticky) ->
     case ets:lookup(?TAB, User) of
         [] ->
             case check_auth_(
@@ -129,14 +132,30 @@ set_auth_as_user(User, Db) ->
                            {make_user_active, to_binary(User), Db})) of
                 {true,AID,Role} = Res ->
                     put_auth_({User, AID, Role}),
+                    set_sticky_flag(Sticky),
                     Res;
                 false ->
                     false
             end;
         [#session{aid = AID, role = Role}] ->
             put_auth_({User, AID, Role}),
+            set_sticky_flag(Sticky),
             {true, AID, Role}
     end.
+
+set_sticky_flag(false) ->
+    ok;
+set_sticky_flag(true) ->
+    put('$exodm_sticky', true).
+
+is_sticky() ->
+    case get('$exodm_sticky') of
+        true ->
+            true;
+        _ ->
+            false
+    end.
+
 
 set_auth_as_device(DID0) ->
     ?dbg("set_auth_as_device(~p)~n", [DID0]),
@@ -167,8 +186,13 @@ if_active_({UName,_,_} = X, Ret) ->
         true ->
             Ret(X);
         false ->
-            ?dbg("NOT active (~p)~n", [UName]),
-            erlang:error(unauthorized)
+            case is_trusted_proc() of
+                true ->
+                    Ret(X);
+                false ->
+                    ?dbg("NOT active (~p)~n", [UName]),
+                    erlang:error(unauthorized)
+            end
     end;
 if_active_(_, _) ->
     case is_trusted_proc() of
@@ -179,7 +203,15 @@ if_active_(_, _) ->
 
 
 get_auth_() -> get('$exodm_auth').
-del_auth_() -> erase('$exodm_auth').
+
+del_auth_() ->
+    case is_sticky() of
+        true ->
+            true;
+        false ->
+            erase('$exodm_auth')
+    end.
+
 put_auth_({U, AID, Role}) -> put('$exodm_auth', {U, AID, Role}).
 
 auth_f(F) ->

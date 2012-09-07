@@ -129,7 +129,7 @@ json_rpc_({request, _ReqEnv,
 json_rpc_({request, ReqEnv,
 	   {call, exodm, 'push-config-data',
 	    [{'config-data', Cfg}]}} = _RPC, _Env) ->
-    ?debug("~p:json_rpc(push-config-data) config-data:~p ~n", [ ?MODULE, Cfg ]),
+    ?debug("~p:json_rpc(push-config-data) config-data:~p ~n", [?MODULE, Cfg]),
     TID = proplists:get_value(transaction_id, ReqEnv),
     AID = exodm_db_session:get_aid(),
     User = exodm_db_session:get_user(),
@@ -165,4 +165,3 @@ json_rpc_({request, ReqEnv,
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),
     {ok, result_code('validation-failed')}.
-

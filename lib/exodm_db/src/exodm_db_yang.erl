@@ -163,7 +163,7 @@ rpcs(File) ->
 
 rpcs(AID0, File0) ->
     ?debug("rpcs(~p, ~p)~n", [AID0, File0]),
-    File = internal_filename(File0),
+    File = internal_filename(to_binary(File0)),
     {AID, Key} = file_key(AID0, File),
     check_access(read, AID),
     case kvdb:get_attrs(?DB, tab_name(AID), Key, [rpcs]) of

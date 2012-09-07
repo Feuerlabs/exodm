@@ -173,9 +173,10 @@ notification(Method, Elems, Env, AID, DID) ->
 	[] ->
 	    error({no_rpcs, Yang});
 	[{_, Spec}] ->
-	    Key = binary_to_list(
-		    <<(mod(Yang))/binary, ":",
-		       (atom_to_binary(Method, latin1))/binary>>),
+	    ?debug("Spec = ~p~n", [Spec]),
+	    Module = mod(Yang),
+	    MethodBin = atom_to_binary(Method, latin1),
+	    Key = binary_to_list(qualified_method(MethodBin, Module)),
 	    case lists:keyfind(Key, 1, Spec) of
 		{_, {notification,_,{struct, SubSpec}}} ->
 		    ?debug("SubSpec = ~p~n", [SubSpec]),
@@ -184,10 +185,37 @@ notification(Method, Elems, Env, AID, DID) ->
 		    JSON = {struct, lists:keyreplace("params", 1, SubSpec,
 						     {"params", NewParams})},
 		    ?debug("JSON = ~p~n", [JSON]),
+		    post_json(Env, JSON);
+		{_, {_Descr, {request, {struct,SubSpec}}, {reply, _}} = RPC} ->
+		    {_, Params} = lists:keyfind("params", 1, SubSpec),
+		    ?debug("Northbound RPC = ~p~n", [RPC]),
+		    NewParams = to_json(Params, Env, Elems),
+		    JSONElems1 = lists:keyreplace("params", 1, SubSpec,
+						  {"params", NewParams}),
+		    JSONElems2 = lists:keyreplace("id", 1, JSONElems1,
+						  {"id", make_id(Env, AID)}),
+		    JSON = {struct, JSONElems2},
+		    ?debug("JSON = ~p~n", [JSON]),
 		    post_json(Env, JSON)
 	    end
     end,
     ok.
+
+qualified_method(M, Mod) ->
+    case binary:split(M, <<":">>) of
+	[_, _] ->
+	    M;
+	[_] ->
+	    <<Mod/binary, ":", M/binary>>
+    end.
+
+make_id(Env, AID) ->
+    case lists:keyfind(id, 1, Env) of
+	false ->
+	    exodm_db_account:incr_request_id(AID);
+	{_, ID} ->
+	    ID
+    end.
 
 mod(Yang) ->
     Y = case Yang of
@@ -314,6 +342,11 @@ do_validate(Method, Module, Args, Spec) ->
 queue_message(Db, AID, Tab, Env, {Type, Attrs, _} = Msg) when Type==request;
 							  Type==notify;
 							  Type==reply ->
+    queue_message_(Db, AID, Tab, Attrs, Env, Msg);
+queue_message(Db, AID, Tab, Env, {reverse_request,_Meth,Elems} = Msg) ->
+    queue_message_(Db, AID, Tab, Elems, Env, Msg).
+
+queue_message_(Db, AID, Tab, Attrs, Env, Msg) ->
     {_, DeviceID} = lists:keyfind('device-id', 1, Attrs ++ Env),
     Q = exodm_db_device:enc_ext_key(AID, DeviceID),
     Ret = case kvdb:push(Db, Tab, Q,
