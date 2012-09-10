@@ -105,6 +105,22 @@ run_ga_(Db) ->
 	       AID, <<"ck3">>, <<"ckp.yang">>, <<"ga_ck3">>, []),
     {ok,_} = exodm_db_config:new_config_data(
 	       AID, <<"ck3_exo">>, <<"exosense.yang">>, <<"ga_ck3">>, []),
+    {ok, AID, GID}.
+
+run_ga_test() ->
+    exodm_db:in_transaction(
+      fun(Db) ->
+	      {ok, AID, GID} = run_ga_(Db),
+	      ga_dummy_devices_(AID, GID)
+      end).
+
+ga_dummy_devices(AID, GID) ->
+    exodm_db:in_transaction(
+      fun(Db) ->
+	      ga_dummy_devices_(AID, GID)
+      end).
+
+ga_dummy_devices_(AID, GID) ->
     DIDs = lists:map(
 	     fun(DID0) ->
 		     DID = devid(DID0),
