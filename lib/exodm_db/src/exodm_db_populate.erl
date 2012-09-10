@@ -97,7 +97,6 @@ create_device(AID, GID, 4711) ->
 
 
 run_ga_(Db) ->
-    %% Don't know why this is needed...
     {ok, AID} = create_account(ga),
     exodm_db_account:register_protocol(AID, <<"ga_ck3">>),
     {ok, GID} = create_group(ga, AID),

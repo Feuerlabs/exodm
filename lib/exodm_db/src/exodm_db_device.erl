@@ -71,7 +71,7 @@ new_(AID0, ID0, Options) ->
     insert(Tab,Key,imsi,     binary_opt(imsi,Options)),
     insert(Tab,Key,imei,     binary_opt(imei,Options)),
     insert(Tab,Key,activity, uint32_opt(activity,Options)),
-    insert(Tab,Key,longitude,uint32_opt(longitud,Options)),
+    insert(Tab,Key,longitude,uint32_opt(longitude,Options)),
     insert(Tab,Key,latitude, uint32_opt(latitude,Options)),
     insert(Tab,Key,timestamp,uint32_opt(timestamp,Options)),
     insert(Tab,Key,yang, binary_opt(yang, Options)),

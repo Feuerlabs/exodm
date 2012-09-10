@@ -162,6 +162,18 @@ json_rpc_({request, ReqEnv,
 	      end
       end);
 
+json_rpc_({request, ReqEnv,
+	  {call, exodm, 'provision-device',
+	  [{'device-id', DID},
+	   {'server-key', SKey},
+	   {'device-key', DKey}] = _Cfg}} = _RPC, _Env) ->
+    ?debug("~p:json_rpc(provision-device) config-data:~p ~n",
+	   [?MODULE, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    exodm_db_device:new(AID, DID, [{'__ck', DKey},
+				   {'__sk', SKey}]),
+    {ok, result_code(ok)};
+
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),
     {ok, result_code('validation-failed')}.

@@ -140,9 +140,7 @@ register_protocol(AID, Protocol) when is_binary(Protocol) ->
 		      Key = exodm_db:join_key(exodm_db:account_id_key(AID),
 					      <<"protocols">>),
 		      insert(Key, Protocol, <<>>)
-	      end);
-	false ->
-	    erlang:error({unknown_protocol, Protocol})
+	      end)
     end.
 
 is_protocol_registered(AID, Protocol) ->
