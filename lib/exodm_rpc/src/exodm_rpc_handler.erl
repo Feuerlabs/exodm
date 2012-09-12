@@ -461,11 +461,43 @@ post_json(Env, JSON) ->
 	    ?debug("Group notifications (~p, ~p): ~p~n", [AID,DID,URLs]),
 	    Body = json2:encode(JSON),
 	    Hdrs = [
-		    {"content-length", integer_to_list(iolist_size(Body))},
-		    {"host", "localhost"}
+		    {"Content-Length", integer_to_list(iolist_size(Body))},
+		    {"Content-Type", "application/json"},
+		    {"Host", "localhost"}
 		   ],
-	    [post_request(URL, Hdrs, Body) || URL <- URLs],
+	    [post_request(URL, Hdrs, Body) ||
+		URL <- remove_duplicate_urls(URLs)],
 	    ok
+    end.
+
+%% Since we can end up with multiple URIs that are virtually identical, as we
+%% form the union of related device groups, we do our best to normalize the
+%% URIs (anything else we can do except ensure an ending slash?), and then
+%% remove duplicates.
+remove_duplicate_urls(URLs) ->
+    lists:usort([normalize_url(U) || U <- URLs]).
+
+normalize_url(U) ->
+    case re:split(U, <<"([@\\?])">>, [{return, binary}]) of
+	[Simple] ->
+	    ensure_ending_slash(Simple);
+	[Auth, <<"@">>, Path, <<"?">> | Rest] ->
+	    iolist_to_binary(
+	      [Auth, <<"@">>, ensure_ending_slash(Path), <<"?">> | Rest]);
+	[Auth, <<"@">>, Path] ->
+	    iolist_to_binary([Auth, <<"@">>, ensure_ending_slash(Path)]);
+	[Path, <<"?">> | Rest] ->
+	    iolist_to_binary([ensure_ending_slash(Path), <<"?">> | Rest])
+    end.
+
+ensure_ending_slash(Bin) ->
+    Sz = byte_size(Bin),
+    Sz_1 = Sz - 1,
+    case Bin of
+	<<_P:Sz_1/binary, "/">> ->
+	    Bin;
+	_ ->
+	    <<Bin/binary, "/">>
     end.
 
 post_request(URL, Hdrs, Body) ->

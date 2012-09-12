@@ -27,7 +27,7 @@
 -export([first_child/1, first_child/2,
 	 next_child/1, next_child/2,
 	 last_child/1, last_child/2]).
--export([fold_children/3]).
+-export([fold_children/3, fold_children/4]).
 -export([fold_list/3, fold_list/4]).   % ([Tab,] Fun, Acc, Key)
 -export([fold_list2/4, fold_list2/5]). % ([Tab,] Fun, Acc, Key, ListItem)
 -export([last_in_list/1, last_in_list/2]).
