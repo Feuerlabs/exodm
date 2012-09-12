@@ -200,6 +200,101 @@ module exodm {
 	}
     }
 
+    rpc create-device-group {
+        description "RPC to create a device group";
+
+        input {
+            leaf name {
+                description "Group name";
+
+                type string {
+                    length "1..32";
+                }
+            }
+            leaf notification-url {
+                description "RPC callback notification URL";
+
+                type inet:uri;
+            }
+        }
+
+        output {
+            leaf result {
+                type result-code;
+            }
+            leaf gid {
+                description "Group identifier. 0 (zero) if operation failed.";
+                type uint32;
+            }
+        }
+    }
+
+    rpc delete-device-group {
+        description "RPC to create a device group";
+
+        input {
+            leaf gid {
+                description "Group ID";
+                type uint32;
+            }
+        }
+
+        output {
+            leaf result {
+                type result-code;
+            }
+        }
+    }
+
+    rpc list-device-groups {
+        description "List device groups, N entries at a time";
+
+        input {
+            leaf n {
+                description "Number of entries to fetch";
+                type uint32;
+            }
+            leaf previous {
+                description "Previous group ID; 0 (zero) if from beginning";
+                type uint32;
+            }
+        }
+        output {
+            list groups {
+                leaf gid {
+                    type uint32;
+                }
+                leaf name {
+                    type string;
+                }
+                leaf callback-url {
+                    type inet:uri;
+                }
+            }
+        }
+    }
+
+    rpc update-notification-url {
+        description "RPC to change the notification URL of an existing group";
+
+        input {
+            leaf gid {
+                description "Group identifier.";
+                type uint32;
+            }
+            leaf notification-url {
+                description "RPC callback notification URL";
+                type inet:uri;
+            }
+        }
+
+        output {
+            leaf result {
+                type result-code;
+            }
+        }
+    }
+
     rpc create-yang-module {
         description "RPC to store a YANG module either in user or system space";
         input {

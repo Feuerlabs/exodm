@@ -162,17 +162,82 @@ json_rpc_({request, ReqEnv,
 	      end
       end);
 
-json_rpc_({request, ReqEnv,
-	  {call, exodm, 'provision-device',
-	  [{'device-id', DID},
-	   {'server-key', SKey},
-	   {'device-key', DKey}] = _Cfg}} = _RPC, _Env) ->
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'provision-device',
+	    [{'device-id', DID},
+	     {'server-key', SKey},
+	     {'device-key', DKey}] = _Cfg}} = _RPC, _Env) ->
     ?debug("~p:json_rpc(provision-device) config-data:~p ~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
-    exodm_db_device:new(AID, DID, [{'__ck', DKey},
-				   {'__sk', SKey}]),
+    exodm_db:in_transaction(
+      fun(_Db) ->
+	      exodm_db_device:new(AID, DID, [{'__ck', DKey},
+					     {'__sk', SKey}])
+      end),
     {ok, result_code(ok)};
+
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'create-device-group',
+	    [{'name', GName},
+	     {'notification-url', URL}] = _Cfg}} = _RPC, _Env) ->
+    ?debug("~p:json_rpc(create-device-group) config: ~p~n", [?MODULE, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    {ok, GID} = exodm_db_group:new(AID, [{name, GName},
+					 {url, URL}]),
+    {ok, result_code(ok) ++ [{gid, GID}]};
+
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'change-notification-url',
+	    [{'gid', GID},
+	     {'notification-url', URL}] = _Cfg}} = _RPC, _Env) ->
+    ?debug("~p:json_rpc(change-notification-url) config: ~p~n",
+	   [?MODULE, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    case exodm_db_group:update(AID, GID, [{url, URL}]) of
+	ok -> {ok, result_code(ok)};
+	{error, not_found} ->
+	    {ok, result_code('object-not-found')}
+    end;
+
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'delete-device-group',
+	    [{'gid', GID}] = _Cfg}} = _RPC, _Env) ->
+    ?debug("~p:json_rpc(delete-device-group) config: ~p~n",
+	   [?MODULE, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    case exodm_db_group:delete(AID, GID) of
+	ok -> {ok, result_code(ok)};
+	{error, not_found} ->
+	    {ok, result_code('object-not-found')}
+    end;
+
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'list-device-groups',
+	    [{n, N}, {previous, Prev}] = _Cfg}} = _RPC, _Env) ->
+    ?debug("~p:json_rpc(delete-device-group) config: ~p~n",
+	   [?MODULE, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    Res =
+	exodm_db:in_transaction(
+	  fun(_) ->
+		  FullNext = kvdb_conf:join_key([exodm_db:account_id_key(AID),
+						 <<"groups">>,
+						 exodm_db:group_id_key(Prev)]),
+		  exodm_db:list_next(<<"acct">>, N, FullNext,
+				     fun(Key) ->
+					     [_, _, Grp] =
+						 kvdb_conf:split_key(Key),
+					     exodm_db_group:lookup(AID, Grp)
+				     end)
+	  end),
+    {ok, {groups,
+	  {array, [
+		   {struct,
+		    [{id, exodm_db:group_id_value(G)},
+		     {name, Nm},
+		     {'notification-url', U}]} ||
+		      [{id,G},{name,Nm},{url,U}|_] <- Res]}}};
 
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),
