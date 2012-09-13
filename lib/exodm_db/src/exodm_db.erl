@@ -1,7 +1,7 @@
 %%% @author Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2012, Tony Rogvall
 %%% @doc
-%%%     exodm specific util functions 
+%%%     exodm specific util functions
 %%% @end
 %%% Created :  9 Mar 2012 by Tony Rogvall <tony@rogvall.se>
 
@@ -27,6 +27,7 @@
 -export([first_child/1, first_child/2,
 	 next_child/1, next_child/2,
 	 last_child/1, last_child/2]).
+-export([list_next/4]).
 -export([fold_children/3, fold_children/4]).
 -export([fold_list/3, fold_list/4]).   % ([Tab,] Fun, Acc, Key)
 -export([fold_list2/4, fold_list2/5]). % ([Tab,] Fun, Acc, Key, ListItem)
@@ -207,7 +208,7 @@ table(AID, Type) ->
 %% nc
 %% Split an external instance key into components
 %%   /a/b/c/d
-%% 
+%%
 %%   /a[1]/b[2]
 %%   /a[id='abcd']
 %%   /a[id="abcd"][foo:id='xyz']
@@ -238,7 +239,7 @@ nc_key_split_id(<<C,Tail/binary>>,RPart,Acc) when ?is_id3(C) -> %% FIXME
 nc_key_split_id(Tail,RPart,Acc) ->
     nc_key_split_part(Tail, r_add_part(RPart,Acc)).
 
-%% predicate part 
+%% predicate part
 nc_key_split_predicate(<<$.,$=,Tail/binary>>, RPart, Acc) ->
     nc_key_split_predicate_value(Tail, add_char($=,add_char($.,RPart)), Acc);
 nc_key_split_predicate(<<C,Tail/binary>>,RPart,Acc) when ?is_id1(C) ->
@@ -248,7 +249,7 @@ nc_key_split_predicate(<<C,Tail/binary>>,RPart,Acc) when ?is_digit(C) ->
 
 %% keyname
 %% FIXME
-nc_key_split_predicate_id(<<C,Tail/binary>>,RPart,Acc) when ?is_id3(C) -> 
+nc_key_split_predicate_id(<<C,Tail/binary>>,RPart,Acc) when ?is_id3(C) ->
     nc_key_split_predicate_id(Tail, [C|RPart], Acc);
 nc_key_split_predicate_id(<<$=,Tail/binary>>,RPart,Acc) ->
     nc_key_split_predicate_value(skip_wsp(Tail), add_char($=,RPart), Acc).
@@ -335,6 +336,19 @@ last_child(Tab, K) ->
 	_ ->
 	    done
     end.
+
+
+list_next(Tab, N, Prev, F) when is_integer(N) ->
+    in_transaction(fun(_Db) ->
+			   Next = kvdb_conf:next_at_level(Tab, Prev),
+			   list_next_(Next, Tab, N, F, [])
+		   end).
+
+list_next_({ok, Key}, Tab, N, F, Acc) when N > 0 ->
+    list_next_(kvdb_conf:next_at_level(Tab, Key), Tab, N-1, F,
+	       [F(Key)|Acc]);
+list_next_(_, _, _, _, Acc) ->
+    lists:reverse(Acc).
 
 
 all_children(K) ->
@@ -528,13 +542,13 @@ decode_id_(<<>>) ->
 add_char($@,Part) -> [$@,$@|Part];
 add_char(C,Part) ->
     case ?is_id2(C) of
-	true -> 
+	true ->
 	    [C|Part];
 	false ->
 	    [to_hex(C),to_hex(C bsr 4),$@|Part]
     end.
 
-to_hex(C) ->    
+to_hex(C) ->
     element((C band 16#f)+1, {$0,$1,$2,$3,$4,$5,$6,$7,$8,$9,
 			      $A,$B,$C,$D,$E,$F}).
 
