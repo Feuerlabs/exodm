@@ -267,14 +267,14 @@ module exodm {
                 leaf name {
                     type string;
                 }
-                leaf callback-url {
+                leaf notification-url {
                     type inet:uri;
                 }
             }
         }
     }
 
-    rpc update-notification-url {
+    rpc update-device-group {
         description "RPC to change the notification URL of an existing group";
 
         input {

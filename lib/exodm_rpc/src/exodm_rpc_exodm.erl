@@ -185,16 +185,18 @@ json_rpc_({request, _ReqEnv,
     AID = exodm_db_session:get_aid(),
     {ok, GID} = exodm_db_group:new(AID, [{name, GName},
 					 {url, URL}]),
-    {ok, result_code(ok) ++ [{gid, GID}]};
+    {ok, result_code(ok) ++ [{gid, to_uint32(exodm_db:group_id_value(GID))}]};
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'change-notification-url',
-	    [{'gid', GID},
-	     {'notification-url', URL}] = _Cfg}} = _RPC, _Env) ->
+	   {call, exodm, 'update-device-group',
+	    [{'gid', GID}|Values] = _Cfg}} = _RPC, _Env) ->
     ?debug("~p:json_rpc(change-notification-url) config: ~p~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
-    case exodm_db_group:update(AID, GID, [{url, URL}]) of
+    Values2 = lists:map(fun({'notification-url',U}) -> {url,U};
+			   (X) -> X
+			end, Values),
+    case exodm_db_group:update(AID, GID, Values2) of
 	ok -> {ok, result_code(ok)};
 	{error, not_found} ->
 	    {ok, result_code('object-not-found')}
@@ -231,14 +233,19 @@ json_rpc_({request, _ReqEnv,
 					     exodm_db_group:lookup(AID, Grp)
 				     end)
 	  end),
-    {ok, {groups,
-	  {array, [
-		   {struct,
-		    [{id, exodm_db:group_id_value(G)},
-		     {name, Nm},
-		     {'notification-url', U}]} ||
-		      [{id,G},{name,Nm},{url,U}|_] <- Res]}}};
+    ?debug("groups = ~p~n", [Res]),
+    {ok, [{groups,
+	   {array, [
+		    {struct,
+		     [{gid, to_uint32(exodm_db:group_id_value(G))},
+		      {name, Nm},
+		      {'notification-url', U}]} ||
+		       [{id,G},{name,Nm},{url,U}|_] <- Res]}}]};
 
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),
     {ok, result_code('validation-failed')}.
+
+
+to_uint32(<<I:32>>) -> I;
+to_uint32(I) when is_integer(I) -> I.
