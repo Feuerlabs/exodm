@@ -19,10 +19,10 @@
 %% device : DNNNNNNNN
 %% user   : UNNNNNNNN
 
-test1() ->
-    exodm_db:in_transaction(fun(_) -> test1_() end).
+tst1() ->
+    exodm_db:in_transaction(fun(_) -> tst1_() end).
 
-test1_() ->
+tst1_() ->
     {ok, _AID} = exodm_db_account:new(
 		   [
 		    {name, <<"feuer">>},
@@ -107,7 +107,7 @@ run_ga_(Db) ->
 	       AID, <<"ck3_exo">>, <<"exosense.yang">>, <<"ga_ck3">>, []),
     {ok, AID, GID}.
 
-run_ga_test() ->
+run_ga_tst() ->
     exodm_db:in_transaction(
       fun(Db) ->
 	      {ok, AID, GID} = run_ga_(Db),

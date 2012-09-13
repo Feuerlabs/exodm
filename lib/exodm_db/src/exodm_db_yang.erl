@@ -1,4 +1,4 @@
-%% -*- erlang-indent-level: 4; indent-tabs-mode: nil -*-
+%% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %% @author Ulf Wiger <ulf@feuerlabs.com>
 %% @copyright 2012 Feuerlabs, Inc.
 -module(exodm_db_yang).

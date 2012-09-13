@@ -524,14 +524,14 @@ to_json_([{"rpc-status-string", [], _, _}|T], Attrs, Reply, Hist) ->
 	    case lists:keyfind('rpc-status', 1, Reply) of
 		{_, St} ->
 		    D = case lists:keyfind("rpc-status", 1, Hist ++ T) of
-			    {_, [], _, {type,_,<<"enumeration">>,En}} ->
+			    {_, [], _, [{type,_,<<"enumeration">>,En}|_]} ->
 				enum_descr(St, En)
 			end,
 		    [{'rpc-status-string', D} | to_json_(T, Attrs, Reply,
 							 Hist)]
 	    end
     end;
-to_json_([{K, [], _, Type} = H|T], Attrs, Reply, Hist) ->
+to_json_([{K, [], _, [Type|_]} = H|T], Attrs, Reply, Hist) ->
     Ka = list_to_atom(K),
     case lists:keyfind(Ka, 1, Reply) of
 	{_, X} ->
@@ -545,7 +545,8 @@ to_json_([{K, [], _, Type} = H|T], Attrs, Reply, Hist) ->
 		    [{K, X1}
 		     | to_json_(T, Attrs, Reply, keep_history(H, Hist))];
 		_ ->
-		    error({cannot_convert_to_json, [{missing_term, Ka} |{available_terms, [Reply]}]})
+		    error({cannot_convert_to_json,
+			   [{missing_term, Ka} | {available_terms, [Reply]}]})
 	    end
     end;
 to_json_([{K, {array,[Ch]}, _, _}|T], Attrs, Reply, Hist) ->
@@ -575,7 +576,7 @@ to_json_([{K, {struct, Ch}, _, _}|T], Attrs, Reply, Hist) ->
 to_json_([], _, _, _) ->
     [].
 
-to_json_array_({[],[],_,Type}, _Attrs, Reply, _Hist) ->
+to_json_array_({[],[],_,[Type|_]}, _Attrs, Reply, _Hist) ->
     [yang_json:to_json_type(X, Type) || X <- Reply];
 to_json_array_({struct, L}, Attrs, Reply, Hist) ->
     [{struct, to_json_(L, Attrs, R, Hist)} || {struct, R} <- Reply].
@@ -623,11 +624,11 @@ split_method(Mod, M) ->
     end.
 
 
-convert_req_([{K, Ch, _Descr, Type}|Spec1], Req) ->
+convert_req_([{K, Ch, _Descr, [Type|_]}|Spec1], Req) ->
     case lists:keytake(K, 1, Req) of
 	{value, {_, V}, Req1} ->
 	    case Type of
-		{type, _, <<"anyxml">>, _} ->
+		{type, anyxml} ->
 		    %% Do not convert; keep original (decoded) JSON
 		    [] = Ch,  % assertion
 		    [{list_to_atom(K), V} | convert_req_(Spec1, Req1)];
@@ -635,8 +636,9 @@ convert_req_([{K, Ch, _Descr, Type}|Spec1], Req) ->
 		    convert_req_(K, V, Ch, Type, Spec1, Req1)
 	    end;
 	false ->
-	    AlsoMissing = [K1 || {K1,_,_,_} <- Spec1,
-				 not(lists:keymember(K1, 1, Spec1))],
+	    AlsoMissing = [K1 || {K1,_,_,I} <- Spec1,
+				 (lists:member({mandatory,true}, I) andalso
+				  not(lists:keymember(K1, 1, Spec1)))],
 	    throw({invalid_params, {required, [K|AlsoMissing]}})
     end;
 convert_req_([], []) ->
@@ -644,7 +646,7 @@ convert_req_([], []) ->
 convert_req_([], [_|_] = Unknown) ->
     throw({invalid_params, {unknown_params, [element(1, U) || U <- Unknown]}}).
 
-convert_req_(K, V, Ch, Type, Spec1, Req1) ->
+convert_req_(K, V, Ch, [Type|_], Spec1, Req1) ->
     case {V, Ch} of
 	{{array, Sub}, {array,[SubSpec]}} ->
 	    [{list_to_atom(K), {array, convert_array_(Sub, SubSpec)}}
