@@ -1,4 +1,4 @@
-%% -*- erlang-indent-level: 4; indent-tabs-mode: nil -*-
+%% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %% @author Ulf Wiger <ulf@feuerlabs.com>
 %% @copyright 2012 Feuerlabs, Inc.
 -module(exodm_db_yang).
@@ -28,14 +28,17 @@ init() ->
               add_table(tab_name(system)),
               add_table(tab_name(shared)),
               exodm_db_session:set_trusted_proc(),
-              {ok, Bin} = file:read_file(
-                            filename:join(code:priv_dir(exodm_db),
-                                          "yang/exodm.yang")),
-              write_system("exodm.yang", Bin),
               {ok, Bin1} = file:read_file(
                              filename:join(code:priv_dir(exodm_db),
                                           "yang/ietf-inet-types.yang")),
-              write_system("ietf-inet-types.yang", Bin1)
+              Res1 = write_system("ietf-inet-types.yang", Bin1),
+              ?debug("write_system(ietf-inet-types.yang) -> ~p~n", [Res1]),
+              {ok, Bin2} = file:read_file(
+                            filename:join(code:priv_dir(exodm_db),
+                                          "yang/exodm.yang")),
+              Res2 = write_system("exodm.yang", Bin2),
+              ?debug("write_system(exodm.yang) -> ~p~n", [Res2]),
+              ok
       end).
 
 
