@@ -126,6 +126,24 @@ json_rpc_({request, _ReqEnv,
 	    {error, E}
     end;
 
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'add-device-group-members',
+	    [{'device-groups', Groups},
+	     {'dev-id', DIDs}]}} = _RPC, _Env) ->
+    ?debug("~p:json_rpc(add-device-group-members) dev-id:~p groups:~p~n",
+           [ ?MODULE, DIDs, Groups ]),
+    AID = exodm_db_session:get_aid(),
+
+    try [ exodm_db_device:add_groups(
+	    AID, DID, Groups)
+	  || DID <- DIDs] of
+	_Res -> {ok, result_code(ok)}
+    catch error:E ->
+	    ?debug("RPC = ~p; ERROR = ~p~n",
+		   [_RPC, {E, erlang:get_stacktrace()}]),
+	    {error, E}
+    end;
+
 json_rpc_({request, ReqEnv,
 	   {call, exodm, 'push-config-data',
 	    [{'config-data', Cfg}]}} = _RPC, _Env) ->

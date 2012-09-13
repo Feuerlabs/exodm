@@ -531,7 +531,7 @@ to_json_([{"rpc-status-string", [], _, _}|T], Attrs, Reply, Hist) ->
 							 Hist)]
 	    end
     end;
-to_json_([{K, [], _, [Type|_]} = H|T], Attrs, Reply, Hist) ->
+to_json_([{K, [], _, [Type,Mand|_]} = H|T], Attrs, Reply, Hist) ->
     Ka = list_to_atom(K),
     case lists:keyfind(Ka, 1, Reply) of
 	{_, X} ->
@@ -545,20 +545,31 @@ to_json_([{K, [], _, [Type|_]} = H|T], Attrs, Reply, Hist) ->
 		    [{K, X1}
 		     | to_json_(T, Attrs, Reply, keep_history(H, Hist))];
 		_ ->
-		    error({cannot_convert_to_json,
-			   [{missing_term, Ka} | {available_terms, [Reply]}]})
+		    case Mand of
+			{mandatory,true} ->
+			    error({cannot_convert_to_json,
+				   [{missing_term, Ka} |
+				    {available_terms, [Reply]}]});
+			_ ->
+			    to_json_(T, Attrs, Reply, Hist)
+		    end
 	    end
     end;
-to_json_([{K, {array,[Ch]}, _, _}|T], Attrs, Reply, Hist) ->
+to_json_([{K, {array,[Ch]}, _, Info}|T], Attrs, Reply, Hist) ->
     Ka = list_to_atom(K),
     case lists:keyfind(Ka, 1, Reply) of
 	{_, {array, L}} when is_list(L) ->
 	    [{Ka, {array, to_json_array_(Ch, Attrs, L, Hist)}}
 	     | to_json_(T, Attrs, Reply, Hist)];
 	false ->
-	    error({cannot_convert_to_json, Reply})
+	    case lists:keyfind(mandatory,1,Info) of
+		{mandatory,true} ->
+		    error({cannot_convert_to_json, Reply});
+		_ ->
+		    to_json_(T, Attrs, Reply, Hist)
+	    end
     end;
-to_json_([{K, {struct, Ch}, _, _}|T], Attrs, Reply, Hist) ->
+to_json_([{K, {struct, Ch}, _, Info}|T], Attrs, Reply, Hist) ->
     Ka = list_to_atom(K),
     case lists:keyfind(Ka, 1, Reply) of
 	{_, {struct, L}} when is_list(L) ->
@@ -570,7 +581,12 @@ to_json_([{K, {struct, Ch}, _, _}|T], Attrs, Reply, Hist) ->
 		    [{K, {struct, to_json_(L, Attrs, Ch, Hist)}}
 		     | to_json_(T, Attrs, Reply, Hist)];
 		_ ->
-		    error({cannot_convert_to_json, Reply})
+		    case lists:keyfind(mandatory, 1, Info) of
+			{mandatory, true} ->
+			    error({cannot_convert_to_json, Reply});
+			_ ->
+			    to_json_(T, Attrs, Reply, Hist)
+		    end
 	    end
     end;
 to_json_([], _, _, _) ->
@@ -624,7 +640,7 @@ split_method(Mod, M) ->
     end.
 
 
-convert_req_([{K, Ch, _Descr, [Type|_]}|Spec1], Req) ->
+convert_req_([{K, Ch, _Descr, [Type|_] = Info}|Spec1], Req) ->
     case lists:keytake(K, 1, Req) of
 	{value, {_, V}, Req1} ->
 	    case Type of
@@ -633,13 +649,19 @@ convert_req_([{K, Ch, _Descr, [Type|_]}|Spec1], Req) ->
 		    [] = Ch,  % assertion
 		    [{list_to_atom(K), V} | convert_req_(Spec1, Req1)];
 		_ ->
-		    convert_req_(K, V, Ch, Type, Spec1, Req1)
+		    convert_req_(K, V, Ch, Info, Spec1, Req1)
 	    end;
 	false ->
-	    AlsoMissing = [K1 || {K1,_,_,I} <- Spec1,
-				 (lists:member({mandatory,true}, I) andalso
-				  not(lists:keymember(K1, 1, Spec1)))],
-	    throw({invalid_params, {required, [K|AlsoMissing]}})
+	    case lists:keyfind(mandatory,1,Info) of
+		{mandatory,true} ->
+		    AlsoMissing =
+			[K1 || {K1,_,_,I} <- Spec1,
+			       (lists:member({mandatory,true}, I) andalso
+				not(lists:keymember(K1, 1, Spec1)))],
+		    throw({invalid_params, {required, [K|AlsoMissing]}});
+		_ ->
+		    convert_req_(Spec1, Req)
+	    end
     end;
 convert_req_([], []) ->
     [];

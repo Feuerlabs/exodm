@@ -430,6 +430,28 @@ module exodm {
         }
     }
 
+    rpc add-device-group-members {
+        description "Link devices to device groups";
+        input {
+            leaf-list device-groups {
+                description "Device groups to associate with the given device(s)";
+                type uint32;
+            }
+            leaf-list dev-id {
+                description "List of Device ID(s)";
+                type string {
+                    length "1..64";
+                }
+            }
+        }
+
+        output {
+            leaf result {
+                type result-code;
+            }
+        }
+    }
+
     rpc push-config-data {
         description "Push the given configuration data to all member devices";
         input {

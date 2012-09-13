@@ -17,7 +17,7 @@
 -export([key/2, tab_and_key/1]).
 -export([enc_ext_key/2, dec_ext_key/1]).
 -export([lookup_position/2, lookup_keys/2]).
--export([lookup_groups/2]).
+-export([add_groups/3, lookup_groups/2]).
 -export([lookup_group_notifications/2]).
 -export([table/1]).
 -export([client_auth_config/2]).
@@ -75,7 +75,7 @@ new_(AID0, ID0, Options) ->
     insert(Tab,Key,latitude, uint32_opt(latitude,Options)),
     insert(Tab,Key,timestamp,uint32_opt(timestamp,Options)),
     insert(Tab,Key,yang, binary_opt(yang, Options)),
-    %% __ck, __sk are device keys and need special attention 
+    %% __ck, __sk are device keys and need special attention
     insert(Tab,Key, '__ck',  binary_opt('__ck',Options)),
     insert(Tab,Key, '__sk',  binary_opt('__sk',Options)),
     insert_groups(Tab, Key, proplists:get_value(groups, Options, [])),
@@ -338,10 +338,13 @@ insert(Tab, Key, Item, Value) ->
     Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     exodm_db:write(Tab, Key1, Value).
 
-insert_groups(Tab, K, Groups0) ->
+insert_groups(Tab, K, Groups) ->
+    insert_groups(Tab, 1, K, Groups).
+
+insert_groups(Tab, I0, K, Groups0) ->
     {Groups,_} = lists:mapfoldl(fun(G,I) ->
 					{{I,G}, I+1}
-				end, 1, Groups0),
+				end, I0, Groups0),
     lists:foreach(fun({I,G}) ->
 			  insert_group(Tab, K, I, G)
 		  end, Groups).
@@ -349,6 +352,16 @@ insert_groups(Tab, K, Groups0) ->
 insert_group(Tab, K0, I, GID) when is_integer(I) ->
     K = exodm_db:join_key(K0, exodm_db:list_key(groups, I)),
     insert(Tab, K, '__gid',  gid_value(GID)).
+
+add_groups(AID, DID, Groups) ->
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      Base = exodm_db:join_key(DID, <<"groups">>),
+	      {ok, Last} = kvdb_conf:last_list_pos(Tab, Base),
+	      insert_groups(Tab, Last+1, DID, Groups)
+      end).
+
 
 gid_value(GID) ->
     <<(exodm_db:group_id_num(GID)):32>>.
@@ -365,4 +378,3 @@ read_uint32(Tab, Key,Item) ->
 	[{Item,<<Value:32>>}] -> [{Item,Value}];
 	[] -> []
     end.
-
