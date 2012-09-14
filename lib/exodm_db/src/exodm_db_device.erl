@@ -353,7 +353,8 @@ insert_group(Tab, K0, I, GID) when is_integer(I) ->
     K = exodm_db:join_key(K0, exodm_db:list_key(groups, I)),
     insert(Tab, K, '__gid',  gid_value(GID)).
 
-add_groups(AID, DID, Groups) ->
+add_groups(AID, DID0, Groups) ->
+    DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->

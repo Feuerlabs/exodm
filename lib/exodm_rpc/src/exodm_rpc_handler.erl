@@ -671,7 +671,7 @@ convert_req_([], [_|_] = Unknown) ->
 convert_req_(K, V, Ch, [Type|_], Spec1, Req1) ->
     case {V, Ch} of
 	{{array, Sub}, {array,[SubSpec]}} ->
-	    [{list_to_atom(K), {array, convert_array_(Sub, SubSpec)}}
+	    [{list_to_atom(K), convert_array_(Sub, SubSpec)}
 	     | convert_req_(Spec1, Req1)];
 	{{St, Sub}, {St, SubSpec}} when St==struct; St==array ->
 	    [{list_to_atom(K), convert_req_(SubSpec, Sub)}
