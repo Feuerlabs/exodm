@@ -3,18 +3,21 @@
 %% @copyright 2012 Feuerlabs, Inc.
 -module(exodm_db_yang).
 
--export([read/1,    %% (YangF) -> read(get_aid(), YangF)
-         read/2,    %% (AID, YangF)
-	 write/2,   %% (YangF, YangSpec) -> write(get_aid(), YangF, YangSpec)
-         write/3,   %% (AID, YangF, YangSpec)
-	 delete/1,  %% delete(YangF) -> delete(get_aid(), YangF)
-         delete/2,  %% (AID, YangF)
-	 find/2,    %% (Index, Value) -> find(get_aid(), Index, Value)
-         find/3,    %% (AID, Index, Value)
-	 rpcs/1,    %% (YangF) -> rpcs(get_aid(), YangF)
-         rpcs/2,    %% (AID, YangF)
-         specs/0,   %% () -> specs(get_aid())
-         specs/1]). %% (AID)
+-export([read/1,     %% (YangF) -> read(get_aid(), YangF)
+         read/2,     %% (AID, YangF) -> read(AID, YangF, [])
+         read/3,     %% (AID, YangF, Opts)
+	 write/2,    %% (YangF, YangSpec) -> write(get_aid(), YangF, YangSpec)
+         write/3,    %% (AID, YangF, YangSpec)
+         tag_file/2, %% (YangF, Tag) -> tag_file(AID, YangF, Tag)
+         tag_file/3, %% (AID, YangF, Tag)
+	 delete/1,   %% delete(YangF) -> delete(get_aid(), YangF)
+         delete/2,   %% (AID, YangF)
+	 find/2,     %% (Index, Value) -> find(get_aid(), Index, Value)
+         find/3,     %% (AID, Index, Value)
+	 rpcs/1,     %% (YangF) -> rpcs(get_aid(), YangF)
+         rpcs/2,     %% (AID, YangF)
+         specs/0,    %% () -> specs(get_aid())
+         specs/1]).  %% (AID)
 -export([init/0, init/1,
          write_system/2
         ]).
@@ -62,7 +65,7 @@ tab_name(AID) ->
 
 ix_attrs() ->
     [{K, ix_type(K)} || K <- [module, revision, grouping, namespace, uses,
-			      container, typedef, rpc, '__checksum']].
+			      container, typedef, rpc, '__checksum', exodm_tag]].
 ix_type(module   ) -> value;
 ix_type(revision ) -> value;
 ix_type('__checksum') -> value;
@@ -72,6 +75,7 @@ ix_type(namespace) -> each;
 ix_type(container) -> each;
 ix_type(typedef  ) -> each;
 ix_type(rpc      ) -> each;
+ix_type(exodm_tag) -> each;
 ix_type(_) -> undefined.
 
 attrs(M, L) ->
@@ -88,12 +92,13 @@ attrs_([], Acc) ->
     Acc.
 
 read(Y) -> read(get_aid(), Y).
+read(AID, Y) -> read(AID, Y, []).
 
-read(AID0, Y) ->
+read(AID0, Y, Opts0) ->
     {AID, _Key} = file_key(AID0, Y),
     yang_parser:parse(Y, [{open_hook, fun(F, Opts) ->
 					      open_file_hook(AID, F, Opts)
-				      end}]).
+				      end}|Opts0]).
 
 write(File, YangSpec) ->
     write(get_aid(), File, YangSpec).
@@ -102,6 +107,36 @@ write(AID, File, Y) ->
     exodm_db:in_transaction(
       fun(_) ->
               write_(exodm_db:account_id_key(AID), File, Y)
+      end).
+
+tag_file(File, Tag) ->
+    tag_file(get_aid(), File, Tag).
+
+tag_file(AID0, File, Tag) ->
+    {AID, _} = file_key(AID0, File),
+    check_access(write, AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+              case try_read_file(AID, File, []) of
+                  {ok, Tab, {K, Attrs, Bin}} ->
+                      case orddict:find(exodm_tag, Attrs) of
+                          {ok, OldTags} ->
+                              case lists:member(Tag, OldTags) of
+                                  true ->
+                                      ok;
+                                  false ->
+                                      NewAttrs = orddict:store(
+                                                   exodm_tag, [Tag|OldTags]),
+                                      kvdb:put(?DB, Tab,
+                                               {K, NewAttrs, Bin})
+                              end;
+                          error ->
+                              NewAttrs = orddict:store(exodm_tag, Tag, Attrs),
+                              kvdb:put(?DB, Tab, {K, NewAttrs, Bin})
+                      end;
+                  {error, _} = Err ->
+                      Err
+              end
       end).
 
 write_system(File, Y) ->
@@ -244,6 +279,14 @@ find(AID, Ix, V) ->
     kvdb:index_keys(?DB, tab_name(AID), Ix, V).
 
 open_file_hook(AID, File, Opts) ->
+    case try_read_file(AID, File, Opts) of
+        {ok, _, {_, _, Bin}} ->
+            open_bin_hook(AID, File, [{data, Bin}|Opts]);
+        {error,_} = Err ->
+            Err
+    end.
+
+try_read_file(AID, File, Opts) ->
     FBin = to_binary(filename:basename(File)),
     case FBin of
         <<"user.", Rest/binary>> ->
@@ -273,23 +316,56 @@ try_file_(AID, File, Opts) ->
         {match, [Base, Date]} ->
             ?debug("Looking for yang file ~s.yang, rev ~s~n", [Base, Date]),
             case kvdb:get(?DB, Tab, File) of
-                {ok, {_, _, Bin}} ->
-                    open_bin_hook(AID, File, [{data,Bin}|Opts]);
+                {ok, Obj} ->
+                    {ok, Tab, Obj};
                 {error, _} = Err ->
                     Err
             end;
         nomatch ->
             ?debug("No revision given (~s)~n", [File]),
-            Base = filename:basename(File, <<".yang">>),
-            Sz = byte_size(Base),
-            case kvdb:prev(?DB, Tab, <<Base/binary, "@:">>) of
-                {ok, {<<Base:Sz/binary, _/binary>> = FullName, _, Bin}} ->
-                    ?debug("Latest version: ~s~n", [FullName]),
-                    open_bin_hook(AID, FullName, [{data,Bin}|Opts]);
-                _ ->
-                    {error, not_found}
+            case proplists:get_value(exodm_tag, Opts) of
+                undefined ->
+                    ?debug("No revision tag~n", []),
+                    try_latest_file(AID, Tab, File, Opts);
+                Tag ->
+                    case find(AID, exodm_tag, Tag) of
+                        [] ->
+                            {error, not_found};
+                        [_|_] = Keys->
+                            BaseName = filename:basename(File, <<".yang">>),
+                            Sz = byte_size(BaseName),
+                            case lists:filter(
+                                   fun(K) ->
+                                           case K of
+                                               <<BaseName:Sz/binary,
+                                                 _/binary>> -> true;
+                                               (_) -> false
+                                           end
+                                   end, Keys) of
+                                [] -> {error, not_found};
+                                Cands ->
+                                    case kvdb:get(?DB, Tab, lists:last(Cands)) of
+                                        {ok, Obj} ->
+                                            {ok, Tab, Obj};
+                                        {error,_} = Err ->
+                                            Err
+                                    end
+                            end
+                    end
             end
     end.
+
+try_latest_file(_AID, Tab, File, _Opts) ->
+    Base = filename:basename(File, <<".yang">>),
+    Sz = byte_size(Base),
+    case kvdb:prev(?DB, Tab, <<Base/binary, "@:">>) of
+        {ok, {<<Base:Sz/binary, _/binary>> = FullName, _, _Bin} = Obj} ->
+            ?debug("Latest version: ~s~n", [FullName]),
+            {ok, Tab, Obj};
+        _ ->
+            {error, not_found}
+    end.
+
 
 internal_filename(File) ->
     case re:run(File, <<"(^[^@]+)@([-0-9]*)\\.yang\$">>,

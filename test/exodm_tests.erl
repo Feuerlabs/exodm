@@ -366,7 +366,7 @@ load_this_module(Cfg) ->
 	     [?MODULE, atom_to_list(?MODULE) ++ ".beam", Bin]),
     ok.
 
-test_echo(Args) ->
+test_echo([Args]) ->
     io:fwrite(user, "test_echo(~p)~n", [Args]),
     device_json_rpc1 ! {self(), got, Args},
     receive

@@ -358,8 +358,21 @@ add_groups(AID, DID, Groups) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      Base = exodm_db:join_key(DID, <<"groups">>),
-	      {ok, Last} = kvdb_conf:last_list_pos(Tab, Base),
-	      insert_groups(Tab, Last+1, DID, Groups)
+	      {Existing, Last} =
+		  kvdb_conf:fold_list(
+		    Tab, fun(I, Kl, {Acc,_}) ->
+				 {ok,{_,_,<<GID:32>>}} =
+				     kvdb_conf:read(
+				       Tab, kvdb_conf:join_key(Kl, <<"__gid">>)),
+				 case lists:member(GID, Groups) of
+				     true ->
+					 {[GID|Acc],I};
+				     false ->
+					 {Acc,I}
+				 end
+			 end, {[],0}, kvdb_conf:join_key(DID,<<"groups">>)),
+	      ToAdd = Groups -- Existing,
+	      insert_groups(Tab, Last+1, DID, ToAdd)
       end).
 
 
