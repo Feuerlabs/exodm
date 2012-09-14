@@ -1,0 +1,10 @@
+{
+    "jsonrpc": "2.0",
+    "method": "exodm:list-device-groups",
+    "id": "1",
+    "params":
+    {
+        "n": 3,
+        "previous": 0
+    }
+}

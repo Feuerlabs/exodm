@@ -1,0 +1,10 @@
+{
+    "jsonrpc": "2.0",
+    "method": "exodm:update-device-group",
+    "id": "1",
+    "params":
+    {
+        "gid": "2",
+        "notification-url": "https://ga:wewontechcrunch2011@localhost:8000/exodm/test_callback2/"
+    }
+}

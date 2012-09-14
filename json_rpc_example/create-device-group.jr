@@ -1,0 +1,10 @@
+{
+    "jsonrpc": "2.0",
+    "method": "exodm:create-device-group",
+    "id": "1",
+    "params":
+    {
+        "name": "gag1",
+        "notification-url": "https://ga:wewontechcrunch2011@localhost:8000/exodm/test_callback/"
+    }
+}
