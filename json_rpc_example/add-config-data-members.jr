@@ -4,7 +4,7 @@
     "id": "1",
     "params":
     {
-        "config-data": ["test11"],
+        "config-data": ["ck3","ck3_exo"],
         "dev-id": [ "1235" ]
     }
 }

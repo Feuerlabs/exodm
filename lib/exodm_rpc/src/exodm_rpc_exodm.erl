@@ -110,8 +110,8 @@ json_rpc_({request, _ReqEnv,
 
 json_rpc_({request, _ReqEnv,
 	   {call, exodm, 'add-config-data-members',
-	    [{'config-data', {array, CfgDataList}},
-             {'dev-id', {array, DevIdList}}]}} = _RPC, _Env) ->
+	    [{'config-data', CfgDataList},
+             {'dev-id', DevIdList}]}} = _RPC, _Env) ->
     ?debug("~p:json_rpc(add-config-data-members) dev-id:~p config-data:~p~n",
            [ ?MODULE, CfgDataList, DevIdList ]),
     AID = exodm_db_session:get_aid(),

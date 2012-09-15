@@ -81,7 +81,7 @@ create_account(ga) ->
 create_group(ga, AID) ->
     {ok, _GID} = exodm_db_group:new(
 		   AID, [{name, <<"gagroup">>},
-			 {url, "http://gacallback:8080/exodm/callback"}]).
+			 {url, "https://ga:wewontechcrunch2011@localhost:8080/exodm/callback"}]).
 
 create_device(AID, GID, 4711) ->
     exodm_db_device:new(AID,
@@ -121,10 +121,11 @@ ga_dummy_devices(AID, GID) ->
       end).
 
 ga_dummy_devices_(AID, GID) ->
+    exodm_db_session:set_auth_as_user(<<"ga">>),
     DIDs = lists:map(
 	     fun(DID0) ->
 		     DID = devid(DID0),
-		     exodm_db_device:new(?GA_CUSTOMER_ID, DID,
+		     exodm_db_device:new(AID, DID,
 					 [{'__ck',<<2,0,0,0,0,0,0,0>>},
 					  {'__sk',<<1,0,0,0,0,0,0,0>>},
 					  {msisdn,"0701"++integer_to_list(DID0)},

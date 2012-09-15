@@ -265,6 +265,7 @@ find_method_spec(Method, AID, DevID) ->
     ?debug("find_method_spec(~p, ~p)~n", [Method, DevID]),
     DID = exodm_db:encode_id(DevID),
     YangSpecs = exodm_db_device:yang_modules(AID, DID),
+    ?debug("yang specs mapped to device (~p/~p): ~p~n", [AID, DID, YangSpecs]),
     case binary:split(to_binary(Method), <<":">>) of
 	[MethodBin] ->
 	    Mod = get_default_module(AID, DID),
