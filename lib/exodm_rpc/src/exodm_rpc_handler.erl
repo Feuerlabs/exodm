@@ -454,7 +454,8 @@ accept_response(Attrs, {_, _, {reply, {struct, Elems}}} = Spec) ->
 post_json(Env, JSON) ->
     {_, DID} = lists:keyfind('device-id', 1, Env),
     {_, AID} = lists:keyfind(aid, 1, Env),
-    case exodm_db_device:lookup_group_notifications(AID, DID) of
+    case [U || {'notification-url', U} <- Env] ++
+	exodm_db_device:lookup_group_notifications(AID, DID) of
 	[] ->
 	    ?debug("No group notifications for (~p, ~p)~n", [AID, DID]),
 	    ok;
