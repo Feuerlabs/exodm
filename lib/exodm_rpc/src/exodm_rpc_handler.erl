@@ -212,10 +212,25 @@ qualified_method(M, Mod) ->
 make_id(Env, AID) ->
     case lists:keyfind(id, 1, Env) of
 	false ->
-	    exodm_db_account:incr_request_id(AID);
-	{_, ID} ->
+	    <<I:32>> = exodm_db_account:incr_request_id(AID),
+	    integer_to_list(I);
+	{_, ID} when is_integer(ID) ->
+	    integer_to_list(ID);
+	{_, ID} when is_list(ID) ->
+	    _ = list_to_integer(ID),  % assertion
+	    ID;
+	{_, ID} when is_binary(ID) ->
+	    _ = list_to_integer(binary_to_list(ID)),  % assertion
 	    ID
     end.
+
+int_to_bstring(<<I:32>>) ->
+    list_to_binary(integer_to_list(I));
+int_to_bstring(I) when is_integer(I) ->
+    list_to_binary(integer_to_list(I));
+int_to_bstring() ->
+
+
 
 mod(Yang) ->
     Y = case Yang of
