@@ -27,7 +27,7 @@
 -export([first_child/1, first_child/2,
 	 next_child/1, next_child/2,
 	 last_child/1, last_child/2]).
--export([list_next/4]).
+-export([list_next/4, n_children/4, list_cont/4]).
 -export([fold_children/3, fold_children/4]).
 -export([fold_list/3, fold_list/4]).   % ([Tab,] Fun, Acc, Key)
 -export([fold_list2/4, fold_list2/5]). % ([Tab,] Fun, Acc, Key, ListItem)
@@ -337,19 +337,50 @@ last_child(Tab, K) ->
 	    done
     end.
 
+list_next(_, 0, _, _) -> [];
+list_next(Tab, N, Prev, F) when is_integer(N), N > 0 ->
+    case list_cont(Tab, N, Prev, F) of
+	{L, _} -> L;
+	done   -> []
+    end.
 
-list_next(Tab, N, Prev, F) when is_integer(N) ->
+n_children(_, 0, _, _) -> [];
+n_children(Tab, N, Parent, F) when is_integer(N), N > 0 ->
+    in_transaction(
+      fun(_) ->
+	      case kvdb_conf:first_child(Tab, Parent) of
+		  {ok, ChildKey} ->
+		      N1 = decr(N),
+		      [F(ChildKey) | list_next(Tab, N1, ChildKey, F)];
+		  done ->
+		      []
+	      end
+      end).
+
+list_cont(Tab, N, Prev, F) when is_integer(N) ->
     in_transaction(fun(_Db) ->
 			   Next = kvdb_conf:next_at_level(Tab, Prev),
-			   list_next_(Next, Tab, N, F, [])
+			   list_cont_(Next, Tab, N, N, F, [])
 		   end).
 
-list_next_({ok, Key}, Tab, N, F, Acc) when N > 0 ->
-    list_next_(kvdb_conf:next_at_level(Tab, Key), Tab, N-1, F,
-	       [F(Key)|Acc]);
-list_next_(_, _, _, _, Acc) ->
-    lists:reverse(Acc).
-
+list_cont_({ok, Key}, Tab, N, N0, F, Acc) when N > 0 ->
+    NewAcc = [F(Key) | Acc],
+    case decr(N) of
+	0 ->
+	    {lists:reverse(NewAcc),
+	     fun() ->
+		     in_transaction(
+		       fun(_) ->
+			       Next = kvdb_conf:next_at_level(Tab, Key),
+			       list_cont_(Next, Tab, N0, N0, F, [])
+		       end)
+	     end};
+	NewN ->
+	    Next = kvdb_conf:next_at_level(Tab, Key),
+	    list_cont_(Next, Tab, NewN, N0, F, NewAcc)
+    end;
+list_cont_(_, _, _, _, _, Acc) ->
+    {lists:reverse(Acc), fun() -> done end}.
 
 all_children(K) ->
     all_children(<<"data">>, K).
@@ -478,10 +509,10 @@ last_in_list(Tab, Base) ->
 %%     id_key_to_integer(I).
 
 
-%% decr(infinity) ->
-%%     infinity;
-%% decr(I) when is_integer(I), I > 0 ->
-%%     I-1.
+decr(infinity) ->
+    infinity;
+decr(I) when is_integer(I), I > 0 ->
+    I-1.
 
 
 

@@ -17,7 +17,7 @@
 -export([system_specs/1]).
 -export([list_admins/1]).
 -export([incr_request_id/1]).
--export([key/1, group_key/2, new_group_id/1,
+-export([key/1,
 	 table/0]).
 -export([init/0]).
 -import(exodm_db, [binary_opt/2, to_binary/1]).
@@ -55,8 +55,8 @@ new_(Options) ->
 	       end,
     AID = exodm_db_system:new_aid(),
     Key = exodm_db:escape_key(AID),
+    exodm_db_group:init(AID),
     insert(Key, '__last_rid', <<0:32>>),
-    insert(Key, '__last_gid', <<0:32>>),
     insert(Key, '__last_req_id', <<0:32>>),
     {_, AdminUName} = lists:keyfind(uname, 1, UserOpts),
     AcctName = case binary_opt(name, Options) of
@@ -345,16 +345,6 @@ fold_accounts(F, Acc) ->
 key(AName) ->
     to_binary(AName).
 %% exodm_db:join_key(<<"account">>, AName).
-
-group_key(AID, GID) ->
-    exodm_db:join_key([exodm_db:account_id_key(AID),
-		       <<"groups">>,
-		       exodm_db:group_id_key(GID)]).
-
-new_group_id(AID0) ->
-    AID = exodm_db:account_id_key(AID0),
-    exodm_db:update_counter(
-      ?TAB, exodm_db:join_key(AID, <<"__last_gid">>), 1).
 
 role_key(AID, RID) ->
     exodm_db:join_key([exodm_db:account_id_key(AID),

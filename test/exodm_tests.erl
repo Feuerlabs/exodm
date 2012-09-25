@@ -46,6 +46,7 @@ exodm_test_() ->
 		     ?my_t(populate(Config)),
 		     ?my_t(list_accounts(Config)),
 		     ?my_t(list_groups(Config)),
+		     ?my_t(list_group_devices(Config)),
 		     ?my_t(list_group_notifications(Config)),
 		     ?my_t(list_users(Config)),
 		     ?my_t(store_exosense_yang(Config)),
@@ -116,14 +117,32 @@ populate(Cfg) ->
 			     {url, "http://localhost:8899/"}]
 		     ]),
     ok = ?rpc(exodm_db_device, new,
-	      [AID2, DID = <<"x00000001">>,
-	       [{'__ck',<<2,0,0,0,0,0,0,0>>},
-		{'__sk',<<1,0,0,0,0,0,0,0>>},
+	      [AID2, DID1 = <<"x00000001">>,
+	       [{'protocol', <<"exodm_bert">>},
+		{'device-key',<<2,0,0,0,0,0,0,0>>},
+		{'server-key',<<1,0,0,0,0,0,0,0>>},
 		{msisdn,"070100000001"},
 		{groups, [GID1, GID2]}
 	       ]]),
-    ?debugFmt("AID1 = ~p; AID2 = ~p; GID1 = ~p; GID2 = ~p; DID = ~p~n",
-	      [AID1, AID2, GID1, GID2, DID]),
+    ok = ?rpc(exodm_db_device, new,
+	      [AID2, DID2 = <<"x00000002">>,
+	       [{'protocol', <<"exodm_bert">>},
+		{'device-key',<<2,0,0,0,0,0,0,0>>},
+		{'server-key',<<1,0,0,0,0,0,0,0>>},
+		{msisdn,"070100000002"},
+		{groups, [GID1, GID2]}
+	       ]]),
+    ok = ?rpc(exodm_db_device, new,
+	      [AID2, DID3 = <<"x00000003">>,
+	       [{'protocol', <<"exodm_bert">>},
+		{'device-key',<<2,0,0,0,0,0,0,0>>},
+		{'server-key',<<1,0,0,0,0,0,0,0>>},
+		{msisdn,"070100000003"},
+		{groups, [GID1]}
+	       ]]),
+    ?debugFmt("AID1 = ~p; AID2 = ~p; GID1 = ~p; GID2 = ~p;~n"
+	      "DID1 = ~p; DID2 = ~p; DID3 = ~p~n",
+	      [AID1, AID2, GID1, GID2, DID1, DID2, DID3]),
     ok.
 
 list_users(Cfg) ->
@@ -150,9 +169,24 @@ list_accounts(Cfg) ->
     ok.
 
 list_groups(Cfg) ->
-    [<<"a00000002*groups*g00000001">>,
-     <<"a00000002*groups*g00000002">>] =
+    [<<"g00000001">>,
+     <<"g00000002">>] =
 	?rpc(exodm_db_account,list_groups, [2]),
+    ok.
+
+list_group_devices(Cfg) ->
+    [<<"x00000001">>,
+     <<"x00000002">>,
+     <<"x00000003">>] =
+	?rpc(exodm_db_group, list_devices, [2,1]),
+    [<<"x00000001">>,
+     <<"x00000002">>] =
+	?rpc(exodm_db_group, list_devices, [2,2]),
+    [<<"x00000001">>] =
+	?rpc(exodm_db_group, list_devices, [2,2,1,<<>>]),
+    [<<"x00000002">>,
+     <<"x00000003">>] =
+	?rpc(exodm_db_group, list_devices, [2,1,99,<<"x00000001">>]),
     ok.
 
 list_group_notifications(Cfg) ->
@@ -228,7 +262,6 @@ store_config(Cfg) ->
 	rscript(Cfg, store_config_scr()),
     R = <<"test">>,
     {T,T} = {T, [{<<"name">>, [], <<"test">>},
-		 {<<"protocol">>, [], <<"exodm_bert">>},
 		 {<<"values">>, [{<<"cksrv-address">>, [], <<"127.0.0.1">>},
 				 {<<"kill-switch">>, [], 0},
 				 {<<"wakeup-prof">>,
@@ -252,7 +285,6 @@ store_config_scr() ->
 			    exodm_db_config:new_config_data(
 			      AID,
 			      <<"test">>, <<"ckp-cfg.yang">>,
-			      <<"exodm_bert">>,
 			      {struct,
 			       [{<<"kill-switch">>, 0},
 				{<<"cksrv-address">>, <<"127.0.0.1">>},
@@ -275,7 +307,6 @@ store_config2(Cfg) ->
 	rscript(Cfg, store_config_scr2()),
     R = <<"test2">>,
     {T,T} = {T, [{<<"name">>, [], <<"test2">>},
-		 {<<"protocol">>, [], <<"exodm_bert">>},
 		 %% no 'values' entry
 		 {<<"yang">>, [], <<"test.yang">>}
 		]},
@@ -292,7 +323,6 @@ store_config_scr2() ->
 			    exodm_db_config:new_config_data(
 			      AID,
 			      <<"test2">>, <<"test.yang">>,
-			      <<"exodm_bert">>,
 			      {array, []}),
 			exodm_db_config:read_config_data(AID, <<"test2">>)
 		end)
@@ -325,7 +355,9 @@ start_rpc_client(Cfg) ->
     Auth = ?rpc(exodm_db_device, client_auth_config, [<<"a00000002">>,
 						      <<"x00000001">>]),
     ?debugVal(Auth),
+    ?assertMatch({true,Auth}, {is_list(Auth), Auth}),
     Apps = [exo, bert, gproc, kvdb, exoport],
+    ?debugVal(Apps),
     [{A,ok} = {A, application:load(A)} || A <- Apps],
     [[application:set_env(A, K, V) || {K,V} <- L] ||
 	{A, L} <- [{exoport, [{exodm_address, {"localhost", 9900}},
@@ -347,7 +379,6 @@ client_ping(Cfg) ->
        {reply, pong, []} = exoport:ping()).
 
 set_access(Cfg) ->
-    load_this_module(Cfg),
     {ok, {Host, Port}} = application:get_env(exoport, exodm_address),
     {ok, Sn} = bert_rpc_exec:get_session(
 		 Host, Port, [tcp], [{auto_connect,false}], 10000),
@@ -359,12 +390,12 @@ set_access(Cfg) ->
     %% io:fwrite(user, "New Access = ~p~n", [gen_server:call(Sn, get_access)]),
     ok.
 
-load_this_module(Cfg) ->
-    {ok, Bin} = file:read_file(code:which(?MODULE)),
-    {module, ?MODULE} =
-	?rpc(code, load_binary,
-	     [?MODULE, atom_to_list(?MODULE) ++ ".beam", Bin]),
-    ok.
+%% load_this_module(Cfg) ->
+%%     {ok, Bin} = file:read_file(code:which(?MODULE)),
+%%     {module, ?MODULE} =
+%% 	?rpc(code, load_binary,
+%% 	     [?MODULE, atom_to_list(?MODULE) ++ ".beam", Bin]),
+%%     ok.
 
 test_echo([Args]) ->
     io:fwrite(user, "test_echo(~p)~n", [Args]),
@@ -382,7 +413,7 @@ test_notification(Cfg) ->
        notification_(Cfg)).
 
 notification_(Cfg) ->
-    exodm_test_lib:ask_http_servers(reset, Cfg),
+    ask_http_reset(Cfg),
     exoport:rpc(exodm_rpc, notification, [test, 'echo-callback',
 					  [{message, "howdy"}]]),
     Fetched = fetch_json(Cfg),
@@ -392,6 +423,18 @@ notification_(Cfg) ->
 		    {"params", {struct, [{"message", "howdy"}]}}]},
     [{8898, Rep}, {8899, Rep}] = Fetched,
     ok.
+
+
+ask_http_reset(Cfg) ->
+    ReplyF = fun(_) -> basic_200_OK() end,
+    exodm_test_lib:ask_http_servers({reset, [{http_reply,ReplyF}]}, Cfg).
+
+
+basic_200_OK() ->
+    <<"HTTP/1.1 200 OK\r\n"
+      "Content-Type: text/plain\r\n"
+      "Content-Length: 2\r\n\r\n"
+      "OK">>.
 
 %%% ==================================== End client BERT RPC
 
@@ -416,7 +459,6 @@ json_rpc1(Cfg) ->
 				"exodm:create-config-data", "1",
 				{struct,[{"config-data","test_cfg_1"},
 					 {"yang", "exosense.yang"},
-					 {"protocol","exodm_bert"},
 					 {"values",{struct,[{"a", "1"},
 							    {"b", "xx"}
 							   ]}}
@@ -442,7 +484,7 @@ device_json_rpc1(Cfg) ->
 			       Pid ! {answer, Reply}
 		       end
 	       end),
-    exodm_test_lib:ask_http_servers(reset, Cfg),
+    ask_http_reset(Cfg),
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"test:echo", "2",
 				{struct, [{"device-id", "x00000001"},

@@ -224,14 +224,6 @@ make_id(Env, AID) ->
 	    ID
     end.
 
-int_to_bstring(<<I:32>>) ->
-    list_to_binary(integer_to_list(I));
-int_to_bstring(I) when is_integer(I) ->
-    list_to_binary(integer_to_list(I));
-int_to_bstring() ->
-
-
-
 mod(Yang) ->
     Y = case Yang of
 	    <<"system.", Rest/binary>> -> Rest;
@@ -254,16 +246,18 @@ is_exodm_method(Method, AID) ->
 	[MethodBin] ->
 	    Mod = <<"exodm">>,
 	    ?debug("Mod = ~p; MethodBin = ~p~n", [Mod, MethodBin]),
-	    find_method_spec_(Mod, [<<"exodm">>], MethodBin);
+	    find_method_spec_(Mod, [<<"exodm">>], MethodBin, <<"exodm">>);
 	[Mod, MethodBin] ->
 	    ?debug("Mod = ~p; MethodBin = ~p~n", [Mod, MethodBin]),
 	    YangSpecs = annotate_specs(
 			  std_specs() ++ exodm_db_account:system_specs(AID)),
-	    find_method_spec_(Mod, YangSpecs, MethodBin)
+	    find_method_spec_(Mod, YangSpecs, MethodBin, <<"exodm">>)
     end.
 
 std_specs() ->
-    [<<"exodm">>].
+    %% FIXME: "exodm" should be retired and replaced by "exosense"
+    %% (by name, mainly; the two specs shall be merged into one)
+    [<<"exodm">>, <<"exosense">>].
 
 json_get_device_id({struct, L}) ->
     case lists:keyfind("device-id", 1, L) of
@@ -274,26 +268,27 @@ json_get_device_id({struct, L}) ->
     end.
 
 annotate_specs(Specs) ->
-    [{<<>>, <<S/binary, ".yang">>, <<"exodm">>} || S <- Specs].
+    [{<<>>, <<S/binary, ".yang">>} || S <- Specs].
 
 find_method_spec(Method, AID, DevID) ->
     ?debug("find_method_spec(~p, ~p)~n", [Method, DevID]),
     DID = exodm_db:encode_id(DevID),
     YangSpecs = exodm_db_device:yang_modules(AID, DID),
     ?debug("yang specs mapped to device (~p/~p): ~p~n", [AID, DID, YangSpecs]),
+    Protocol = exodm_db_device:protocol(AID, DID),
     case binary:split(to_binary(Method), <<":">>) of
 	[MethodBin] ->
 	    Mod = get_default_module(AID, DID),
-	    find_method_spec_(Mod, YangSpecs, MethodBin);
+	    find_method_spec_(Mod, YangSpecs, MethodBin, Protocol);
 	[Mod, MethodBin] ->
-	    find_method_spec_(Mod, YangSpecs, MethodBin)
+	    find_method_spec_(Mod, YangSpecs, MethodBin, Protocol)
     end.
 
-find_method_spec_(Module, Specs, Method) ->
+find_method_spec_(Module, Specs, Method, Protocol) ->
     ?debug("find_method_spec_(~p, ~p, ~p)~n", [Module, Specs, Method]),
     Yang = <<Module/binary, ".yang">>,
     case lists:keyfind(Yang, 2, Specs) of
-	{_CfgName, _Y, Protocol} = _Found ->
+	{_CfgName, _Y} = _Found ->
 	    ?debug("found spec = ~p~n", [_Found]),
 	    find_method_rpcs_(Yang, Module, Method, Protocol);
 	false ->

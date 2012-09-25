@@ -74,23 +74,27 @@ http_server(Port) ->
 		  _Ref = erlang:monitor(process, Parent),
 		  {ok, L} = gen_tcp:listen(Port, [binary,{active,true}]),
 		  %% io:fwrite("HTTP (~p) listen socket~n", [Port]),
-		  http_accept_loop(L, Port, <<>>)
+		  http_accept_loop(L, Port, <<>>, state0())
 	  end).
 
-http_accept_loop(L, Port, Buf0) ->
+state0() ->
+    [].
+
+http_accept_loop(L, Port, Buf0, St0) ->
     accept_down(),
-    Buf = (catch accept_reset(Buf0)),
+    {Buf, St} = accept_reset(Buf0, St0),
     case gen_tcp:accept(L, 500) of
 	{ok, S} ->
 	    %% io:fwrite(user, "HTTP (~p) accepted~n", [Port]),
-	    try Msg = http_recv_loop(S, Port, Buf),
-		 await_fetch(Msg)
-	    catch
-		throw:_ -> ok
-	    end,
-	    http_accept_loop(L, Port, <<>>);
+	    St1 = try Msg = http_recv_loop(S, Port, Buf, St),
+		       await_fetch(Msg, St)
+		  catch
+		      throw:reset -> state0();
+		      throw:{reset, Opts} -> merge_opts(Opts, St)
+		  end,
+	    http_accept_loop(L, Port, <<>>, St1);
 	{error, timeout} ->
-	    http_accept_loop(L, Port, Buf)
+	    http_accept_loop(L, Port, Buf, St)
     end.
 
 accept_down() ->
@@ -99,43 +103,77 @@ accept_down() ->
     after 0 -> ok
     end.
 
-accept_reset(Buf) ->
-    receive {From, Ref, reset} ->
-	    From ! {Ref, reset},
-	    throw(<<>>)
-    after 0 -> Buf
-    end.
-
-await_fetch(Msg) ->
+accept_reset(Buf, St) ->
     receive
-	{From, Ref, fetch_content} ->
-	    From ! {Ref, Msg};
 	{From, Ref, reset} ->
 	    From ! {Ref, reset},
-	    throw(<<>>);
+	    {<<>>, state0()};
+	{From, Ref, {reset, Opts}} ->
+	    From ! {Ref, reset},
+	    {<<>>, merge_opts(Opts, St)}
+    after 0 -> {Buf, St}
+    end.
+
+await_fetch(Msg, St) ->
+    receive
+	{From, Ref, fetch_content} ->
+	    From ! {Ref, Msg}, St;
+	{From, Ref, reset} ->
+	    io:fwrite(user, "RESET in await_fetch()~n", []),
+	    From ! {Ref, reset},
+	    throw(reset);
+	{From, Ref, {reset, Opts}} ->
+	    io:fwrite(user, "RESET in await_fetch()~n", []),
+	    From ! {Ref, reset},
+	    throw({reset,Opts});
 	{'DOWN', _, _, _, _} ->
 	    exit(parent_died)
     end.
 
-http_recv_loop(S, Port, Buf) ->
+merge_opts(Opts, St) ->
+    lists:foldl(fun({K,V}, Acc) ->
+			lists:keystore(K,1,Acc,{K,V})
+		end, St, Opts).
+
+
+http_recv_loop(S, Port, Buf, St) ->
     receive
 	{tcp, S, What} ->
-	    %% io:fwrite(user, "HTTP recvd ~p; Buf = ~p~n", [What, Buf]),
-	    NewBuf = <<Buf/binary, What/binary>>,
-	    case erlang:decode_packet(http, NewBuf, []) of
-		{ok, {http_request,_,_,_}, Rest} ->
-		    [_, Body] = binary:split(Rest, <<"\r\n\r\n">>),
-		    %% io:fwrite(user, "HTTP (~p): ~p~n", [Port, Body]),
-		    Body;
-		{more, _} ->
-		    io:fwrite(user, "HTTP more...~n", []),
-		    http_recv_loop(S, Port, NewBuf)
-	    end;
+	    tcp_received(What, S, Port, Buf, St);
 	{'DOWN', _, _, _, _} ->
 	    exit(parent_died);  % we assume
 	{From, Ref, reset} ->
-	    io:fwrite(user, "got reset in recv_loop~n", []),
-	    throw(<<>>);
+	    io:fwrite(user, "RESET in recv_loop~n", []),
+	    From ! {Ref, reset},
+	    throw(reset);
+	{From, Ref, {reset, Opts}} ->
+	    From ! {Ref, reset},
+	    io:fwrite(user, "RESET in recv_loop~n", []),
+	    throw({reset, Opts});
 	{tcp_closed, S} ->
-	    throw(<<>>)
+	    throw(reset)
     end.
+
+tcp_received(What, S, Port, Buf, St) ->
+    %% io:fwrite(user, "HTTP recvd ~p; Buf = ~p~n", [What, Buf]),
+    NewBuf = <<Buf/binary, What/binary>>,
+    case erlang:decode_packet(http, NewBuf, []) of
+	{ok, {http_request,_,_,_}, Rest} ->
+	    [_, Body] = binary:split(Rest, <<"\r\n\r\n">>),
+	    %% io:fwrite(user, "HTTP (~p): ~p~n", [Port, Body]),
+	    case proplists:get_value(http_reply, St) of
+		undefined -> no_reply;
+		F when is_function(F, 1) ->
+		    Rep = F(Body),
+		    send_reply(S, Rep)
+	    end,
+	    Body;
+	{more, _} ->
+	    io:fwrite(user, "HTTP more...~n", []),
+	    http_recv_loop(S, Port, NewBuf, St)
+    end.
+
+
+send_reply(S, Reply) ->
+    gen_tcp:send(S, Reply),
+    gen_tcp:close(S).

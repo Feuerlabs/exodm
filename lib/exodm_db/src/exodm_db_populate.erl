@@ -58,8 +58,8 @@ run_rfzone_() ->
     exodm_db_device:new(AID,
 			<<"x00000001">>,
 			[
-			 {'__ck', <<2,0,0,0,0,0,0,0>>},
-			 {'__sk', <<1,0,0,0,0,0,0,0>>},
+			 {'device-key', <<2,0,0,0,0,0,0,0>>},
+			 {'server-key', <<1,0,0,0,0,0,0,0>>},
 			 {msisdn, <<"070100000000000">>},
 			 {groups, [GID]},
 			 {yang, <<"rfzone.yang">>}
@@ -87,8 +87,8 @@ create_device(AID, GID, 4711) ->
     exodm_db_device:new(AID,
                         <<"4711">>,
 			[
-			 {'__ck', <<2,0,0,0,0,0,0,0>>},
-			 {'__sk', <<1,0,0,0,0,0,0,0>>},
+			 {'device-key', <<2,0,0,0,0,0,0,0>>},
+			 {'server-key', <<1,0,0,0,0,0,0,0>>},
 			 {msisdn, <<"07014711">>},
 			 {group, {1, GID}},
 			 {yang, <<"rfzone.yang">>}
@@ -116,7 +116,7 @@ run_ga_tst() ->
 
 ga_dummy_devices(AID, GID) ->
     exodm_db:in_transaction(
-      fun(Db) ->
+      fun(_) ->
 	      ga_dummy_devices_(AID, GID)
       end).
 
@@ -126,8 +126,8 @@ ga_dummy_devices_(AID, GID) ->
 	     fun(DID0) ->
 		     DID = devid(DID0),
 		     exodm_db_device:new(AID, DID,
-					 [{'__ck',<<2,0,0,0,0,0,0,0>>},
-					  {'__sk',<<1,0,0,0,0,0,0,0>>},
+					 [{'device-key',<<2,0,0,0,0,0,0,0>>},
+					  {'server-key',<<1,0,0,0,0,0,0,0>>},
 					  {msisdn,"0701"++integer_to_list(DID0)},
 					  {groups, [GID]}
 					 ]),
@@ -181,8 +181,8 @@ run_ga_old_() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(?GA_CUSTOMER_ID, DID,
-				  [{'__ck',<<2,0,0,0,0,0,0,0>>},
-				   {'__sk',<<1,0,0,0,0,0,0,0>>},
+				  [{'device-key',<<2,0,0,0,0,0,0,0>>},
+				   {'server-key',<<1,0,0,0,0,0,0,0>>},
 				   {msisdn,"0701"++integer_to_list(DID)},
 				   {group, {1,2}}
 				  ]),
@@ -209,8 +209,8 @@ run_tony_() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(12, DID,
-				  [{'__ck',<<1:32, DID:32>>},
-				   {'__sk',<<2:32, DID:32>>},
+				  [{'device-key',<<1:32, DID:32>>},
+				   {'server-key',<<2:32, DID:32>>},
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
@@ -220,8 +220,8 @@ run_tony_() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(12, DID,
-				  [{'__ck',<<1:32, DID:32>>},
-				   {'__sk',<<2:32, DID:32>>},
+				  [{'device-key',<<1:32, DID:32>>},
+				   {'server-key',<<2:32, DID:32>>},
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {2, 2}}
 				  ]),
@@ -231,8 +231,8 @@ run_tony_() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(12, DID,
-				  [{'__ck',<<1:32, DID:32>>},
-				   {'__sk',<<2:32, DID:32>>},
+				  [{'device-key',<<1:32, DID:32>>},
+				   {'server-key',<<2:32, DID:32>>},
 				   {msisdn,"07012"++integer_to_list(DID)},
 				   {group, {1, 1}},
 				   {group, {2, 2}}
@@ -260,8 +260,8 @@ run_love_() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(13, DID,
-				  [{'__ck',<<1:32, DID:32>>},
-				   {'__sk',<<2:32, DID:32>>},
+				  [{'device-key',<<1:32, DID:32>>},
+				   {'server-key',<<2:32, DID:32>>},
 				   {msisdn,"07013"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
@@ -285,8 +285,8 @@ run_ulf_() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(14, DID,
-				  [{'__ck',<<1:32, DID:32>>},
-				   {'__sk',<<2:32, DID:32>>},
+				  [{'device-key',<<1:32, DID:32>>},
+				   {'server-key',<<2:32, DID:32>>},
 				   {msisdn,"07014"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),
@@ -310,8 +310,8 @@ run_marcus_() ->
     lists:foreach(
       fun(DID) ->
 	      exodm_db_device:new(15, DID,
-				  [{'__ck',<<1:32, DID:32>>},
-				   {'__sk',<<2:32, DID:32>>},
+				  [{'device-key',<<1:32, DID:32>>},
+				   {'server-key',<<2:32, DID:32>>},
 				   {msisdn,"07015"++integer_to_list(DID)},
 				   {group, {1, 1}}
 				  ]),

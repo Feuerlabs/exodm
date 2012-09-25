@@ -7,11 +7,16 @@
 
 -module(exodm_db_group).
 
--export([new/2, update/3, lookup/2, lookup/1, exist/2, exist/1,
-	 delete/2]).
--export([list_group_keys/1, list_group_keys/2]).
--export([fold_groups/3, fold_groups/4]).
--export([key/2, tab_and_key/1]).
+-export([init/1]).
+-export([new/2,
+	 update/3,
+	 lookup/2, lookup/3,
+	 exist/2,
+	 delete/2,
+	 add_device/3,
+	 remove_device/3,
+	 list_devices/2, list_devices/4]).
+-export([list_group_keys/2, list_group_keys/3]).
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
 %%
@@ -19,122 +24,160 @@
 %% /<aid>/groups/<gid>/url   = <MSISDN>
 %%
 
-%% FIXME option validation
-new(AID, Options) ->
+init(AID) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      new(AID, exodm_db_account:new_group_id(AID), Options)
+	      Tab = table(AID),
+	      kvdb_conf:add_table(Tab, []),
+	      exodm_db:write(Tab, <<"__last_gid">>, <<0:32>>)
       end).
 
-new(AID, GID, Options) ->
-    Key = key(AID, GID),
-    case read(Key, name) of
+table(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    <<AID/binary, "_grp">>.
+
+%% FIXME option validation
+new(AID0, Options) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      new(AID, new_group_id(AID), Options)
+      end).
+
+new_group_id(AID) ->
+    exodm_db:update_counter(table(AID), <<"__last_gid">>, 1).
+
+new(AID, GID0, Options) ->
+    Tab = table(AID),
+    GID = exodm_db:group_id_key(GID0),
+    case read(Tab, GID, name) of
 	[] ->
 	    Name = binary_opt(name, Options),
-	    insert(Key,name,     Name),
-	    insert(Key,url,      binary_opt(url,  Options)),
+	    insert(Tab, GID, name,     Name),
+	    insert(Tab, GID, url,      binary_opt(url,  Options)),
 	    {ok, gid_value(GID)};
 	[_] ->
 	    {error, exists}
     end.
 
 %% FIXME validate every item BEFORE insert!
-update(AID, GID, Options) ->
+update(AID0, GID0, Options) ->
+    AID = exodm_db:account_id_key(AID0),
+    GID = exodm_db:group_id_key(GID0),
     exodm_db:in_transaction(
       fun(_) ->
 	      update_(AID, GID, Options)
       end).
 
 update_(AID, GID, Options) ->
-    Key = key(AID, GID),
-    case read(Key, name) of
+    Tab = table(AID),
+    case read(Tab, GID, name) of
 	[] ->
 	    {error, not_found};
 	[{_, Name0}] ->
-	    Key = key(AID, GID),
 	    lists:foreach(
 	      fun
 		  ({name,Value}) ->
 		      case to_binary(Value) of
 			  Name0 -> ok;
 			  NewName ->
-			      insert(Key,name,NewName),
-			      exodm_db_system:set_gid_user(GID, NewName)
+			      insert(Tab,GID,name,NewName)
 		      end;
 		  ({url,Value}) ->
-		      insert(Key,url,to_binary(Value))
+		      insert(Tab,GID,url,to_binary(Value))
 	      end, Options)
     end.
 
-delete(AID, GID) ->
+delete(AID0, GID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    GID = exodm_db:group_id_key(GID0),
     exodm_db:in_transaction(
       fun(_) ->
 	      delete_(AID, GID)
       end).
 
 delete_(AID, GID) ->
-    Key = key(AID, GID),
-    case exist(Key) of
+    Tab = table(AID),
+    case exist(Tab, GID) of
 	true ->
-	    kvdb_conf:delete_all(table(), Key);
+	    kvdb_conf:delete_all(Tab, GID);
 	false ->
 	    {error, not_found}
     end.
 
-lookup(AID, GID) ->
-    lookup(key(AID, GID)).
+lookup(AID0, GID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    GID = exodm_db:group_id_key(GID0),
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      [{id,gid_value(GID)}] ++
+		  read(Tab, GID, name) ++
+		  read(Tab, GID, url)
+      end).
 
-lookup(Key) ->
-    GID = lists:last(exodm_db:split_key(Key)),
-    [{id,gid_value(GID)}] ++
-	read(Key,name) ++
-	read(Key, url).
+lookup(AID0, GID0, Attr) when Attr==name; Attr==url ->
+    AID = exodm_db:account_id_key(AID0),
+    GID = exodm_db:group_id_key(GID0),
+    Tab = table(AID),
+    read(Tab, GID, Attr).
 
-exist(AID, GID) ->
-    exist(key(AID, GID)).
-
-exist(Key) ->
-    case read(Key,name) of
+exist(AID, GID0) ->
+    Tab = table(AID),
+    GID = exodm_db:group_id_key(GID0),
+    case read(Tab,GID,name) of
 	[] -> false;
 	[_] -> true
     end.
 
-list_group_keys(AID) ->
-    list_group_keys(AID, 30).
-
 list_group_keys(AID, Limit) ->
-    lists:reverse(fold_groups(fun(GID, Acc) ->
-				      [GID|Acc]
-			      end, [], AID, Limit)).
+    list_group_keys(AID, Limit, <<>>).
 
-fold_groups(F, Acc, AID) ->
-    fold_groups(F, Acc, AID, 30).
+list_group_keys(AID, Limit, Prev0) when is_integer(Limit), Limit > 0 ->
+    %% The __last_gid is a non-group object in this table, and will always
+    %% lie before all group IDs (which are of the form "g........").
+    Prev = erlang:max(to_binary(Prev0), <<"__last_gid">>),
+    exodm_db:list_next(table(AID), Limit, Prev, fun(K) -> K end).
 
-fold_groups(F, Acc, AID0, Limit) when
-      Limit==infinity; is_integer(Limit), Limit > 0 ->
-    AID = exodm_db:account_id_key(AID0),
-    kvdb_conf:fold_children(
-      table(), F, Acc, exodm_db:join_key(AID, <<"groups">>)).
+add_device(AID0, GID0, DID) ->
+    {Tab, GID} = tab_and_gid(AID0, GID0),
+    Key = exodm_db:join_key([GID, <<"devices">>, DID]),
+    kvdb_conf:write(Tab, {Key, [], <<>>}).
+
+remove_device(AID0, GID0, DID) ->
+    {Tab, GID} = tab_and_gid(AID0, GID0),
+    Key = exodm_db:join_key([GID, <<"devices">>, DID]),
+    kvdb_conf:delete(Tab, Key).
+
+list_devices(AID, GID) ->
+    list_devices(AID, GID, 30, <<>>).
+
+list_devices(AID0, GID0, Limit, Prev0) when is_integer(Limit), Limit > 0 ->
+    {Tab, GID} = tab_and_gid(AID0, GID0),
+    F = fun(K) -> lists:last(kvdb_conf:split_key(K)) end,
+    case to_binary(Prev0) of
+	<<>> ->
+	    exodm_db:n_children(
+	      Tab, Limit, exodm_db:join_key(GID, <<"devices">>), F);
+	PrevDevice ->
+	    Prev = exodm_db:join_key([GID, <<"devices">>, PrevDevice]),
+	    exodm_db:list_next(Tab, Limit, Prev, F)
+    end.
 
 %% utils
 
-table() ->
-    exodm_db_account:table().
+insert(Tab, GID, Item, Value) ->
+    Key = exodm_db:join_key(GID, to_binary(Item)),
+    exodm_db:write(Tab, Key, Value).
 
-key(AID, GID) ->
-    exodm_db_account:group_key(AID, GID).
+tab_and_gid(AID0, GID0) ->
+    Tab = table(exodm_db:account_id_key(AID0)),
+    GID = exodm_db:group_id_key(GID0),
+    {Tab, GID}.
 
-tab_and_key(AID) ->
-    {table(),
-     exodm_db:join_key(exodm_db:account_id_key(AID), <<"groups">>)}.
-
-insert(Key, Item, Value) ->
-    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
-    exodm_db:write(exodm_db_account:table(), Key1, Value).
-
-read(Key,Item) ->
-    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
-    case exodm_db:read(exodm_db_account:table(), Key1) of
+read(Tab, GID,Item) ->
+    Key = exodm_db:join_key(GID, to_binary(Item)),
+    case exodm_db:read(Tab, Key) of
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []
     end.

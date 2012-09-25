@@ -6,6 +6,8 @@
 -define(USER_REPOSITORY, <<"user">>).
 -define(SYSTEM_REPOSITORY, <<"system">>).
 
+-define(EXO(M), (M==exodm orelse M==exosense)).
+
 result_code(ok) ->
     [{result, <<"ok">>}];
 
@@ -31,15 +33,14 @@ json_rpc(RPC, Env) ->
 
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'create-config-data',
+	   {call, M, 'create-config-data',
 	    [{'config-data', N},
 	     {yang, Y},
-	     {protocol, P},
-	     {values, JSON}]}} = _RPC, _Env) ->
-    ?debug("~p:json_rpc(create-config-data) config-data:~p yang:~p protocol:~p values:~p~n",
-           [ ?MODULE, N, Y, P, JSON ]),
+	     {values, JSON}]}} = _RPC, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(create-config-data) config-data:~p yang:~p "
+	   "values:~p~n", [?MODULE, N, Y, JSON]),
     AID = exodm_db_session:get_aid(),
-    try exodm_db_config:new_config_data(AID, N, Y, P, JSON) of
+    try exodm_db_config:new_config_data(AID, N, Y, JSON) of
 	{ok, _} ->
 	    ?debug("new_config_data(...) -> ok~n", []),
 	    {ok, result_code(ok)}
@@ -51,9 +52,9 @@ json_rpc_({request, _ReqEnv,
 
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'update-config-data',
+	   {call, M, 'update-config-data',
 	    [{'config-data', C},
-	     {values, JSON}]}} = RPC, _Env) ->
+	     {values, JSON}]}} = RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(update-config-data) config-data:~p values:~p~n",
            [ ?MODULE, C, JSON ]),
 
@@ -70,11 +71,13 @@ json_rpc_({request, _ReqEnv,
 
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'create-yang-module',
+	   {call, M, 'create-yang-module',
 	    [{repository, R},
 	     {name, N},
-	     {'yang-module', Y}]}} = _RPC, _Env) when R =:= ?USER_REPOSITORY->
-    ?debug("~p:json_rpc(create-yang-module) repository:~p name:~p~n", [ ?MODULE, R, N ]),
+	     {'yang-module', Y}]}} = _RPC, _Env) when R =:= ?USER_REPOSITORY,
+						      ?EXO(M) ->
+    ?debug("~p:json_rpc(create-yang-module) repository:~p name:~p~n",
+	   [ ?MODULE, R, N ]),
     Res = exodm_db_yang:write(N, Y),
     io:format("YANG_RES: ~p\n", [ Res]),
     case Res of
@@ -94,24 +97,24 @@ json_rpc_({request, _ReqEnv,
 
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'provision-device',
+	   {call, M, 'provision-device',
 	    [{'dev-id', I},
-             {'server-key', SK},
-             {'device-key', DK}]}} = _RPC, _Env) ->
-    ?debug("~p:json_rpc(provision-device) dev-id:~p server-key:~p device-key:~p~n",
-           [ ?MODULE, I, SK, DK ]),
+	     {'protocol', P} |
+	     Opts]}} = _RPC, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(provision-device) dev-id:~p "
+	   "protocol:~p Optional:~p~n", [?MODULE, I, P, Opts]),
 
-    exodm_db_device:new(exodm_db_session:get_aid(), I, [{'__ck', <<DK:64/little>>},
-                                                        {'__sk', <<SK:64/little>>}]),
+    exodm_db_device:new(exodm_db_session:get_aid(), I,
+			[{'protocol', P}|Opts]),
     {ok, result_code(ok)};
 
 
 
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'add-config-data-members',
+	   {call, M, 'add-config-data-members',
 	    [{'config-data', CfgDataList},
-             {'dev-id', DevIdList}]}} = _RPC, _Env) ->
+             {'dev-id', DevIdList}]}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(add-config-data-members) dev-id:~p config-data:~p~n",
            [ ?MODULE, CfgDataList, DevIdList ]),
     AID = exodm_db_session:get_aid(),
@@ -127,9 +130,9 @@ json_rpc_({request, _ReqEnv,
     end;
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'add-device-group-members',
+	   {call, M, 'add-device-group-members',
 	    [{'device-groups', Groups},
-	     {'dev-id', DIDs}]}} = _RPC, _Env) ->
+	     {'dev-id', DIDs}]}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(add-device-group-members) dev-id:~p groups:~p~n",
            [ ?MODULE, DIDs, Groups ]),
     AID = exodm_db_session:get_aid(),
@@ -145,8 +148,8 @@ json_rpc_({request, _ReqEnv,
     end;
 
 json_rpc_({request, ReqEnv,
-	   {call, exodm, 'push-config-data',
-	    [{'config-data', Cfg}]}} = _RPC, _Env) ->
+	   {call, M, 'push-config-data',
+	    [{'config-data', Cfg}]}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(push-config-data) config-data:~p ~n", [?MODULE, Cfg]),
     TID = proplists:get_value(transaction_id, ReqEnv),
     AID = exodm_db_session:get_aid(),
@@ -181,10 +184,10 @@ json_rpc_({request, ReqEnv,
       end);
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'provision-device',
+	   {call, M, 'provision-device',
 	    [{'device-id', DID},
 	     {'server-key', SKey},
-	     {'device-key', DKey}] = _Cfg}} = _RPC, _Env) ->
+	     {'device-key', DKey}] = _Cfg}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(provision-device) config-data:~p ~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
@@ -196,9 +199,9 @@ json_rpc_({request, _ReqEnv,
     {ok, result_code(ok)};
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'create-device-group',
+	   {call, M, 'create-device-group',
 	    [{'name', GName},
-	     {'notification-url', URL}] = _Cfg}} = _RPC, _Env) ->
+	     {'notification-url', URL}] = _Cfg}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(create-device-group) config: ~p~n", [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
     {ok, GID} = exodm_db_group:new(AID, [{name, GName},
@@ -206,8 +209,8 @@ json_rpc_({request, _ReqEnv,
     {ok, result_code(ok) ++ [{gid, to_uint32(exodm_db:group_id_value(GID))}]};
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'update-device-group',
-	    [{'gid', GID}|Values] = _Cfg}} = _RPC, _Env) ->
+	   {call, M, 'update-device-group',
+	    [{'gid', GID}|Values] = _Cfg}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(change-notification-url) config: ~p~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
@@ -221,8 +224,8 @@ json_rpc_({request, _ReqEnv,
     end;
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'delete-device-group',
-	    [{'gid', GID}] = _Cfg}} = _RPC, _Env) ->
+	   {call, M, 'delete-device-group',
+	    [{'gid', GID}] = _Cfg}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(delete-device-group) config: ~p~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
@@ -233,8 +236,8 @@ json_rpc_({request, _ReqEnv,
     end;
 
 json_rpc_({request, _ReqEnv,
-	   {call, exodm, 'list-device-groups',
-	    [{n, N}, {previous, Prev}] = _Cfg}} = _RPC, _Env) ->
+	   {call, M, 'list-device-groups',
+	    [{n, N}, {previous, Prev}] = _Cfg}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(delete-device-group) config: ~p~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),

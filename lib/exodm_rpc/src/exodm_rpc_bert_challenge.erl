@@ -50,9 +50,10 @@ incoming(Data, St) ->
 keys(ID) ->
     R = case exodm_db_device:dec_ext_key(ID) of
 	    {AID, DID} ->
-		case exodm_db_device:lookup_attr(AID, DID, '__sk') of
+		case exodm_db_device:lookup_attr(AID, DID, 'server-key') of
 		    [{_, Sk}] ->
-			case exodm_db_device:lookup_attr(AID, DID, '__ck') of
+			case exodm_db_device:lookup_attr(
+			       AID, DID, 'device-key') of
 			    [{_, Ck}] -> {Sk, Ck};
 			    _ -> error
 			end;

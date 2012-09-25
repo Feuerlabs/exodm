@@ -346,12 +346,6 @@ module exodm {
                     length "1..32";
                 }
             }
-            leaf protocol {
-                description "Name of the ExoDM protocol used to talk to the device.";
-                type string {
-                    length "1..32";
-                }
-            }
             anyxml values {
                 description "Configuration values (validated against the yang spec)";
             }
@@ -389,22 +383,49 @@ module exodm {
         description "Create a new device. augment this call if you want to add device-data";
         input {
             leaf dev-id {
-                description "Account-wide unqiue device-id";
-                type string {
-                    length "1..64";
-                }
+	      description "Account-wide unqiue device-id";
+	      type string {
+		length "1..64";
+	      }
+	      mandatory true;
             }
+	    leaf protocol {
+	      description "Protocol between device and Exosense server";
+	      type string;
+	      mandatory true;
+	    }
+	    leaf description {
+	      description "User-provided description of device";
+	      type string;
+	    }
             leaf server-key {
-                description "Server key";
-                type uint64;
+	      description "Server key";
+	      type uint64;
             }
             leaf device-key {
-                description "Device key";
-                type uint64;
+	      description "Device key";
+	      type uint64;
             }
 	    leaf msisdn {
 	      type string;
-	      mandatory false;
+	    }
+	    leaf imsi {
+	      type string;
+	    }
+	    leaf imei {
+	      type string;
+	    }
+	    leaf latitude {
+	      description "Latitude of device location";
+	      type decimal64 {
+		fraction-digits 6;
+	      }
+	    }
+	    leaf longitude {
+	      description "Longitude of device location";
+	      type decimal64 {
+		fraction-digits 6;
+	      }
 	    }
         }
 

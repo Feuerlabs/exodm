@@ -9,13 +9,11 @@
 
 -export([init/1]).
 -export(
-   [new_config_data/5,          %% (AID, Name, Yang, Protocol, Values)
+   [new_config_data/4,          %% (AID, Name, Yang, Values)
     update_config_data/3,       %% (AID, Name0, Values)
     read_config_data/2,         %% (AID, Name)
     read_config_data_values/2,  %% (AID, Name)
     get_yang_spec/2,            %% (AID, Name)
-    get_protocol/2,             %% (AID, Name) -> (AID, Name, <<"exodm_bert">>)
-    get_protocol/3,             %% (AID, Name, Default)
     delete_config_data/2,       %% (AID, Name)
     create_yang_module/4,       %% (AID, <<"user">>|<<"system">>, File, Yang)
     add_config_data_members/3,  %% (AID, CfgDataName, [DeviceID])
@@ -48,7 +46,7 @@ cache(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     <<AID/binary, "_conf_cache">>.
 
-new_config_data(AID, Name0, Yang0, Protocol, Values) ->
+new_config_data(AID, Name0, Yang0, Values) ->
     Tab = table(AID),
     Name = to_binary(Name0),
     Yang = to_binary(Yang0),
@@ -59,10 +57,9 @@ new_config_data(AID, Name0, Yang0, Protocol, Values) ->
 		  true ->
 		      error(exists);
 		  false ->
-		      validate_config(Tab, AID, Yang, Protocol, Values),
+		      validate_config(Tab, AID, Yang, Values),
 		      write(Tab, NameKey, <<"name">>, Name),
 		      write(Tab, NameKey, <<"yang">>, Yang),
-		      write(Tab, NameKey, <<"protocol">>, Protocol),
 		      ValsToWrite = value_tree(NameKey, Values),
 		      %% write_values(Tab, NameKey, Values),
 		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
@@ -77,7 +74,6 @@ update_config_data(AID, Name0, Values) ->
     Tab = table(AID),
     Name = to_binary(Name0),
     NameKey = exodm_db:encode_id(Name),
-    Protocol = get_protocol(AID, Name0),
     case get_yang_spec(AID, NameKey) of
         {ok, YangSpec} ->
             exodm_db:transaction(
@@ -86,7 +82,7 @@ update_config_data(AID, Name0, Values) ->
                           true ->
 			      CT = kvdb_conf:read_tree(Tab, NameKey),
                               validate_config(
-				Tab, AID, YangSpec, Protocol, Values),
+				Tab, AID, YangSpec, Values),
 			      ValsToWrite =
 				  update_value_tree(Values, CT),
 			      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
@@ -126,19 +122,6 @@ get_yang_spec(AID, Name) ->
 	    {ok, Y};
 	{error, _} = E ->
 	    E
-    end.
-
-get_protocol(AID, Name) ->
-    get_protocol(AID, Name, <<"exodm_bert">>).
-
-get_protocol(AID, Name, Default) ->
-    Tab = table(AID),
-    NameKey = exodm_db:encode_id(Name),
-    case exodm_db:read(Tab, exodm_db:join_key(NameKey, <<"protocol">>)) of
-	{ok, {_, _, P}} ->
-	    P;
-	{error, _} ->
-	    Default
     end.
 
 read_config_data_values(AID, Name) ->
@@ -301,7 +284,7 @@ exists(Tab, Name) ->
 	    true
     end.
 
-validate_config(_Tab, _AID, _Yang, _Protocol, _Values) ->
+validate_config(_Tab, _AID, _Yang, _Values) ->
     %% We don't yet do any validation. FIXME
     ok.
 
