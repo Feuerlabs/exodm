@@ -159,7 +159,8 @@ write_(AID0, File0, Y) ->
 	{ok, [{module,_,_,_} = Module]} ->
 	    RPCs = case yang_json:json_rpc(File, Opts) of
 		       [{module,_,RPCs1}] -> RPCs1;
-		       _ -> []
+                       {error, _} = Error ->
+                           error(Error, [File])
 		   end,
 	    store(AID, File, Module, RPCs, Y);
         {ok, [{submodule,_,_,_} = SubMod]} ->
