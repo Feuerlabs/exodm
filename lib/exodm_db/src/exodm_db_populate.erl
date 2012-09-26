@@ -89,6 +89,7 @@ create_device(AID, GID, 4711) ->
 			[
 			 {'device-key', <<2,0,0,0,0,0,0,0>>},
 			 {'server-key', <<1,0,0,0,0,0,0,0>>},
+			 {'protocol', <<"ga_ck3">>},
 			 {msisdn, <<"07014711">>},
 			 {group, {1, GID}},
 			 {yang, <<"rfzone.yang">>}
@@ -102,9 +103,9 @@ run_ga_(Db) ->
     {ok, GID} = create_group(ga, AID),
     store_ck3_yang(Db),
     {ok,_} = exodm_db_config:new_config_data(
-	       AID, <<"ck3">>, <<"ckp.yang">>, <<"ga_ck3">>, []),
+	       AID, <<"ck3">>, <<"ckp.yang">>,[]),
     {ok,_} = exodm_db_config:new_config_data(
-	       AID, <<"ck3_exo">>, <<"exosense.yang">>, <<"ga_ck3">>, []),
+	       AID, <<"ck3_exo">>, <<"exosense.yang">>, []),
     {ok, AID, GID}.
 
 run_ga_tst() ->
@@ -126,7 +127,8 @@ ga_dummy_devices_(AID, GID) ->
 	     fun(DID0) ->
 		     DID = devid(DID0),
 		     exodm_db_device:new(AID, DID,
-					 [{'device-key',<<2,0,0,0,0,0,0,0>>},
+					 [{'protocol', <<"ga_ck3">>},
+					  {'device-key',<<2,0,0,0,0,0,0,0>>},
 					  {'server-key',<<1,0,0,0,0,0,0,0>>},
 					  {msisdn,"0701"++integer_to_list(DID0)},
 					  {groups, [GID]}

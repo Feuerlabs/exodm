@@ -165,7 +165,7 @@ write_(AID0, File0, Y) ->
         {ok, [{submodule,_,_,_} = SubMod]} ->
             store(AID, File, SubMod, [], Y);
 	{error,_} = Error ->
-	    Error
+	    error(Error, [Y])
     end.
 
 check_access(read, system) -> ok;

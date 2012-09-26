@@ -95,11 +95,11 @@ insert_keys(Tab,DID, Options) ->
 	   end,
     case Lkup('device-key', '__ck') of
 	undefined ->  ok;
-	DK -> insert(Tab,DID,'device-key', DK)
+	DK -> insert(Tab,DID,'device-key', exodm_db:uint64_bin(DK))
     end,
     case Lkup('server-key', '__sk') of
 	undefined ->  ok;
-	SK -> insert(Tab,DID,'server-key', SK)
+	SK -> insert(Tab,DID,'server-key', exodm_db:uint64_bin(SK))
     end.
 
 
@@ -149,7 +149,7 @@ insert_protocol(Tab, DID, Protocol) ->
 	undefined ->
 	    error(unknown_protocol, [Protocol]);
 	_ ->
-	    insert(Tab, DID, protocol, Protocol)
+	    insert(Tab, DID, protocol, to_binary(Protocol))
     end.
 
 delete(AID0, DID0) ->
