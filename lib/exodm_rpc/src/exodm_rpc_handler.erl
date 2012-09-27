@@ -90,12 +90,14 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 	{ok, DID} ->
 	    ?debug("found device-id: ~p~n", [DID]),
 	    case find_method_spec(Method, AID, DID) of
-		{ok, Yang, Module, ShortMeth, Protocol, Spec} ->
+		{ok, Yang, Module, ShortMeth, Protocol, URL, Spec} ->
 		    ?info("Method spec (~p): ~p~n"
 			   "Module = ~p~n", [Method, Spec, Module]),
-		    Env1 = [{yang, Yang},
-			    {'device-id', DID},
-			    {protocol, Protocol}|Env0],
+		    Env1 =
+			[{yang, Yang},
+			 {'device-id', DID}] ++
+			[{'notification-url', URL} || URL =/= <<>>] ++
+			[{protocol, Protocol}|Env0],
 		    case validate_request(
 			   ShortMeth, Module, Request, Spec) of
 			{verified, {request, Attrs, _} = RPC} ->
@@ -116,12 +118,13 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 	    %% specs. Otherwise, it's an error.
 	    ?debug("no device-id~n", []),
 	    case is_exodm_method(Method, AID) of
-		{ok, Yang, Module, ShortMeth, Protocol, Spec} ->
+		{ok, Yang, Module, ShortMeth, Protocol, URL, Spec} ->
 		    ?debug("ExoDM method spec (~p): ~p~n"
 			   "Module = ~p; ShortM = ~p~n",
 			   [Method, Spec, Module, ShortMeth]),
 		    Env1 = [{yang, Yang},
-			    {protocol, Protocol}|Env0],
+			    {protocol, Protocol}]
+			++ [{'notification-url', URL} || URL =/= <<>>] ++ Env0,
 		    case validate_request(
 			   ShortMeth, Module, Request, Spec) of
 			{verified, RPC} ->
@@ -169,6 +172,13 @@ notification(Method, Elems, Env, AID, DID) ->
     ?debug("notification(~p, ~p, ~p, ~p, ~p)~n",
 	   [Method, Elems, Env, AID, DID]),
     {_, Yang} = lists:keyfind(yang, 1, Env),
+    YangSpecs = exodm_db_device:yang_modules(AID, DID),
+    URLEnv = case lists:keyfind(Yang, 2, YangSpecs) of
+		 {_, _, URL} when URL =/= <<>> ->
+		     [{'notification-url', URL}];
+		 _ ->
+		     []
+	     end,
     case exodm_db_yang:rpcs(Yang) of
 	[] ->
 	    error({no_rpcs, Yang});
@@ -185,7 +195,7 @@ notification(Method, Elems, Env, AID, DID) ->
 		    JSON = {struct, lists:keyreplace("params", 1, SubSpec,
 						     {"params", NewParams})},
 		    ?debug("JSON = ~p~n", [JSON]),
-		    post_json(Env, JSON);
+		    post_json(URLEnv ++ Env, JSON);
 		{_, {_Descr, {request, {struct,SubSpec}}, {reply, _}} = RPC} ->
 		    {_, Params} = lists:keyfind("params", 1, SubSpec),
 		    ?debug("Northbound RPC = ~p~n", [RPC]),
@@ -196,7 +206,7 @@ notification(Method, Elems, Env, AID, DID) ->
 						  {"id", make_id(Env, AID)}),
 		    JSON = {struct, JSONElems2},
 		    ?debug("JSON = ~p~n", [JSON]),
-		    post_json(Env, JSON)
+		    post_json(URLEnv ++ Env, JSON)
 	    end
     end,
     ok.
@@ -290,12 +300,15 @@ find_method_spec_(Module, Specs, Method, Protocol) ->
     case lists:keyfind(Yang, 2, Specs) of
 	{_CfgName, _Y} = _Found ->
 	    ?debug("found spec = ~p~n", [_Found]),
-	    find_method_rpcs_(Yang, Module, Method, Protocol);
+	    find_method_rpcs_(Yang, Module, Method, Protocol, <<>>);
+	{_CfgName, _Y, URL} = _Found ->
+	    ?debug("found spec = ~p~n", [_Found]),
+	    find_method_rpcs_(Yang, Module, Method, Protocol, URL);
 	false ->
 	    error
     end.
 
-find_method_rpcs_(Yang, Module, Method, Protocol) ->
+find_method_rpcs_(Yang, Module, Method, Protocol, URL) ->
     case exodm_db_yang:rpcs(Yang) of
 	[] ->
 	    io:fwrite("No RPCs for ~p~n", [Yang]),
@@ -308,10 +321,10 @@ find_method_rpcs_(Yang, Module, Method, Protocol) ->
 		{_, RPC} ->
 		    io:fwrite("Method found: Mod = ~p;~n  RPC = ~P~n",
 			      [Module,RPC,5]),
-		    {ok, Yang, Module, Method, Protocol, RPC};
+		    {ok, Yang, Module, Method, Protocol, URL, RPC};
 		false ->
 		    case lists:keyfind(binary_to_list(Method),1,Spec) of
-			{_,RPC} -> {ok, Module, Method, Protocol, RPC};
+			{_,RPC} -> {ok, Module, Method, Protocol, URL, RPC};
 			false   -> error
 		    end
 	    end

@@ -33,16 +33,17 @@ json_rpc(RPC, Env) ->
 
 
 json_rpc_({request, _ReqEnv,
-	   {call, M, 'create-config-data',
-	    [{'config-data', N},
+	   {call, M, 'create-config-set',
+	    [{'name', N},
 	     {yang, Y},
-	     {values, JSON}]}} = _RPC, _Env) when ?EXO(M) ->
-    ?debug("~p:json_rpc(create-config-data) config-data:~p yang:~p "
-	   "values:~p~n", [?MODULE, N, Y, JSON]),
+	     {'notification-url', URL},
+	     {values, JSON}] = Attrs}} = _RPC, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(create-config-set) name:~p yang:~p "
+	   "URL: ~p values:~p~n", [?MODULE, N, Y, URL, JSON]),
     AID = exodm_db_session:get_aid(),
-    try exodm_db_config:new_config_data(AID, N, Y, JSON) of
+    try exodm_db_config:new_config_set(AID, Attrs) of
 	{ok, _} ->
-	    ?debug("new_config_data(...) -> ok~n", []),
+	    ?debug("new_config_set(...) -> ok~n", []),
 	    {ok, result_code(ok)}
     catch error:E ->
 	    ?debug("RPC = ~p; ERROR = ~p~n",
@@ -52,16 +53,15 @@ json_rpc_({request, _ReqEnv,
 
 
 json_rpc_({request, _ReqEnv,
-	   {call, M, 'update-config-data',
-	    [{'config-data', C},
-	     {values, JSON}]}} = RPC, _Env) when ?EXO(M) ->
-    ?debug("~p:json_rpc(update-config-data) config-data:~p values:~p~n",
-           [ ?MODULE, C, JSON ]),
+	   {call, M, 'update-config-set',
+	    [{'name', C}|Opts]}} = RPC, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(update-config-set) name:~p opts:~p~n",
+           [ ?MODULE, C, Opts ]),
 
     AID = exodm_db_session:get_aid(),
-    case exodm_db_config:update_config_data(AID, C, JSON) of
+    case exodm_db_config:update_config_set(AID, C, Opts) of
 	{ok, _} ->
-	    ?debug("set_config_data(...) -> ok~n", []),
+	    ?debug("update_config_set(...) -> ok~n", []),
 	    {ok, result_code(ok)};
 
         {error, Error} ->
@@ -112,10 +112,10 @@ json_rpc_({request, _ReqEnv,
 
 
 json_rpc_({request, _ReqEnv,
-	   {call, M, 'add-config-data-members',
-	    [{'config-data', CfgDataList},
+	   {call, M, 'add-config-set-members',
+	    [{'name', CfgDataList},
              {'dev-id', DevIdList}]}} = _RPC, _Env) when ?EXO(M) ->
-    ?debug("~p:json_rpc(add-config-data-members) dev-id:~p config-data:~p~n",
+    ?debug("~p:json_rpc(add-config-set-members) dev-id:~p config-set:~p~n",
            [ ?MODULE, CfgDataList, DevIdList ]),
     AID = exodm_db_session:get_aid(),
 
@@ -148,9 +148,9 @@ json_rpc_({request, _ReqEnv,
     end;
 
 json_rpc_({request, ReqEnv,
-	   {call, M, 'push-config-data',
-	    [{'config-data', Cfg}]}} = _RPC, _Env) when ?EXO(M) ->
-    ?debug("~p:json_rpc(push-config-data) config-data:~p ~n", [?MODULE, Cfg]),
+	   {call, M, 'push-config-set',
+	    [{'name', Cfg}]}} = _RPC, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(push-config-set) config-set:~p ~n", [?MODULE, Cfg]),
     TID = proplists:get_value(transaction_id, ReqEnv),
     AID = exodm_db_session:get_aid(),
     User = exodm_db_session:get_user(),
@@ -159,15 +159,14 @@ json_rpc_({request, ReqEnv,
 	      case exodm_db_config:list_config_data_members(AID, Cfg) of
 		  [_|_] = Devices ->
 		      {ok, Yang} = exodm_db_config:get_yang_spec(AID, Cfg),
-		      {ok, Proto} = exodm_db_config:get_protocol(AID, Cfg),
 		      Module = filename:basename(Yang, ".yang"),
 		      {ok, Ref} = exodm_db_config:cache_values(AID, Cfg),
 		      RPC = {request, [{'transaction-id', TID}],
 			     {call, binary_to_atom(Module, [latin1]),
-			      'push-config-data',
-			      [{'config-data', Cfg},
+			      'push-config-set',
+			      [{'name', Cfg},
 			       {'reference', Ref}]}},
-		      Env = [{aid, AID}, {user, User}, {protocol, Proto}],
+		      Env = [{aid, AID}, {user, User}],
 		      lists:foreach(
 			fun(DID) ->
 				exodm_db_config:map_device_to_cached_values(
@@ -188,7 +187,7 @@ json_rpc_({request, _ReqEnv,
 	    [{'device-id', DID},
 	     {'server-key', SKey},
 	     {'device-key', DKey}] = _Cfg}} = _RPC, _Env) when ?EXO(M) ->
-    ?debug("~p:json_rpc(provision-device) config-data:~p ~n",
+    ?debug("~p:json_rpc(provision-device) attributes:~p ~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
     exodm_db:in_transaction(

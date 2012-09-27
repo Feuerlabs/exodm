@@ -211,7 +211,8 @@ yang_modules(AID0, DID0) ->
 	      lists:map(
 		fun(Name) ->
 			{ok, Y} = exodm_db_config:get_yang_spec(AID, Name),
-			{Name, Y}
+			{ok, URL} = exodm_db_config:get_url(AID, Name),
+			{Name, Y, URL}
 		end, CDs)
       end).
 
@@ -433,6 +434,8 @@ add_groups(AID, DID0, Groups) ->
 	      insert_groups(AID, Tab, Last+1, DID, ToAdd)
       end).
 
+remove_groups(AID, DID0, Groups) ->
+    foo.
 
 gid_value(GID) ->
     <<(exodm_db:group_id_num(GID)):32>>.

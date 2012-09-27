@@ -207,10 +207,10 @@ pop_and_dispatch_(From, Db, Tab, Q, Sessions) ->
 	{ok, {_, Env, Req} = Entry} ->
 	    ?debug("POP: Entry = ~p~n", [Entry]),
 	    set_user(Env, Db),
-	    {_, Protocol} = lists:keyfind(protocol, 1, Env),
+	    {AID, DID} = exodm_db_device:dec_ext_key(Q),
+	    Protocol = exodm_db_device:protocol(AID, DID),
 	    case lists:keyfind(Protocol, 2, Sessions) of
 		{Pid, _} ->
-		    {AID, DID} = exodm_db_device:dec_ext_key(Q),
 		    Mod = exodm_rpc_protocol:module(Protocol),
 		    ?debug("Calling ~p:dispatch(~p, ~p, ~p, ~p)~n",
 			   [Mod, Env, AID, DID, Pid]),

@@ -10,10 +10,13 @@
 -export([init/1]).
 -export(
    [new_config_data/4,          %% (AID, Name, Yang, Values)
+    new_config_set/2,           %% (AID, Options)
     update_config_data/3,       %% (AID, Name0, Values)
+    update_config_set/3,        %% (AID, Name, Options)
     read_config_data/2,         %% (AID, Name)
     read_config_data_values/2,  %% (AID, Name)
     get_yang_spec/2,            %% (AID, Name)
+    get_url/2,                  %% (AID, Name)
     delete_config_data/2,       %% (AID, Name)
     create_yang_module/4,       %% (AID, <<"user">>|<<"system">>, File, Yang)
     add_config_data_members/3,  %% (AID, CfgDataName, [DeviceID])
@@ -25,7 +28,10 @@
    ]).
 -export([table/1]).
 
+-import(exodm_db, [binary_opt/2]).
+
 -include_lib("kvdb/include/kvdb_conf.hrl").
+-include_lib("lager/include/log.hrl").
 
 %%
 %% /u<UID>/devices/x<DID>/config/<target>/<tree>
@@ -67,10 +73,54 @@ new_config_data(AID, Name0, Yang0, Values) ->
 	      end
       end).
 
+new_config_set(AID, Opts) ->
+    Tab = table(AID),
+    Name = binary_opt(name, Opts),
+    Yang = binary_opt(yang, Opts),
+    URL = binary_opt('notification-url', Opts),
+    NameKey = exodm_db:encode_id(Name),
+    Values = proplists:get_value(values, Opts, []),
+    exodm_db:transaction(
+      fun(_) ->
+	      case exists(Tab, NameKey) of
+		  true ->
+		      error(exists);
+		  false ->
+		      validate_config(Tab, AID, Yang, Values),
+		      write(Tab, NameKey, <<"name">>, Name),
+		      write(Tab, NameKey, <<"yang">>, Yang),
+		      write(Tab, NameKey, <<"url">>, URL),
+		      ValsToWrite = value_tree(NameKey, Values),
+		      %% write_values(Tab, NameKey, Values),
+		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
+		      {ok, Name}
+	      end
+      end).
+
 %% FIXME: If you add a key/val pair that was not present in the
 %%        new_config_data() call, the entire config entry gets corrupted.
 %%
 update_config_data(AID, Name0, Values) ->
+    Tab = table(AID),
+    Name = to_binary(Name0),
+    NameKey = exodm_db:encode_id(Name),
+    exodm_db:transaction(
+      fun(_) ->
+	      case exists(Tab, NameKey) of
+		  true ->
+		      CT = kvdb_conf:read_tree(Tab, NameKey),
+%%		      validate_config(
+%%			Tab, AID, YangSpec, Values),
+		      ValsToWrite =
+			  update_value_tree(Values, CT),
+		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
+		      {ok, Name};
+		  false ->
+		      { error, not_found }
+	      end
+      end).
+
+update_config_set(AID, Name0, Opts) ->
     Tab = table(AID),
     Name = to_binary(Name0),
     NameKey = exodm_db:encode_id(Name),
@@ -81,11 +131,27 @@ update_config_data(AID, Name0, Values) ->
                       case exists(Tab, NameKey) of
                           true ->
 			      CT = kvdb_conf:read_tree(Tab, NameKey),
-                              validate_config(
-				Tab, AID, YangSpec, Values),
-			      ValsToWrite =
-				  update_value_tree(Values, CT),
-			      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
+%                              validate_config(
+%%				Tab, AID, YangSpec, Values),
+			      case lists:keyfind('notification-url', 1, Opts) of
+				  {_, URL} ->
+				      write(Tab, NameKey, <<"url">>, to_binary(URL));
+				  false -> ok
+			      end,
+			      case lists:keyfind(yang, 1, Opts) of
+				  {_, Yang} ->
+				      error(cannot_update_yang_spec),
+				      write(Tab, NameKey, <<"yang">>, to_binary(Yang));
+				  false -> ok
+			      end,
+			      case lists:keyfind(values, 1, Opts) of
+				  {_, Values} ->
+				      ValsToWrite =
+					  update_value_tree(Values, CT),
+				      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite];
+				  false ->
+				      ok
+			      end,
                               {ok, Name};
 
                           false ->
@@ -124,20 +190,25 @@ get_yang_spec(AID, Name) ->
 	    E
     end.
 
+get_url(AID, Name) ->
+    Tab = table(AID),
+    NameKey = exodm_db:encode_id(Name),
+    case exodm_db:read(Tab, exodm_db:join_key(NameKey, <<"url">>)) of
+	{ok, {_, _, U}} ->
+	    {ok, U};
+	{error, _} = E ->
+	    E
+    end.
+
 read_config_data_values(AID, Name) ->
     Tab = table(AID),
     NameKey = exodm_db:join_key(exodm_db:encode_id(Name), <<"values">>),
     exodm_db:transaction(
       fun(_) ->
-	      case exists(Tab, NameKey) of
-		  true ->
-		     case kvdb_conf:read_tree(Tab, NameKey) of
-			 #conf_tree{} = CT ->
-			     {ok, CT};
-			 Other ->
-			     error({unexpected, Other})
-		     end;
-		  false ->
+	      case kvdb_conf:read_tree(Tab, NameKey) of
+		  #conf_tree{} = CT ->
+		      {ok, CT};
+		  [] ->
 		      {error, not_found}
 	      end
       end).
@@ -305,8 +376,13 @@ value_tree(Root, Values) ->
 		 tree = [{<<"values">>, to_tree_(Values)}]}).
 
 update_value_tree(Values, #conf_tree{root = Root, tree = T}) ->
-    {<<"values">>, Vs} = lists:keyfind(<<"values">>, 1, T),
+    ?debug("update_value_tree(~p, T = ~p)~n", [Values, T]),
+    Vs = case lists:keyfind(<<"values">>, 1, T) of
+	     {_, _, X} -> X;
+	     false -> []
+	 end,
     NewVs = update_tree_(Values, Vs),
+    ?debug("NewVs = ~p ~n", [NewVs]),
     kvdb_conf:flatten_tree(#conf_tree{root = Root,
 				      tree = [{<<"values">>, NewVs}]}).
     %% T1 = lists:keyreplace(<<"values">>, 1, T, {<<"values">>, NewVs}),
@@ -374,7 +450,7 @@ keystore_array(K, V, [Last]) ->
 keystore_array(K, V, [H|T]) ->
     [H | keystore_array(K, V, T)];
 keystore_array(K, V, []) ->
-    [{1, update_node(K, V, [])}].
+    [{1, [update_node(K, V, [])]}].
 
 is_array(Tree) ->
     lists:all(fun(X) -> is_integer(element(1,X)) end, Tree).
@@ -411,7 +487,7 @@ to_tree_({array, Elems}) ->
  		     fun({T,_} = X, P) when T==array; T==struct ->
  			     {{P, to_tree_(X)}, P+1};
  			({K,V}, P) ->
-			     case V of 
+			     case V of
 				 {T1,_} when T1==array; T1==struct ->
 				     {{P, [{K, to_tree_(V)}]}, P+1};
 				 _ ->

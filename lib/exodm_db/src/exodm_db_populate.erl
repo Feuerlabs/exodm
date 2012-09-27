@@ -66,7 +66,11 @@ run_rfzone_() ->
 			]).
 
 run_ga() ->
-    exodm_db:in_transaction(fun(Db) -> run_ga_(Db) end).
+    exodm_db:in_transaction(fun(Db) -> run_ga_(Db) end),
+    %% Need to restart exodm_ck3_server, so that it authenticate itself, now that the account
+    %% has been created.
+    supervisor:terminate_child(exodm_ck3_sup, exodm_ck3_server),
+    supervisor:restart_child(exodm_ck3_sup, exodm_ck3_server).
 
 create_account(ga) ->
     {ok, _AID} = exodm_db_account:new(
@@ -102,10 +106,17 @@ run_ga_(Db) ->
     exodm_db_account:register_protocol(AID, <<"ga_ck3">>),
     {ok, GID} = create_group(ga, AID),
     store_ck3_yang(Db),
-    {ok,_} = exodm_db_config:new_config_data(
-	       AID, <<"ck3">>, <<"ckp.yang">>,[]),
-    {ok,_} = exodm_db_config:new_config_data(
-	       AID, <<"ck3_exo">>, <<"exosense.yang">>, []),
+    URL = "https://ga:wewontechcrunch2011@localhost:8000/exodm/test_callback",
+    {ok,_} = exodm_db_config:new_config_set(
+	       AID, [{name, <<"ck3">>},
+		     {yang, <<"ckp.yang">>},
+		     {'notification-url', URL},
+		     {values, []}]),
+    %% {ok,_} = exodm_db_config:new_config_set(
+    %% 	       AID, [{name, <<"ck3_exo">>},
+    %% 		     {yang, <<"exosense.yang">>},
+    %% 		     {'notification-url', URL},
+    %% 		     {values, []}]),
     {ok, AID, GID}.
 
 run_ga_tst() ->
