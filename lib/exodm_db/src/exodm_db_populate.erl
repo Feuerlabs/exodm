@@ -148,15 +148,15 @@ ga_dummy_devices_(AID, GID) ->
 		     exodm_ck3_config:new(AID, DID, running, []),
 		     DID
 	     end, lists:seq(100, 123)),
-    exodm_db_config:add_config_data_members(AID, <<"ck3">>, DIDs),
-    exodm_db_config:add_config_data_members(AID, <<"ck3_exo">>, DIDs).
+    exodm_db_config:add_config_set_members(AID, <<"ck3">>, DIDs),
+    exodm_db_config:add_config_set_members(AID, <<"ck3_exo">>, DIDs).
 
 devid(I) when is_integer(I) ->
     list_to_binary(integer_to_list(I)).
 
 store_ck3_yang(Db) ->
     exodm_db_session:set_auth_as_user(<<"ga">>, Db),
-    store_yang(ck3, "exosense.yang", "yang/exosense.yang"),
+    %% store_yang(ck3, "exosense.yang", "yang/exosense.yang"),
     store_yang(ck3, "ieft-inet-types.yang", "yang/ietf-inet-types.yang"),
     store_yang(ck3, "ckp.yang", "yang/ckp.yang"),
     store_yang(ck3, "ckp-cfg.yang", "yang/ckp-cfg.yang").

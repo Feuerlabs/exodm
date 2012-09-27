@@ -9,19 +9,17 @@
 
 -export([init/1]).
 -export(
-   [new_config_data/4,          %% (AID, Name, Yang, Values)
-    new_config_set/2,           %% (AID, Options)
-    update_config_data/3,       %% (AID, Name0, Values)
+   [new_config_set/2,           %% (AID, Options)
     update_config_set/3,        %% (AID, Name, Options)
-    read_config_data/2,         %% (AID, Name)
-    read_config_data_values/2,  %% (AID, Name)
+    read_config_set/2,         %% (AID, Name)
+    read_config_set_values/2,  %% (AID, Name)
     get_yang_spec/2,            %% (AID, Name)
     get_url/2,                  %% (AID, Name)
-    delete_config_data/2,       %% (AID, Name)
+    delete_config_set/2,       %% (AID, Name)
     create_yang_module/4,       %% (AID, <<"user">>|<<"system">>, File, Yang)
-    add_config_data_members/3,  %% (AID, CfgDataName, [DeviceID])
-    list_config_data_members/2, %% (AID, CfgDataName)
-    list_config_data_members/1, %% (Name)
+    add_config_set_members/3,  %% (AID, CfgDataName, [DeviceID])
+    list_config_set_members/2, %% (AID, CfgDataName)
+    list_config_set_members/1, %% (Name)
     cache_values/2,
     map_device_to_cached_values/4,
     get_cached/4
@@ -52,26 +50,26 @@ cache(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     <<AID/binary, "_conf_cache">>.
 
-new_config_data(AID, Name0, Yang0, Values) ->
-    Tab = table(AID),
-    Name = to_binary(Name0),
-    Yang = to_binary(Yang0),
-    NameKey = exodm_db:encode_id(Name),
-    exodm_db:transaction(
-      fun(_) ->
-	      case exists(Tab, NameKey) of
-		  true ->
-		      error(exists);
-		  false ->
-		      validate_config(Tab, AID, Yang, Values),
-		      write(Tab, NameKey, <<"name">>, Name),
-		      write(Tab, NameKey, <<"yang">>, Yang),
-		      ValsToWrite = value_tree(NameKey, Values),
-		      %% write_values(Tab, NameKey, Values),
-		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
-		      {ok, Name}
-	      end
-      end).
+%% new_config_data(AID, Name0, Yang0, Values) ->
+%%     Tab = table(AID),
+%%     Name = to_binary(Name0),
+%%     Yang = to_binary(Yang0),
+%%     NameKey = exodm_db:encode_id(Name),
+%%     exodm_db:transaction(
+%%       fun(_) ->
+%% 	      case exists(Tab, NameKey) of
+%% 		  true ->
+%% 		      error(exists);
+%% 		  false ->
+%% 		      validate_config(Tab, AID, Yang, Values),
+%% 		      write(Tab, NameKey, <<"name">>, Name),
+%% 		      write(Tab, NameKey, <<"yang">>, Yang),
+%% 		      ValsToWrite = value_tree(NameKey, Values),
+%% 		      %% write_values(Tab, NameKey, Values),
+%% 		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
+%% 		      {ok, Name}
+%% 	      end
+%%       end).
 
 new_config_set(AID, Opts) ->
     Tab = table(AID),
@@ -98,34 +96,34 @@ new_config_set(AID, Opts) ->
       end).
 
 %% FIXME: If you add a key/val pair that was not present in the
-%%        new_config_data() call, the entire config entry gets corrupted.
+%%        new_config_set() call, the entire config entry gets corrupted.
 %%
-update_config_data(AID, Name0, Values) ->
-    Tab = table(AID),
-    Name = to_binary(Name0),
-    NameKey = exodm_db:encode_id(Name),
-    exodm_db:transaction(
-      fun(_) ->
-	      case exists(Tab, NameKey) of
-		  true ->
-		      CT = kvdb_conf:read_tree(Tab, NameKey),
-%%		      validate_config(
-%%			Tab, AID, YangSpec, Values),
-		      ValsToWrite =
-			  update_value_tree(Values, CT),
-		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
-		      {ok, Name};
-		  false ->
-		      { error, not_found }
-	      end
-      end).
+%% update_config_set(AID, Name0, Values) ->
+%%     Tab = table(AID),
+%%     Name = to_binary(Name0),
+%%     NameKey = exodm_db:encode_id(Name),
+%%     exodm_db:transaction(
+%%       fun(_) ->
+%% 	      case exists(Tab, NameKey) of
+%% 		  true ->
+%% 		      CT = kvdb_conf:read_tree(Tab, NameKey),
+%% %%		      validate_config(
+%% %%			Tab, AID, YangSpec, Values),
+%% 		      ValsToWrite =
+%% 			  update_value_tree(Values, CT),
+%% 		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
+%% 		      {ok, Name};
+%% 		  false ->
+%% 		      { error, not_found }
+%% 	      end
+%%       end).
 
 update_config_set(AID, Name0, Opts) ->
     Tab = table(AID),
     Name = to_binary(Name0),
     NameKey = exodm_db:encode_id(Name),
     case get_yang_spec(AID, NameKey) of
-        {ok, YangSpec} ->
+        {ok, _YangSpec} ->
             exodm_db:transaction(
               fun(_) ->
                       case exists(Tab, NameKey) of
@@ -133,25 +131,23 @@ update_config_set(AID, Name0, Opts) ->
 			      CT = kvdb_conf:read_tree(Tab, NameKey),
 %                              validate_config(
 %%				Tab, AID, YangSpec, Values),
-			      case lists:keyfind('notification-url', 1, Opts) of
-				  {_, URL} ->
-				      write(Tab, NameKey, <<"url">>, to_binary(URL));
-				  false -> ok
-			      end,
+			      if_opt('notification-url', Opts,
+				     fun(URL) ->
+					     write(Tab, NameKey,
+						   <<"url">>, to_binary(URL))
+				     end),
 			      case lists:keyfind(yang, 1, Opts) of
-				  {_, Yang} ->
-				      error(cannot_update_yang_spec),
-				      write(Tab, NameKey, <<"yang">>, to_binary(Yang));
+				  {_, _Yang} ->
+				      error(cannot_update_yang_spec);
 				  false -> ok
 			      end,
-			      case lists:keyfind(values, 1, Opts) of
-				  {_, Values} ->
-				      ValsToWrite =
-					  update_value_tree(Values, CT),
-				      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite];
-				  false ->
-				      ok
-			      end,
+			      if_opt(values, Opts,
+				     fun(Values) ->
+					     ValsToWrite =
+						 update_value_tree(Values, CT),
+					     [kvdb_conf:write(Tab, Obj) ||
+						 Obj <- ValsToWrite]
+				     end),
                               {ok, Name};
 
                           false ->
@@ -162,19 +158,22 @@ update_config_set(AID, Name0, Opts) ->
             { error, E }
     end.
 
-read_config_data(AID, Name) ->
+if_opt(K, Opts, F) ->
+    case lists:keyfind(K, 1, Opts) of
+	{_, V} -> F(V);
+	false  -> ok
+    end.
+
+read_config_set(AID, Name) ->
     Tab = table(AID),
     NameKey = exodm_db:encode_id(Name),
     exodm_db:transaction(
       fun(_) ->
 	      case exists(Tab, NameKey) of
 		  true ->
-		     case kvdb_conf:read_tree(Tab, NameKey) of
-			 #conf_tree{} = CT ->
-			     {ok, CT};
-			 Other ->
-			     error({unexpected, Other})
-		     end;
+		      [{name, exodm_db:decode_id(NameKey)}]
+			  ++ read(Tab, NameKey, <<"yang">>, yang)
+			  ++ read(Tab, NameKey, <<"url">>, 'notification-url');
 		  false ->
 		      {error, not_found}
 	      end
@@ -200,7 +199,7 @@ get_url(AID, Name) ->
 	    E
     end.
 
-read_config_data_values(AID, Name) ->
+read_config_set_values(AID, Name) ->
     Tab = table(AID),
     NameKey = exodm_db:join_key(exodm_db:encode_id(Name), <<"values">>),
     exodm_db:transaction(
@@ -219,7 +218,7 @@ cache_values(AID0, Name0) ->
     Cache = cache(AID),
     exodm_db:in_transaction(
       fun(_Db) ->
-	      case read_config_data_values(AID, Name) of
+	      case read_config_set_values(AID, Name) of
 		  {ok, CT} ->
 		      Key = exodm_db:join_key(Name, <<"values">>),
 		      Last = kvdb_conf:last_list_pos(Cache, Key),
@@ -277,7 +276,7 @@ get_cached(AID0, Name0, Ref, DID) ->
 
 
 
-delete_config_data(AID, Name) ->
+delete_config_set(AID, Name) ->
     Tab = table(AID),
     NameKey = exodm_db:encode_id(to_binary(Name)),
     exodm_db:transaction(
@@ -301,7 +300,7 @@ create_yang_module(AID, Repository0, File, Yang0) ->
 	    error(unauthorized)
     end.
 
-add_config_data_members(AID0, Name0, DIDs) ->
+add_config_set_members(AID0, Name0, DIDs) ->
     AID = exodm_db:account_id_key(AID0),
     Tab = table(AID),
     Name = exodm_db:encode_id(Name0),
@@ -316,22 +315,22 @@ add_config_data_members(AID0, Name0, DIDs) ->
 				case exodm_db_device:exist(AID, DID) of
 				    true ->
 					write(Tab, Key, DID, <<>>),
-					exodm_db_device:add_config_data(
+					exodm_db_device:add_config_set(
 					  AID, DID, Name);
 				    false ->
 					error({unknown_device, [AID,DID]})
 				end
 			end, DIDs);
 		  false ->
-		      error({unknown_config_data, Name})
+		      error({unknown_config_set, Name})
 	      end
       end).
 
-list_config_data_members(Name) ->
+list_config_set_members(Name) ->
     AID = exodm_db_session:get_aid(),
-    list_config_data_members(AID, Name).
+    list_config_set_members(AID, Name).
 
-list_config_data_members(AID, Name0) ->
+list_config_set_members(AID, Name0) ->
     Tab = table(AID),
     Name = to_binary(Name0),
     Key = exodm_db:join_key(exodm_db:encode_id(Name), <<"members">>),
@@ -606,3 +605,11 @@ to_binary(X) when is_list(X) -> list_to_binary(X).
 
 check_access(AID) ->
     AID = exodm_db_session:get_aid().
+
+read(Tab, Key, SubKey, AttrName) ->
+    case exodm_db:read(Tab, exodm_db:join_key(Key, SubKey)) of
+	{ok, {_, _, Val}} ->
+	    [{AttrName, Val}];
+	{error, not_found} ->
+	    []
+    end.

@@ -10,7 +10,7 @@
 -export([init/1]).
 -export([new/3, update/3, lookup/2, lookup_attr/3,
 	 delete/2,
-	 add_config_data/3, list_config_data/2,
+	 add_config_set/3, list_config_set/2,
 	 yang_modules/2,
 	 protocol/2,
 	 exist/2]).
@@ -171,33 +171,33 @@ delete(AID0, DID0) ->
 	      end
       end).
 
-add_config_data(AID, DID, CfgName) ->
-    exodm_db:in_transaction(fun(_) -> add_config_data_(AID, DID, CfgName) end).
+add_config_set(AID, DID, CfgName) ->
+    exodm_db:in_transaction(fun(_) -> add_config_set_(AID, DID, CfgName) end).
 
-add_config_data_(AID0, DID0, CfgName) ->
+add_config_set_(AID0, DID0, CfgName) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
     case exist(AID, DID) of
 	true ->
-	    insert(Tab, exodm_db:join_key(DID, <<"config_data">>),
+	    insert(Tab, exodm_db:join_key(DID, <<"config_set">>),
 		   CfgName, <<>>);
 	false ->
 	    error({unknown_device, [AID, DID]})
     end.
 
 
-list_config_data(AID0, DID0) ->
+list_config_set(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
-    exodm_db:in_transaction(fun(_) -> list_config_data_(Tab, DID) end).
+    exodm_db:in_transaction(fun(_) -> list_config_set_(Tab, DID) end).
 
-list_config_data_(Tab, DID) ->
+list_config_set_(Tab, DID) ->
     Set = kvdb_conf:fold_children(
 	    Tab, fun(K, Acc) ->
 			 [lists:last(exodm_db:split_key(K))|Acc]
-		 end, [], exodm_db:join_key(DID, <<"config_data">>)),
+		 end, [], exodm_db:join_key(DID, <<"config_set">>)),
     lists:reverse(Set).
 
 
@@ -207,11 +207,14 @@ yang_modules(AID0, DID0) ->
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->
-	      CDs = list_config_data_(Tab, DID),
+	      CDs = list_config_set_(Tab, DID),
 	      lists:map(
 		fun(Name) ->
 			{ok, Y} = exodm_db_config:get_yang_spec(AID, Name),
-			{ok, URL} = exodm_db_config:get_url(AID, Name),
+			URL = case exodm_db_config:get_url(AID, Name) of
+				  {ok, U} -> U;
+				  {error, not_found} -> <<>>
+			      end,
 			{Name, Y, URL}
 		end, CDs)
       end).

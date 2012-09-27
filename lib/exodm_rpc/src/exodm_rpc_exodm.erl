@@ -119,7 +119,7 @@ json_rpc_({request, _ReqEnv,
            [ ?MODULE, CfgDataList, DevIdList ]),
     AID = exodm_db_session:get_aid(),
 
-    try [ exodm_db_config:add_config_data_members(
+    try [ exodm_db_config:add_config_set_members(
 	    AID, CfgD, DevIdList)
           || CfgD <- CfgDataList] of
         _Res -> {ok, result_code(ok)}
@@ -156,7 +156,7 @@ json_rpc_({request, ReqEnv,
     User = exodm_db_session:get_user(),
     exodm_db:in_transaction(
       fun(Db) ->
-	      case exodm_db_config:list_config_data_members(AID, Cfg) of
+	      case exodm_db_config:list_config_set_members(AID, Cfg) of
 		  [_|_] = Devices ->
 		      {ok, Yang} = exodm_db_config:get_yang_spec(AID, Cfg),
 		      Module = filename:basename(Yang, ".yang"),
@@ -235,18 +235,17 @@ json_rpc_({request, _ReqEnv,
     end;
 
 json_rpc_({request, _ReqEnv,
-	   {call, M, 'list-device-groups',
+	   {call, M, 'list-config-sets',
 	    [{n, N}, {previous, Prev}] = _Cfg}} = _RPC, _Env) when ?EXO(M) ->
-    ?debug("~p:json_rpc(delete-device-group) config: ~p~n",
+    ?debug("~p:json_rpc(list-config-sets) args: ~p~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
     Res =
 	exodm_db:in_transaction(
 	  fun(_) ->
-		  FullNext = kvdb_conf:join_key([exodm_db:account_id_key(AID),
-						 <<"groups">>,
-						 exodm_db:group_id_key(Prev)]),
-		  exodm_db:list_next(<<"acct">>, N, FullNext,
+		  FullNext = kvdb_conf:join_key(exodm_db:account_id_key(AID),
+						list_to_binary(Prev)),
+		  exodm_db:list_next(exodm_db_config:table(AID), N, FullNext,
 				     fun(Key) ->
 					     [_, _, Grp] =
 						 kvdb_conf:split_key(Key),

@@ -7,16 +7,16 @@
 dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
     ?debug("~p:dispatch(~p, ~p, ..., ~p)~n", [?MODULE, Req, Env, Pid]),
     case Req of
-	{request, _, {call, M, 'push-config-data', [{'config-data', Cfg},
-						    {'reference', Ref}]}} ->
+	{request, _, {call, M, 'push-config-set', [{'name', Cfg},
+						   {'reference', Ref}]}} ->
 	    exodm_db:in_transaction(
 	      fun(_Db) ->
 		      case exodm_db_config:get_cached(AID, Cfg, Ref, DID) of
 			  {ok, Values} ->
 			      bert_rpc(
-				Pid, exoport_config, push_config_data,
+				Pid, exoport_config, push_config_set,
 				[[{module, M},
-				  {config_data, Cfg},
+				  {name, Cfg},
 				  {values, Values}]], Req, Env, AID, DID);
 			  _ ->
 			      error

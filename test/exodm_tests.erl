@@ -22,6 +22,11 @@
 	    pop_loglevel(Cfg)
 	end).
 
+-define(URL1, <<"http://localhost:8898">>).
+-define(URL2, <<"http://localhost:8899">>).
+
+
+
 exodm_test_() ->
     {setup,
      fun() ->
@@ -45,16 +50,16 @@ exodm_test_() ->
      fun(Config) -> [
 		     ?my_t(populate(Config)),
 		     ?my_t(list_accounts(Config)),
-		     ?my_t(list_groups(Config)),
-		     ?my_t(list_group_devices(Config)),
-		     ?my_t(list_group_notifications(Config)),
+		     ?my_t(store_config(Config)),
+		     ?my_t(store_config2(Config)),
+		     %% ?my_t(list_groups(Config)),
+		     %% ?my_t(list_group_devices(Config)),
+		     %% ?my_t(list_group_notifications(Config)),
 		     ?my_t(list_users(Config)),
 		     ?my_t(store_exosense_yang(Config)),
 		     ?my_t(store_yang(Config)),
 		     %% ?my_t(store_exodm_yang(Config)),
-		     ?my_t(store_config(Config)),
-		     ?my_t(store_config2(Config)),
-		     ?my_t(add_config_data_member(Config)),
+		     ?my_t(add_config_set_member(Config)),
 		     {setup,
 		      fun() -> start_http_client(Config) end,
 		      fun(Cfg1) -> stop_http_client(Cfg1) end,
@@ -104,45 +109,45 @@ populate(Cfg) ->
 				 {fullname, <<"Ulf Wiger">>},
 				 {password, <<"wiger">>}]}
 		       ]]),
-    {ok, GID1} = ?rpc(exodm_db_group,new,
-		     [
-		      AID2, [{name, <<"feuerlabs">>},
-			     %% {url, "https://ulf:wiger@localhost:8000/exodm/test_callback"}]
-			     {url, "http://localhost:8898/"}]
-		     ]),
-    {ok, GID2} = ?rpc(exodm_db_group,new,
-		     [
-		      AID2, [{name, <<"travelping">>},
-			     %% {url, "https://ulf:wiger@localhost:8000/exodm/test_callback2"}]
-			     {url, "http://localhost:8899/"}]
-		     ]),
+    %% {ok, GID1} = ?rpc(exodm_db_group,new,
+    %% 		     [
+    %% 		      AID2, [{name, <<"feuerlabs">>},
+    %% 			     %% {url, "https://ulf:wiger@localhost:8000/exodm/test_callback"}]
+    %% 			     {url, "http://localhost:8898/"}]
+    %% 		     ]),
+    %% {ok, GID2} = ?rpc(exodm_db_group,new,
+    %% 		     [
+    %% 		      AID2, [{name, <<"travelping">>},
+    %% 			     %% {url, "https://ulf:wiger@localhost:8000/exodm/test_callback2"}]
+    %% 			     {url, "http://localhost:8899/"}]
+    %% 		     ]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID1 = <<"x00000001">>,
 	       [{'protocol', <<"exodm_bert">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
-		{msisdn,"070100000001"},
-		{groups, [GID1, GID2]}
+		{msisdn,"070100000001"}
+		%% {groups, [GID1, GID2]}
 	       ]]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID2 = <<"x00000002">>,
 	       [{'protocol', <<"exodm_bert">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
-		{msisdn,"070100000002"},
-		{groups, [GID1, GID2]}
+		{msisdn,"070100000002"}
+		%% {groups, [GID1, GID2]}
 	       ]]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID3 = <<"x00000003">>,
 	       [{'protocol', <<"exodm_bert">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
-		{msisdn,"070100000003"},
-		{groups, [GID1]}
+		{msisdn,"070100000003"}
+		%% {groups, [GID1]}
 	       ]]),
-    ?debugFmt("AID1 = ~p; AID2 = ~p; GID1 = ~p; GID2 = ~p;~n"
+    ?debugFmt("AID1 = ~p; AID2 = ~p;~n"
 	      "DID1 = ~p; DID2 = ~p; DID3 = ~p~n",
-	      [AID1, AID2, GID1, GID2, DID1, DID2, DID3]),
+	      [AID1, AID2, DID1, DID2, DID3]),
     ok.
 
 list_users(Cfg) ->
@@ -168,34 +173,35 @@ list_accounts(Cfg) ->
 	rpc(Cfg, exodm_db_account, lookup, [<<"a00000002">>]),
     ok.
 
-list_groups(Cfg) ->
-    [<<"g00000001">>,
-     <<"g00000002">>] =
-	?rpc(exodm_db_account,list_groups, [2]),
-    ok.
+%% list_groups(Cfg) ->
+%%     [<<"g00000001">>,
+%%      <<"g00000002">>] =
+%% 	?rpc(exodm_db_account,list_groups, [2]),
+%%     ok.
 
-list_group_devices(Cfg) ->
-    [<<"x00000001">>,
-     <<"x00000002">>,
-     <<"x00000003">>] =
-	?rpc(exodm_db_group, list_devices, [2,1]),
-    [<<"x00000001">>,
-     <<"x00000002">>] =
-	?rpc(exodm_db_group, list_devices, [2,2]),
-    [<<"x00000001">>] =
-	?rpc(exodm_db_group, list_devices, [2,2,1,<<>>]),
-    [<<"x00000002">>,
-     <<"x00000003">>] =
-	?rpc(exodm_db_group, list_devices, [2,1,99,<<"x00000001">>]),
-    ok.
+%% list_group_devices(Cfg) ->
+%%     [<<"x00000001">>,
+%%      <<"x00000002">>,
+%%      <<"x00000003">>] =
+%% 	?rpc(exodm_db_group, list_devices, [2,1]),
+%%     [<<"x00000001">>,
+%%      <<"x00000002">>] =
+%% 	?rpc(exodm_db_group, list_devices, [2,2]),
+%%     [<<"x00000001">>] =
+%% 	?rpc(exodm_db_group, list_devices, [2,2,1,<<>>]),
+%%     [<<"x00000002">>,
+%%      <<"x00000003">>] =
+%% 	?rpc(exodm_db_group, list_devices, [2,1,99,<<"x00000001">>]),
+%%     ok.
 
-list_group_notifications(Cfg) ->
-    %% [<<"https://ulf:wiger@localhost:8000/exodm/test_callback2">>,
-    %%  <<"https://ulf:wiger@localhost:8000/exodm/test_callback">>] =
-    [<<"http://localhost:8899/">>,
-     <<"http://localhost:8898/">>] =
-	?rpc(exodm_db_device,lookup_group_notifications, [2, <<"x00000001">>]),
-    ok.
+%% list_group_notifications(Cfg) ->
+%%     %% [<<"https://ulf:wiger@localhost:8000/exodm/test_callback2">>,
+%%     %%  <<"https://ulf:wiger@localhost:8000/exodm/test_callback">>] =
+%%     [<<"http://localhost:8899/">>,
+%%      <<"http://localhost:8898/">>] =
+%% 	?rpc(exodm_db_device,lookup_group_notifications, [2, <<"x00000001">>]),
+%%     ok.
+
 
 store_yang(Cfg) ->
     ok = rscript(Cfg, store_yang_scr()).
@@ -262,6 +268,7 @@ store_config(Cfg) ->
 	rscript(Cfg, store_config_scr()),
     R = <<"test">>,
     {T,T} = {T, [{<<"name">>, [], <<"test">>},
+		 {<<"url">>,[],?URL1},
 		 {<<"values">>, [{<<"cksrv-address">>, [], <<"127.0.0.1">>},
 				 {<<"kill-switch">>, [], 0},
 				 {<<"wakeup-prof">>,
@@ -282,23 +289,26 @@ store_config_scr() ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
 			AID = exodm_db_session:get_aid(),
 			{ok, <<"test">>} =
-			    exodm_db_config:new_config_data(
+			    exodm_db_config:new_config_set(
 			      AID,
-			      <<"test">>, <<"ckp-cfg.yang">>,
-			      {struct,
-			       [{<<"kill-switch">>, 0},
-				{<<"cksrv-address">>, <<"127.0.0.1">>},
-				{<<"wakeup-prof">>,
-				 {array, [
-					  {struct,
-					   [{<<"id">>,1},
-					    {<<"data">>, <<"01010102">>}]},
-					  {struct,
-					   [{<<"id">>,2},
-					    {<<"data">>, <<"01010103">>}]}
-					 ]}
-				}]}),
-			exodm_db_config:read_config_data(AID, <<"test">>)
+			      [{name, <<"test">>},
+			       {yang, <<"ckp-cfg.yang">>},
+			       {'notification-url', ?URL1},
+			       {values,
+				{struct,
+				 [{<<"kill-switch">>, 0},
+				  {<<"cksrv-address">>, <<"127.0.0.1">>},
+				  {<<"wakeup-prof">>,
+				   {array, [
+					    {struct,
+					     [{<<"id">>,1},
+					      {<<"data">>, <<"01010102">>}]},
+					    {struct,
+					     [{<<"id">>,2},
+					      {<<"data">>, <<"01010103">>}]}
+					   ]}
+				  }]}}]),
+			exodm_db_config:read_config_set(AID, <<"test">>)
 		end)
       end).
 
@@ -307,6 +317,7 @@ store_config2(Cfg) ->
 	rscript(Cfg, store_config_scr2()),
     R = <<"test2">>,
     {T,T} = {T, [{<<"name">>, [], <<"test2">>},
+		 {<<"url">>, [], ?URL2},
 		 %% no 'values' entry
 		 {<<"yang">>, [], <<"test.yang">>}
 		]},
@@ -320,31 +331,32 @@ store_config_scr2() ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
 			AID = exodm_db_session:get_aid(),
 			{ok, <<"test2">>} =
-			    exodm_db_config:new_config_data(
+			    exodm_db_config:new_config_set(
 			      AID,
-			      <<"test2">>, <<"test.yang">>,
-			      {array, []}),
-			exodm_db_config:read_config_data(AID, <<"test2">>)
+			      [{name, <<"test2">>},
+			       {yang, <<"test.yang">>},
+			       {'notification-url', ?URL2}]),
+			exodm_db_config:read_config_set(AID, <<"test2">>)
 		end)
       end).
 
-add_config_data_member(Cfg) ->
-    ok = rscript(Cfg, add_config_data_member_scr()),
+add_config_set_member(Cfg) ->
+    ok = rscript(Cfg, add_config_set_member_scr()),
     [<<"test">>, <<"test2">>] =
-	?rpc(exodm_db_device, list_config_data, [<<"a00000002">>,
-						 <<"x00000001">>]),
+	?rpc(exodm_db_device, list_config_set, [<<"a00000002">>,
+						<<"x00000001">>]),
     ok.
 
-add_config_data_member_scr() ->
+add_config_set_member_scr() ->
     codegen:exprs(
       fun() ->
 	      exodm_db:transaction(
 		fun(Db) ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
 			AID = exodm_db_session:get_aid(),
-			exodm_db_config:add_config_data_members(
+			exodm_db_config:add_config_set_members(
 			  AID, <<"test">>, [<<"x00000001">>]),
-			exodm_db_config:add_config_data_members(
+			exodm_db_config:add_config_set_members(
 			  AID, <<"test2">>, [<<"x00000001">>])
 		end)
       end).
@@ -382,8 +394,8 @@ set_access(Cfg) ->
     {ok, {Host, Port}} = application:get_env(exoport, exodm_address),
     {ok, Sn} = bert_rpc_exec:get_session(
 		 Host, Port, [tcp], [{auto_connect,false}], 10000),
-    A = gen_server:call(Sn, get_access),
-    %% io:fwrite(user, "Old Access = ~p~n", [A]),
+    _A = gen_server:call(Sn, get_access),
+    %% io:fwrite(user, "Old Access = ~p~n", [_A]),
     ok = gen_server:call(
 	   Sn, {set_access, [{redirect, [{{test,echo,1},
 					  {?MODULE,test_echo,1}}]}]}),
@@ -456,9 +468,10 @@ stop_http_client(_Cfg) ->
 
 json_rpc1(Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
-				"exodm:create-config-data", "1",
-				{struct,[{"config-data","test_cfg_1"},
+				"exodm:create-config-set", "1",
+				{struct,[{"name","test_cfg_1"},
 					 {"yang", "exosense.yang"},
+					 {"notification-url",?URL1},
 					 {"values",{struct,[{"a", "1"},
 							    {"b", "xx"}
 							   ]}}

@@ -13,7 +13,11 @@ module exodm {
     prefix exodm;
 
     import ietf-inet-types {
-        prefix inet;
+      prefix inet;
+    }
+
+    import exosense {
+      prefix exosense;
     }
 
     description "Data model for DM server";
@@ -255,8 +259,8 @@ module exodm {
         }
     }
 
-    rpc list-device-groups {
-        description "List device groups, N entries at a time";
+    rpc list-config-sets {
+        description "List config sets, N entries at a time";
 
         input {
             leaf n {
@@ -264,16 +268,16 @@ module exodm {
                 type uint32;
             }
             leaf previous {
-                description "Previous group ID; 0 (zero) if from beginning";
-                type uint32;
+	      description "Previous config set; \"\" if from beginning";
+                type string;
             }
         }
         output {
-            list groups {
-                leaf gid {
-                    type uint32;
-                }
+            list config-set {
                 leaf name {
+		  type string;
+                }
+                leaf yang {
                     type string;
                 }
                 leaf notification-url {
@@ -506,5 +510,9 @@ module exodm {
                 type result-code;
             }
         }
+    }
+
+    notification push-config-set-callback {
+      uses exosense:std-callback;
     }
 }
