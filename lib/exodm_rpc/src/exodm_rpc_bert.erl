@@ -17,6 +17,7 @@ dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
 				Pid, exoport_config, push_config_set,
 				[[{module, M},
 				  {name, Cfg},
+				  {yang, <<"exodm.yang">>},
 				  {values, Values}]], Req, Env, AID, DID);
 			  _ ->
 			      error

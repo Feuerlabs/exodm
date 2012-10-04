@@ -15,6 +15,7 @@
 	 delete/2,
 	 add_device/3,
 	 remove_device/3,
+	 device_is_deleted/3,
 	 list_devices/2, list_devices/4]).
 -export([list_group_keys/2, list_group_keys/3]).
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
@@ -148,6 +149,18 @@ remove_device(AID0, GID0, DID) ->
     {Tab, GID} = tab_and_gid(AID0, GID0),
     Key = exodm_db:join_key([GID, <<"devices">>, DID]),
     kvdb_conf:delete(Tab, Key).
+
+device_is_deleted(AID0, DID0, GIDs) ->
+    AID = exodm_db:account_id_key(AID0),
+    Tab = table(AID),
+    DID = exodm_db:encode_id(DID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      lists:foreach(
+		fun(GID) ->
+			remove_device(AID, GID, DID)
+		end, GIDs)
+      end).
 
 list_devices(AID, GID) ->
     list_devices(AID, GID, 30, <<>>).

@@ -10,7 +10,7 @@
 -export([init/1]).
 -export([new/3, update/3, lookup/2, lookup_attr/3,
 	 delete/2,
-	 add_config_set/3, list_config_set/2,
+	 add_config_set/3, list_config_sets/2,
 	 yang_modules/2,
 	 protocol/2,
 	 exist/2]).
@@ -84,6 +84,26 @@ new_(AID0, ID0, Options) ->
     %% 	      insert_group(Tab, Key, I, GID)
       %% end, proplists:get_all_values(group, Options)),
     ok.
+
+delete_devices(AID, DevIdList) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      delete_devices_(AID, DevIdList)
+      end).
+
+delete_devices_(AID0, Devs) ->
+    AID = exodm_db:account_id_key(AID0),
+    [delete_device(AID, DID) || DID <- Devs].
+
+delete_device(AID0, DID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(DID0),
+    Tab = table(AID),
+    kvdb_conf:delete_all(Tab, DID),
+    ConfigSets = list_config_sets(AID, DID),
+    exodm_db_config:device_is_deleted(AID, DID, ConfigSets),
+    Groups = lookup_groups(AID, DID),
+    exodm_db_group:device_is_deleted(AID, DID, [G || {group,{_,G}} <- Groups]).
 
 insert_keys(Tab,DID, Options) ->
     Lkup = fun(A,B) -> case proplists:get_value(A, Options) of
@@ -187,13 +207,13 @@ add_config_set_(AID0, DID0, CfgName) ->
     end.
 
 
-list_config_set(AID0, DID0) ->
+list_config_sets(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
-    exodm_db:in_transaction(fun(_) -> list_config_set_(Tab, DID) end).
+    exodm_db:in_transaction(fun(_) -> list_config_sets_(Tab, DID) end).
 
-list_config_set_(Tab, DID) ->
+list_config_sets_(Tab, DID) ->
     Set = kvdb_conf:fold_children(
 	    Tab, fun(K, Acc) ->
 			 [lists:last(exodm_db:split_key(K))|Acc]
@@ -207,7 +227,7 @@ yang_modules(AID0, DID0) ->
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->
-	      CDs = list_config_set_(Tab, DID),
+	      CDs = list_config_sets_(Tab, DID),
 	      lists:map(
 		fun(Name) ->
 			{ok, Y} = exodm_db_config:get_yang_spec(AID, Name),

@@ -183,13 +183,13 @@ notification(Method, Elems, Env, AID, DID) ->
 	[] ->
 	    error({no_rpcs, Yang});
 	[{_, Spec}] ->
-	    ?debug("Spec = ~p~n", [Spec]),
+	    ?debug("Spec found~n", []),
 	    Module = mod(Yang),
 	    MethodBin = atom_to_binary(Method, latin1),
 	    Key = binary_to_list(qualified_method(MethodBin, Module)),
 	    case lists:keyfind(Key, 1, Spec) of
 		{_, {notification,_,{struct, SubSpec}}} ->
-		    ?debug("SubSpec = ~p~n", [SubSpec]),
+		    ?debug("SubSpec = ~p~n", [lists:sublist(SubSpec,1,2)]),
 		    {_, Params} = lists:keyfind("params", 1, SubSpec),
 		    NewParams = to_json(Params, Env, Elems),
 		    JSON = {struct, lists:keyreplace("params", 1, SubSpec,

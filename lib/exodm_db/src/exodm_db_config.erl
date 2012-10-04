@@ -9,19 +9,21 @@
 
 -export([init/1]).
 -export(
-   [new_config_set/2,           %% (AID, Options)
-    update_config_set/3,        %% (AID, Name, Options)
-    read_config_set/2,         %% (AID, Name)
-    read_config_set_values/2,  %% (AID, Name)
-    get_yang_spec/2,            %% (AID, Name)
-    get_url/2,                  %% (AID, Name)
-    delete_config_set/2,       %% (AID, Name)
-    create_yang_module/4,       %% (AID, <<"user">>|<<"system">>, File, Yang)
-    add_config_set_members/3,  %% (AID, CfgDataName, [DeviceID])
-    list_config_set_members/2, %% (AID, CfgDataName)
-    list_config_set_members/1, %% (Name)
-    cache_values/2,
-    map_device_to_cached_values/4,
+   [new_config_set/2,              %% (AID, Options)
+    update_config_set/3,           %% (AID, Name, Options)
+    read_config_set/2,             %% (AID, Name)
+    read_config_set_values/2,      %% (AID, Name)
+    get_yang_spec/2,               %% (AID, Name)
+    get_url/2,                     %% (AID, Name)
+    delete_config_set/2,           %% (AID, Name)
+    create_yang_module/4,          %% (AID, <<"user">>|<<"system">>, File, Yang)
+    add_config_set_members/3,      %% (AID, CfgDataName, [DeviceID])
+    delete_config_set_members/3,   %% (AID, Name, DIDs)
+    device_is_deleted/3,           %% (AID, DID, ConfigSets)
+    list_config_set_members/1,     %% (Name) -> (AID, Name)
+    list_config_set_members/2,     %% (AID, CfgDataName)
+    cache_values/2,                %% (AID, Name)
+    map_device_to_cached_values/4, %% (AID, Name)
     get_cached/4
    ]).
 -export([table/1]).
@@ -213,6 +215,7 @@ read_config_set_values(AID, Name) ->
       end).
 
 cache_values(AID0, Name0) ->
+    ?debug("cache_values(~p, ~p)~n", [AID0, Name0]),
     AID = exodm_db:account_id_key(AID0),
     Name = exodm_db:encode_id(Name0),
     Cache = cache(AID),
@@ -220,13 +223,33 @@ cache_values(AID0, Name0) ->
       fun(_Db) ->
 	      case read_config_set_values(AID, Name) of
 		  {ok, CT} ->
+		      ?debug("read CT = ~p~n", [CT]),
 		      Key = exodm_db:join_key(Name, <<"values">>),
-		      Last = kvdb_conf:last_list_pos(Cache, Key),
+		      {ok, Last} = kvdb_conf:last_list_pos(Cache, Key),
+		      ?debug("Last = ~p~n", [Last]),
 		      Ref = Last+1,
 		      exodm_db:write(Cache, exodm_db:list_key(Key, Ref), CT),
 		      {ok, Ref};
 		  {error, not_found} = Err ->
 		      Err
+	      end
+      end).
+
+switch_to_active(AID0, Name0) ->
+    ?debug("switch_to_active(~p, ~p)~n", [AID0, Name0]),
+    AID = exodm_db:account_id_key(AID0),
+    Name = exodm_db:encode_id(Name0),
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_Db) ->
+	      case read_config_set_values(AID, Name) of
+		  {ok, CT} ->
+		      kvdb_conf:delete_tree(
+			Tab, exodm_db:join_key(Name, <<"values">>)),
+		      Root = exodm_db:join_key(Name, <<"active">>),
+		      kvdb_conf:write_tree(CT#conf_tree{root = Root});
+		  {error, not_found} = Err ->
+		      error(Err)
 	      end
       end).
 
@@ -250,6 +273,7 @@ map_device_to_cached_values(AID0, Name0, Ref, DID) ->
       end).
 
 get_cached(AID0, Name0, Ref, DID) ->
+    ?debug("get_cached(~p, ~p, ~p, ~p)~n", [AID0,Name0,Ref,DID]),
     AID = exodm_db:account_id_key(AID0),
     Name = exodm_db:encode_id(Name0),
     Cache = cache(AID),
@@ -258,7 +282,8 @@ get_cached(AID0, Name0, Ref, DID) ->
 	      Key = exodm_db:join_key(Name, <<"values">>),
 	      RefKey = exodm_db:list_key(Key, Ref),
 	      case kvdb_conf:read(Cache, RefKey) of
-		  {ok, CT} ->
+		  {ok, {_, _, #conf_tree{} = CT}} ->
+		      ?debug("get_cached: CT = ~p~n", [CT]),
 		      DIDKey = exodm_db:join_key(
 				 [RefKey, <<"did">>, DID]),
 		      kvdb_conf:delete(Cache, DIDKey),
@@ -266,9 +291,11 @@ get_cached(AID0, Name0, Ref, DID) ->
 			     Cache, exodm_db:join_key(Key, <<"did">>)) of
 			  {ok, _} -> ok;
 			  done ->
-			      kvdb_conf:delete_all(Cache, RefKey)
+			      kvdb_conf:delete_tree(Cache, RefKey)
 		      end,
-		      {ok, CT};
+		      ?debug("Fetched CT = ~p~n", [CT]),
+		      Root = kvdb_conf:unescape_key(Key),
+		      {ok, CT#conf_tree{root = Root}};
 		  {error, _} = Error ->
 		      Error
 	      end
@@ -325,6 +352,42 @@ add_config_set_members(AID0, Name0, DIDs) ->
 		      error({unknown_config_set, Name})
 	      end
       end).
+
+delete_config_set_members(AID0, Name0, DIDs) ->
+    AID = exodm_db:account_id_key(AID0),
+    Tab = table(AID),
+    Name = exodm_db:encode_id(Name0),
+    Key = exodm_db:join_key(Name, <<"members">>),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      case exists(Tab, Name) of
+		  true ->
+		      lists:foreach(
+			fun(DID0) ->
+				DID = exodm_db:encode_id(DID0),
+				delete(Tab, Key, DID),
+				exodm_db_device:remove_config_set(
+				  AID, DID, Name)
+			end, DIDs);
+		  false ->
+		      ok
+	      end
+      end).
+
+device_is_deleted(AID0, DID0, Configs) ->
+    AID = exodm_db:account_id_key(AID0),
+    Tab = table(AID),
+    DID = exodm_db:encode_id(DID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      lists:foreach(
+		fun(Name0) ->
+			Name = exodm_db:encode_id(Name0),
+			Key = exodm_db:join_key(Name, <<"members">>),
+			delete(Tab, Key, DID)
+		end, Configs)
+      end).
+
 
 list_config_set_members(Name) ->
     AID = exodm_db_session:get_aid(),
@@ -613,3 +676,6 @@ read(Tab, Key, SubKey, AttrName) ->
 	{error, not_found} ->
 	    []
     end.
+
+delete(Tab, Key, Sub) ->
+    kvdb_conf:delete(Tab, kvdb_conf:join_key(Key, Sub)).

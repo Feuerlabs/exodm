@@ -2,7 +2,10 @@
 
 -ifdef(TEST).
 
--export([test_echo/1]).
+%% Must explicitly export the RPC callbacks, since otherwise the access check
+%% will fail.
+-export([test_echo/1,
+	 push_config_set_meth/1]).
 
 -include_lib("eunit/include/eunit.hrl").
 -include("feuerlabs_eunit.hrl").
@@ -52,9 +55,9 @@ exodm_test_() ->
 		     ?my_t(list_accounts(Config)),
 		     ?my_t(store_config(Config)),
 		     ?my_t(store_config2(Config)),
-		     %% ?my_t(list_groups(Config)),
-		     %% ?my_t(list_group_devices(Config)),
-		     %% ?my_t(list_group_notifications(Config)),
+		     ?my_t(list_groups(Config)),
+		     ?my_t(list_group_devices(Config)),
+		     ?my_t(list_group_notifications(Config)),
 		     ?my_t(list_users(Config)),
 		     ?my_t(store_exosense_yang(Config)),
 		     ?my_t(store_yang(Config)),
@@ -77,7 +80,8 @@ exodm_test_() ->
 					[
 					 ?my_t(client_ping(Cfg2)),
 					 ?my_t(test_notification(Cfg2)),
-					 ?my_t(device_json_rpc1(Cfg2))
+					 ?my_t(device_json_rpc1(Cfg2)),
+					 ?my_t(push_config_set1(Cfg2))
 					]
 				end}
 			      ]
@@ -109,41 +113,39 @@ populate(Cfg) ->
 				 {fullname, <<"Ulf Wiger">>},
 				 {password, <<"wiger">>}]}
 		       ]]),
-    %% {ok, GID1} = ?rpc(exodm_db_group,new,
-    %% 		     [
-    %% 		      AID2, [{name, <<"feuerlabs">>},
-    %% 			     %% {url, "https://ulf:wiger@localhost:8000/exodm/test_callback"}]
-    %% 			     {url, "http://localhost:8898/"}]
-    %% 		     ]),
-    %% {ok, GID2} = ?rpc(exodm_db_group,new,
-    %% 		     [
-    %% 		      AID2, [{name, <<"travelping">>},
-    %% 			     %% {url, "https://ulf:wiger@localhost:8000/exodm/test_callback2"}]
-    %% 			     {url, "http://localhost:8899/"}]
-    %% 		     ]),
+    {ok, GID1} = ?rpc(exodm_db_group,new,
+		      [
+		       AID2, [{name, <<"feuerlabs">>},
+			      {url, ?URL1}]
+    		     ]),
+    {ok, GID2} = ?rpc(exodm_db_group,new,
+    		     [
+    		      AID2, [{name, <<"travelping">>},
+    			     {url, ?URL2}]
+    		     ]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID1 = <<"x00000001">>,
 	       [{'protocol', <<"exodm_bert">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
-		{msisdn,"070100000001"}
-		%% {groups, [GID1, GID2]}
+		{msisdn,"070100000001"},
+		{groups, [GID1, GID2]}
 	       ]]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID2 = <<"x00000002">>,
 	       [{'protocol', <<"exodm_bert">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
-		{msisdn,"070100000002"}
-		%% {groups, [GID1, GID2]}
+		{msisdn,"070100000002"},
+		{groups, [GID1, GID2]}
 	       ]]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID3 = <<"x00000003">>,
 	       [{'protocol', <<"exodm_bert">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
-		{msisdn,"070100000003"}
-		%% {groups, [GID1]}
+		{msisdn,"070100000003"},
+		{groups, [GID1]}
 	       ]]),
     ?debugFmt("AID1 = ~p; AID2 = ~p;~n"
 	      "DID1 = ~p; DID2 = ~p; DID3 = ~p~n",
@@ -173,34 +175,33 @@ list_accounts(Cfg) ->
 	rpc(Cfg, exodm_db_account, lookup, [<<"a00000002">>]),
     ok.
 
-%% list_groups(Cfg) ->
-%%     [<<"g00000001">>,
-%%      <<"g00000002">>] =
-%% 	?rpc(exodm_db_account,list_groups, [2]),
-%%     ok.
+list_groups(Cfg) ->
+    [<<"g00000001">>,
+     <<"g00000002">>] =
+	?rpc(exodm_db_account,list_groups, [2]),
+    ok.
 
-%% list_group_devices(Cfg) ->
-%%     [<<"x00000001">>,
-%%      <<"x00000002">>,
-%%      <<"x00000003">>] =
-%% 	?rpc(exodm_db_group, list_devices, [2,1]),
-%%     [<<"x00000001">>,
-%%      <<"x00000002">>] =
-%% 	?rpc(exodm_db_group, list_devices, [2,2]),
-%%     [<<"x00000001">>] =
-%% 	?rpc(exodm_db_group, list_devices, [2,2,1,<<>>]),
-%%     [<<"x00000002">>,
-%%      <<"x00000003">>] =
-%% 	?rpc(exodm_db_group, list_devices, [2,1,99,<<"x00000001">>]),
-%%     ok.
+list_group_devices(Cfg) ->
+    [<<"x00000001">>,
+     <<"x00000002">>,
+     <<"x00000003">>] =
+	?rpc(exodm_db_group, list_devices, [2,1]),
+    [<<"x00000001">>,
+     <<"x00000002">>] =
+	?rpc(exodm_db_group, list_devices, [2,2]),
+    [<<"x00000001">>] =
+	?rpc(exodm_db_group, list_devices, [2,2,1,<<>>]),
+    [<<"x00000002">>,
+     <<"x00000003">>] =
+	?rpc(exodm_db_group, list_devices, [2,1,99,<<"x00000001">>]),
+    ok.
 
-%% list_group_notifications(Cfg) ->
-%%     %% [<<"https://ulf:wiger@localhost:8000/exodm/test_callback2">>,
-%%     %%  <<"https://ulf:wiger@localhost:8000/exodm/test_callback">>] =
-%%     [<<"http://localhost:8899/">>,
-%%      <<"http://localhost:8898/">>] =
-%% 	?rpc(exodm_db_device,lookup_group_notifications, [2, <<"x00000001">>]),
-%%     ok.
+list_group_notifications(Cfg) ->
+    %% [<<"https://ulf:wiger@localhost:8000/exodm/test_callback2">>,
+    %%  <<"https://ulf:wiger@localhost:8000/exodm/test_callback">>] =
+    [?URL2, ?URL1] =
+	?rpc(exodm_db_device,lookup_group_notifications, [2, <<"x00000001">>]),
+    ok.
 
 
 store_yang(Cfg) ->
@@ -264,21 +265,23 @@ store_exosense_yang_scr() ->
 %%       end).
 
 store_config(Cfg) ->
-    {ok, #conf_tree{root = R, tree = T}} =
+    R = <<"test1">>,
+    {ok, R} =
 	rscript(Cfg, store_config_scr()),
-    R = <<"test">>,
-    {T,T} = {T, [{<<"name">>, [], <<"test">>},
-		 {<<"url">>,[],?URL1},
-		 {<<"values">>, [{<<"cksrv-address">>, [], <<"127.0.0.1">>},
-				 {<<"kill-switch">>, [], 0},
-				 {<<"wakeup-prof">>,
-				  [{1, [{<<"data">>, [], <<"01010102">>},
-					{<<"id">>, [], 1}]},
-				   {2, [{<<"data">>, [], <<"01010103">>},
-					{<<"id">>, [], 2}]}]}
-				]},
-		 {<<"yang">>, [], <<"ckp-cfg.yang">>}
-		]},
+    T = ?rpc(exodm_db_config, read_config_set, [<<"a00000002">>,<<"test1">>]),
+    {T,T} = {T, [{name, <<"test1">>},
+		 {yang, <<"ckp-cfg.yang">>},
+		 {'notification-url',?URL1}]},
+		%%  {<<"values">>, [{<<"cksrv-address">>, [], <<"127.0.0.1">>},
+		%% 		 {<<"kill-switch">>, [], 0},
+		%% 		 {<<"wakeup-prof">>,
+		%% 		  [{1, [{<<"data">>, [], <<"01010102">>},
+		%% 			{<<"id">>, [], 1}]},
+		%% 		   {2, [{<<"data">>, [], <<"01010103">>},
+		%% 			{<<"id">>, [], 2}]}]}
+		%% 		]},
+		%%  {<<"yang">>, [], <<"ckp-cfg.yang">>}
+		%% ]},
     ok.
 
 store_config_scr() ->
@@ -288,10 +291,10 @@ store_config_scr() ->
 		fun(Db) ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
 			AID = exodm_db_session:get_aid(),
-			{ok, <<"test">>} =
+			{ok, <<"test1">>} =
 			    exodm_db_config:new_config_set(
 			      AID,
-			      [{name, <<"test">>},
+			      [{name, <<"test1">>},
 			       {yang, <<"ckp-cfg.yang">>},
 			       {'notification-url', ?URL1},
 			       {values,
@@ -307,19 +310,18 @@ store_config_scr() ->
 					     [{<<"id">>,2},
 					      {<<"data">>, <<"01010103">>}]}
 					   ]}
-				  }]}}]),
-			exodm_db_config:read_config_set(AID, <<"test">>)
+				  }]}}])
 		end)
       end).
 
 store_config2(Cfg) ->
-    {ok, #conf_tree{root = R, tree = T}} =
-	rscript(Cfg, store_config_scr2()),
     R = <<"test2">>,
-    {T,T} = {T, [{<<"name">>, [], <<"test2">>},
-		 {<<"url">>, [], ?URL2},
-		 %% no 'values' entry
-		 {<<"yang">>, [], <<"test.yang">>}
+    {ok, R} =
+	rscript(Cfg, store_config_scr2()),
+    T = ?rpc(exodm_db_config, read_config_set, [<<"a00000002">>,<<"test2">>]),
+    {T,T} = {T, [{name, <<"test2">>},
+		 {yang, <<"test.yang">>},
+		 {'notification-url', ?URL2}
 		]},
     ok.
 
@@ -335,16 +337,15 @@ store_config_scr2() ->
 			      AID,
 			      [{name, <<"test2">>},
 			       {yang, <<"test.yang">>},
-			       {'notification-url', ?URL2}]),
-			exodm_db_config:read_config_set(AID, <<"test2">>)
+			       {'notification-url', ?URL2}])
 		end)
       end).
 
 add_config_set_member(Cfg) ->
     ok = rscript(Cfg, add_config_set_member_scr()),
-    [<<"test">>, <<"test2">>] =
-	?rpc(exodm_db_device, list_config_set, [<<"a00000002">>,
-						<<"x00000001">>]),
+    [<<"test1">>, <<"test2">>] =
+	?rpc(exodm_db_device, list_config_sets, [<<"a00000002">>,
+						 <<"x00000001">>]),
     ok.
 
 add_config_set_member_scr() ->
@@ -355,9 +356,12 @@ add_config_set_member_scr() ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
 			AID = exodm_db_session:get_aid(),
 			exodm_db_config:add_config_set_members(
-			  AID, <<"test">>, [<<"x00000001">>]),
+			  AID, <<"test1">>, [<<"x00000001">>,
+					     <<"x00000002">>,
+					     <<"x00000003">>]),
 			exodm_db_config:add_config_set_members(
-			  AID, <<"test2">>, [<<"x00000001">>])
+			  AID, <<"test2">>, [<<"x00000001">>,
+					     <<"x00000002">>])
 		end)
       end).
 
@@ -391,14 +395,16 @@ client_ping(Cfg) ->
        {reply, pong, []} = exoport:ping()).
 
 set_access(Cfg) ->
+    set_access([{redirect, [{{test,echo,1},
+			     {?MODULE,test_echo,1}}]}], Cfg).
+
+set_access(Filter, Cfg) ->
     {ok, {Host, Port}} = application:get_env(exoport, exodm_address),
     {ok, Sn} = bert_rpc_exec:get_session(
 		 Host, Port, [tcp], [{auto_connect,false}], 10000),
     _A = gen_server:call(Sn, get_access),
     %% io:fwrite(user, "Old Access = ~p~n", [_A]),
-    ok = gen_server:call(
-	   Sn, {set_access, [{redirect, [{{test,echo,1},
-					  {?MODULE,test_echo,1}}]}]}),
+    ok = gen_server:call(Sn, {set_access, Filter}),
     %% io:fwrite(user, "New Access = ~p~n", [gen_server:call(Sn, get_access)]),
     ok.
 
@@ -516,6 +522,49 @@ device_json_rpc1(Cfg) ->
 			     {"params", {struct,[{"message","hello"}]}}]},
     [{8898, Notification}, {8899, Notification}] = Fetched,
     ok.
+
+push_config_set1(Cfg) ->
+    set_access([{redirect, [{{exoport_config, push_config_set, 1},
+			     {?MODULE, push_config_set_meth, 1}}]}], Cfg),
+    spawn_link(fun() ->
+		       register(push_config_set1, self()),
+		       receive
+			   {Pid, got_push_request, Args} ->
+			       io:fwrite(user, "Pid got push ~p~n", [Args]),
+			       Reply = {notify, 'push-config-set-callback',
+					[{'transaction-id', 1},
+					 {'rpc-status', <<"complete">>},
+					 {final, true}]},
+			       Pid ! {answer, Reply}
+		       end
+	       end),
+    ask_http_reset(Cfg),
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:push-config-set", "3",
+				{struct, [{"name", "test1"}]}),
+    {struct, [{"result", {struct, [{"transaction-id", _},
+				   {"rpc-status", "0"},
+				   {"rpc-status-string",
+				    "Operation has been accepted" ++ _},
+				   {"final", "0"}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    Fetched = fetch_json(Cfg),
+    Notification = {struct, [{"jsonrpc","2.0"},
+			     {"method","exodm:push-config-set-callback"},
+			     {"params", {struct,[{"message","hello"}]}}]},
+    [{8898, Notification}, {8899, Notification}] = Fetched,
+    ok.
+
+push_config_set_meth(Args) ->
+    push_config_set1 ! {self(), got_push_request, Args},
+    receive
+	{answer, A} ->
+	    A
+    after 10000 ->
+	    error(timeout)
+    end.
+
 
 fetch_json(Cfg) ->
     [{Port, ok(json2:decode_string(binary_to_list(Body)))} ||

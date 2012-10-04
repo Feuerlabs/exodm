@@ -36,7 +36,7 @@
 		       {auth, [{mod, exodm_rpc_yaws_auth},
 			       {realm, "exodm@feuerlabs.com"},
 			       {dir, "/exodm"}]},
-		       {listen, {127,0,0,1}},
+		       {listen, {0,0,0,0}},
 		       {ssl, [{keyfile, "$PRIV_DIR/keys/server.key"},
 			      {certfile, "$PRIV_DIR/keys/server.crt"},
 			      {password, "Exosense"}]}

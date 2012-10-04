@@ -155,11 +155,12 @@ devid(I) when is_integer(I) ->
     list_to_binary(integer_to_list(I)).
 
 store_ck3_yang(Db) ->
+    App = exodm_ck3,
     exodm_db_session:set_auth_as_user(<<"ga">>, Db),
-    %% store_yang(ck3, "exosense.yang", "yang/exosense.yang"),
-    store_yang(ck3, "ieft-inet-types.yang", "yang/ietf-inet-types.yang"),
-    store_yang(ck3, "ckp.yang", "yang/ckp.yang"),
-    store_yang(ck3, "ckp-cfg.yang", "yang/ckp-cfg.yang").
+    %% store_yang(App, "exosense.yang", "yang/exosense.yang"),
+    %% store_yang(App, "ieft-inet-types.yang", "yang/ietf-inet-types.yang"),
+    store_yang(App, "ckp.yang", "yang/ckp.yang").
+    %% store_yang(ck3, "ckp-cfg.yang", "yang/ckp-cfg.yang").
 
 store_yang(App, F, Path) ->
     {ok, Bin} = file:read_file(

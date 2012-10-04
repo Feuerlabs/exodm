@@ -108,14 +108,19 @@ json_rpc_({request, _ReqEnv,
 			[{'protocol', P}|Opts]),
     {ok, result_code(ok)};
 
-
-
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'deprovision-devices',
+	    [{'dev-id', DevIdList}]}}, _Env) ->
+    ?debug("~p:json_rpc(deprovision-devices) dev-id:~p~n",
+           [ ?MODULE, DevIdList ]),
+    exodm_db_device:delete_devices(exodm_db_session:get_aid(), DevIdList),
+    {ok, result_code(ok)};
 
 json_rpc_({request, _ReqEnv,
 	   {call, M, 'add-config-set-members',
 	    [{'name', CfgDataList},
              {'dev-id', DevIdList}]}} = _RPC, _Env) when ?EXO(M) ->
-    ?debug("~p:json_rpc(add-config-set-members) dev-id:~p config-set:~p~n",
+    ?debug("~p:json_rpc(add-config-set-members) config-sets:~p devices:~p~n",
            [ ?MODULE, CfgDataList, DevIdList ]),
     AID = exodm_db_session:get_aid(),
 
@@ -162,19 +167,19 @@ json_rpc_({request, ReqEnv,
 		      Module = filename:basename(Yang, ".yang"),
 		      {ok, Ref} = exodm_db_config:cache_values(AID, Cfg),
 		      RPC = {request, [{'transaction-id', TID}],
-			     {call, binary_to_atom(Module, [latin1]),
+			     {call, binary_to_atom(Module, latin1),
 			      'push-config-set',
 			      [{'name', Cfg},
 			       {'reference', Ref}]}},
-		      Env = [{aid, AID}, {user, User}],
-		      lists:foreach(
-			fun(DID) ->
-				exodm_db_config:map_device_to_cached_values(
-				  AID, Cfg, Ref, DID),
-				exodm_rpc_handler:queue_message(
-				  Db, AID, to_device,
-				  [{'device-id', DID}|Env], RPC)
-			end, Devices),
+		      Env = [{aid, AID}, {user, User},
+			     {yang, <<"exodm.yang">>}],
+		      %% Must map and queue in different loops
+		      _ = [exodm_db_config:map_device_to_cached_values(
+			     AID, Cfg, Ref, DID) || DID <- Devices],
+		      _ = [exodm_rpc_handler:queue_message(
+			     Db, AID, to_device,
+			     [{'device-id', DID}|Env], RPC) || DID <- Devices],
+		      exodm_db_config:switch_to_active(AID, Cfg),
 		      {ok, result_code(ok)};
 		  [] ->
 		      %% Is this an error or ok?
@@ -233,6 +238,35 @@ json_rpc_({request, _ReqEnv,
 	{error, not_found} ->
 	    {ok, result_code('object-not-found')}
     end;
+
+json_rpc_({request, _ReqEnv,
+	   {call, exodm, 'list-device-groups',
+	    [{n, N}, {previous, Prev}] = _Cfg}} = _RPC, _Env) ->
+    ?debug("~p:json_rpc(delete-device-group) config: ~p~n",
+	   [?MODULE, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    Res =
+	exodm_db:in_transaction(
+	  fun(_) ->
+		  FullNext = kvdb_conf:join_key([exodm_db:account_id_key(AID),
+						 <<"groups">>,
+						 exodm_db:group_id_key(Prev)]),
+		  exodm_db:list_next(<<"acct">>, N, FullNext,
+				     fun(Key) ->
+					     [_, _, Grp] =
+						 kvdb_conf:split_key(Key),
+					     exodm_db_group:lookup(AID, Grp)
+				     end)
+	  end),
+    ?debug("groups = ~p~n", [Res]),
+    {ok, [{groups,
+	   {array, [
+		    {struct,
+		     [{gid, to_uint32(exodm_db:group_id_value(G))},
+		      {name, Nm},
+		      {'notification-url', U}]} ||
+		       [{id,G},{name,Nm},{url,U}|_] <- Res]}}]};
+
 
 json_rpc_({request, _ReqEnv,
 	   {call, M, 'list-config-sets',

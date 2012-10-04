@@ -15,7 +15,7 @@
                        {appmods, [{"/", exodm_web_yaws}]},
                        {xtra_docroots, ["$PRIV_DIR/static"]},
                        {port, 8383},
-                       {listen, {127,0,0,1}}
+                       {listen, {0,0,0,0}}
                       ]},
 	 {jobs, [
 		 %% Initial, fairly arbitrary, settings for load-regulation

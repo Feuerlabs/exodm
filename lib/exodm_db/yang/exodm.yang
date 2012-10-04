@@ -287,6 +287,31 @@ module exodm {
         }
     }
 
+
+    rpc add-device-group-members {
+        description "Link devices to device groups";
+        input {
+            leaf-list device-groups {
+                description
+		  "Device groups to associate with the given device(s)";
+                type uint32;
+            }
+            leaf-list dev-id {
+                description "List of Device ID(s)";
+                type string {
+                    length "1..64";
+                }
+            }
+        }
+
+        output {
+            leaf result {
+                type result-code;
+            }
+        }
+    }
+
+
     rpc update-device-group {
         description "RPC to change the notification URL of an existing group";
 
@@ -392,10 +417,12 @@ module exodm {
     }
 
     rpc provision-device {
-        description "Create a new device. augment this call if you want to add device-data";
+        description
+	  "Create a new device. " +
+	  "augment this call if you want to add device-data";
         input {
             leaf dev-id {
-	      description "Account-wide unqiue device-id";
+	      description "Account-wide unique device-id";
 	      type string {
 		length "1..64";
 	      }
@@ -448,6 +475,27 @@ module exodm {
         }
     }
 
+    rpc deprovision-device {
+      description "RPC to deprovision an existing device.";
+
+      input {
+	leaf-list dev-id {
+	  description "Account-wide unique device-id";
+	  type string {
+	    length "1..64";
+	  }
+	  mandatory true;
+	}
+      }
+
+      output {
+	leaf result {
+	  type result-code;
+	}
+      }
+    }
+
+
     rpc add-config-set-members {
         description "Create a new device. augment this call if you want to add device-data";
         input {
@@ -459,28 +507,6 @@ module exodm {
             }
             leaf-list dev-id {
                 description "Devices to push the given config data instances to (s)";
-                type string {
-                    length "1..64";
-                }
-            }
-        }
-
-        output {
-            leaf result {
-                type result-code;
-            }
-        }
-    }
-
-    rpc add-device-group-members {
-        description "Link devices to device groups";
-        input {
-            leaf-list device-groups {
-                description "Device groups to associate with the given device(s)";
-                type uint32;
-            }
-            leaf-list dev-id {
-                description "List of Device ID(s)";
                 type string {
                     length "1..64";
                 }
