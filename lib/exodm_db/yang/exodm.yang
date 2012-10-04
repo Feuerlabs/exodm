@@ -484,7 +484,6 @@ module exodm {
 	  type string {
 	    length "1..64";
 	  }
-	  mandatory true;
 	}
       }
 
