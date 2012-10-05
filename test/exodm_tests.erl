@@ -235,7 +235,7 @@ store_exosense_yang_scr() ->
 			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
 			exodm_db_session:set_trusted_proc(),
 			{ok, Bin} = file:read_file(
-				      filename:join(code:priv_dir(ck3),
+				      filename:join(code:priv_dir(exodm_db),
 				      "yang/exosense.yang")),
 			exodm_db_yang:write("system.exosense.yang", Bin),
 			exodm_db_session:logout()

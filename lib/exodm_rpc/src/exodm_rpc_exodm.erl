@@ -35,11 +35,9 @@ json_rpc(RPC, Env) ->
 json_rpc_({request, _ReqEnv,
 	   {call, M, 'create-config-set',
 	    [{'name', N},
-	     {yang, Y},
-	     {'notification-url', URL},
-	     {values, JSON}] = Attrs}} = _RPC, _Env) when ?EXO(M) ->
+	     {yang, Y} | Rest] = Attrs}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(create-config-set) name:~p yang:~p "
-	   "URL: ~p values:~p~n", [?MODULE, N, Y, URL, JSON]),
+	   "Rest: ~p~n", [?MODULE, N, Y, Rest]),
     AID = exodm_db_session:get_aid(),
     try exodm_db_config:new_config_set(AID, Attrs) of
 	{ok, _} ->
@@ -248,18 +246,10 @@ json_rpc_({request, _ReqEnv,
     Res =
 	exodm_db:in_transaction(
 	  fun(_) ->
-		  FullNext = kvdb_conf:join_key([exodm_db:account_id_key(AID),
-						 <<"groups">>,
-						 exodm_db:group_id_key(Prev)]),
-		  exodm_db:list_next(<<"acct">>, N, FullNext,
-				     fun(Key) ->
-					     [_, _, Grp] =
-						 kvdb_conf:split_key(Key),
-					     exodm_db_group:lookup(AID, Grp)
-				     end)
+		  exodm_db_group:list_groups(AID, N, Prev)
 	  end),
     ?debug("groups = ~p~n", [Res]),
-    {ok, [{groups,
+    {ok, [{'device-groups',
 	   {array, [
 		    {struct,
 		     [{gid, to_uint32(exodm_db:group_id_value(G))},
@@ -278,22 +268,22 @@ json_rpc_({request, _ReqEnv,
 	exodm_db:in_transaction(
 	  fun(_) ->
 		  FullNext = kvdb_conf:join_key(exodm_db:account_id_key(AID),
-						list_to_binary(Prev)),
+						Prev),
 		  exodm_db:list_next(exodm_db_config:table(AID), N, FullNext,
 				     fun(Key) ->
-					     [_, _, Grp] =
-						 kvdb_conf:split_key(Key),
-					     exodm_db_group:lookup(AID, Grp)
+					     [CfgSet] = kvdb_conf:split_key(Key),
+					     exodm_db_config:read_config_set(
+					       AID, CfgSet)
 				     end)
 	  end),
-    ?debug("groups = ~p~n", [Res]),
-    {ok, [{groups,
+    ?debug("config sets = ~p~n", [Res]),
+    {ok, [{'config-sets',
 	   {array, [
 		    {struct,
-		     [{gid, to_uint32(exodm_db:group_id_value(G))},
-		      {name, Nm},
+		     [{name, Nm},
+		      {yang, Y},
 		      {'notification-url', U}]} ||
-		       [{id,G},{name,Nm},{url,U}|_] <- Res]}}]};
+		       [{name,Nm},{yang,Y},{'notification-url',U}|_] <- Res]}}]};
 
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),

@@ -17,7 +17,9 @@
 	 remove_device/3,
 	 device_is_deleted/3,
 	 list_devices/2, list_devices/4]).
--export([list_group_keys/2, list_group_keys/3]).
+-export([list_group_keys/2,
+	 list_group_keys/3,
+	 list_groups/3]).
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
 %%
@@ -132,13 +134,24 @@ exist(AID, GID0) ->
     end.
 
 list_group_keys(AID, Limit) ->
-    list_group_keys(AID, Limit, <<>>).
+    list_group_keys(AID, Limit, 0).
 
 list_group_keys(AID, Limit, Prev0) when is_integer(Limit), Limit > 0 ->
     %% The __last_gid is a non-group object in this table, and will always
     %% lie before all group IDs (which are of the form "g........").
-    Prev = erlang:max(to_binary(Prev0), <<"__last_gid">>),
+    Prev = erlang:max(exodm_db:group_id_key(Prev0), <<"__last_gid">>),
     exodm_db:list_next(table(AID), Limit, Prev, fun(K) -> K end).
+
+list_groups(AID, Limit, Prev0) when is_integer(Limit), Limit > 0 ->
+        %% The __last_gid is a non-group object in this table, and will always
+    %% lie before all group IDs (which are of the form "g........").
+    Prev = erlang:max(exodm_db:group_id_key(Prev0), <<"__last_gid">>),
+    exodm_db:list_next(table(AID), Limit, Prev,
+		       fun(Key) ->
+			       [Grp] = kvdb_conf:split_key(Key),
+			       exodm_db_group:lookup(AID, Grp)
+		       end).
+
 
 add_device(AID0, GID0, DID) ->
     {Tab, GID} = tab_and_gid(AID0, GID0),
