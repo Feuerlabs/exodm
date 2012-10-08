@@ -77,7 +77,10 @@ web_rpc(St, Req, Session) ->
 		   "  E = ~p~n"
 		   "  Trace = ~p~n",
 		   [?MODULE, St, Req, Session, E, erlang:get_stacktrace()]),
-	    error(E)
+	    {false, error_response({internal_error,
+				    lists:flatten(io_lib:format("~p", [E]))})};
+	throw:{error_response, Err, Data} ->
+	    {false, error_response({Err, Data})}
     end.
 
 web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
@@ -88,6 +91,7 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 	    {user, UID}],
     case json_get_device_id(Request) of
 	{ok, DID} ->
+	    check_if_device_exists(AID, DID),
 	    ?debug("found device-id: ~p~n", [DID]),
 	    case find_method_spec(Method, AID, DID) of
 		{ok, Yang, Module, ShortMeth, Protocol, URL, Spec} ->
@@ -139,6 +143,15 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 		    ?debug("is_exodm_method(~p, ~p) -> error~n", [Method,AID]),
 		    false
 	    end
+    end.
+
+check_if_device_exists(AID, DID) ->
+    case exodm_db_device:exist(AID, DID) of
+	true ->
+	    ok;
+	false ->
+	    throw({error_response, 'device-unknown',
+		   ["Device ", DID, "doesn't exist"]})
     end.
 
 handle_exodm_rpc(Protocol, Env, RPC, Session, Spec) ->
