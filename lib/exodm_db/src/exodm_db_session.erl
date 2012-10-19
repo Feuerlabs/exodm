@@ -269,7 +269,7 @@ handle_call({make_user_active, U, Db}, _, St) ->
                                   {reply, {true, AID, Role}, St}
                           end
                   end);
-        [#session{aid = AID, role = Role}] = Session ->
+        [#session{aid = AID, role = Role} = Session] ->
             reset_timer(Session),
             {reply, {true, AID, Role}, St}
     end;

@@ -9,7 +9,7 @@
 
 -export([init/1]).
 -export([new/3, update/3, lookup/2, lookup_attr/3,
-	 delete/2,
+	 delete/2, delete_devices/2,
 	 add_config_set/3, list_config_sets/2,
 	 yang_modules/2,
 	 protocol/2,
@@ -37,9 +37,9 @@
 %% /<aid>/devices/<did>/latitude   = uint32()
 %% /<aid>/devices/<did>/timestamp  = uint32()
 %% /<aid>/devices/<did>/device-key = uint64()
-%% /<aid>/devices/<did>/__did      = string()
+%% /<aid>/devices/<did>/did      = string()
 %% /<aid>/devices/<did>/server-key = uint64()
-%% /<aid>/devices/<did>/groups[<i>]/__gid = uint32()
+%% /<aid>/devices/<did>/groups[<i>]/gid = uint32()
 %%
 
 %% FIXME option validation
@@ -66,19 +66,27 @@ new_(AID0, ID0, Options) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(ID0),
     Tab = table(AID),
-    insert(Tab,DID,'__did',  to_binary(ID0)),
-    insert(Tab,DID,name,     binary_opt(name, Options)),
-    insert(Tab,DID,description, binary_opt(description, Options)),
-    insert(Tab,DID,msisdn,   binary_opt(msisdn,Options)),
-    insert(Tab,DID,imsi,     binary_opt(imsi,Options)),
-    insert(Tab,DID,imei,     binary_opt(imei,Options)),
-    insert(Tab,DID,activity, uint32_opt(activity,Options)),
-    insert(Tab,DID,longitude,uint32_opt(longitude,Options)),
-    insert(Tab,DID,latitude, uint32_opt(latitude,Options)),
-    insert(Tab,DID,timestamp,uint32_opt(timestamp,Options)),
+    insert_(Tab, AID, DID, Options).
+
+insert_(Tab, AID, DID, Options) ->
+    insert(Tab,DID, 'did',  exodm_db:decode_id(DID)),
     insert_keys(Tab, DID, Options),
     insert_groups(AID, Tab, DID, proplists:get_value(groups, Options, [])),
     insert_protocol(Tab, DID, proplists:get_value(protocol, Options)),
+    _ = [insert_attr(Tab, DID, K,to_binary(V)) ||
+	    {K,V} <- Options,
+	    not lists:member(K, ['device-id','gid',
+				 'server-key', 'device-key',
+				 'protocol', 'groups'])],
+    %% insert_attr(Tab,DID,name,     binary_opt(name, Options)),
+    %% insert_attr(Tab,DID,description, binary_opt(description, Options)),
+    %% insert(Tab,DID,msisdn,   binary_opt(msisdn,Options)),
+    %% insert(Tab,DID,imsi,     binary_opt(imsi,Options)),
+    %% insert(Tab,DID,imei,     binary_opt(imei,Options)),
+    %% insert(Tab,DID,activity, uint32_opt(activity,Options)),
+    %% insert(Tab,DID,longitude,uint32_opt(longitude,Options)),
+    %% insert(Tab,DID,latitude, uint32_opt(latitude,Options)),
+    %% insert(Tab,DID,timestamp,uint32_opt(timestamp,Options)),
     %% lists:foreach(
     %%   fun({I,GID}) ->
     %% 	      insert_group(Tab, Key, I, GID)
@@ -99,7 +107,7 @@ delete_device(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
-    kvdb_conf:delete_all(Tab, DID),
+    kvdb_conf:delete_tree(Tab, DID),
     ConfigSets = list_config_sets(AID, DID),
     exodm_db_config:device_is_deleted(AID, DID, ConfigSets),
     Groups = lookup_groups(AID, DID),
@@ -125,42 +133,55 @@ insert_keys(Tab,DID, Options) ->
 
 %% FIXME validate every item BEFORE insert!
 update(AID, DID, Options) ->
+    update(AID, DID, _Delete = false, Options).
+
+update(AID, DID, DeleteOther, Options) when is_boolean(DeleteOther) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      update_(AID, DID, Options)
+	      update_(AID, DID, DeleteOther, Options)
       end).
 
-update_(AID0, DID0, Options) ->
+update_(AID0, DID0, DeleteOther, Options) ->
     DID = exodm_db:encode_id(DID0),
     AID = exodm_db:account_id_key(AID0),
     Tab = table(AID),
-    lists:foreach(
-      fun
-	  ({name,Value}) ->
-	      insert(Tab,DID,name,to_binary(Value));
-	  ({msisdn,Value}) ->
-	      insert(Tab,DID,msisdn, to_binary(Value));
-	  ({imsi,Value}) ->
-	      insert(Tab,DID,imsi,to_binary(Value));
-	  ({imei,Value}) ->
-	      insert(Tab,DID,imei,to_binary(Value));
-	  ({activity,Act}) ->
-	      insert(Tab,DID,activity,<<Act:32>>);
-	  ({latitude,Lat}) ->
-	      insert(Tab,DID,latitude,<<Lat:32>>);
-	  ({longitude,Lon}) ->
-	      insert(Tab,DID,longitude,<<Lon:32>>);
-	  ({timestamp,Ts}) ->
-	      insert(Tab,DID,timestamp,<<Ts:32>>);
-	  ({group,{I,GID}}) ->
-	      insert_group(AID,Tab,DID,I,GID);
-	  ({protocol, Protocol0}) ->
-	      Protocol = to_binary(Protocol0),
-	      insert_protocol(Tab, DID, Protocol);
-	  (_) ->
-	      skip
-      end, Options),
-    insert_keys(Tab, DID, Options).
+    case exist(AID, DID) of
+	true ->
+	    if DeleteOther ->
+		    AttrsT = kvdb_conf:join_key(DID, <<"a">>),
+		    kvdb_conf:delete_subtree(Tab, AttrsT);
+	       true ->
+		    ok
+	    end,
+	    insert_(Tab, AID, DID, Options)
+    end.
+    %% lists:foreach(
+    %%   fun
+    %% 	  ({name,Value}) ->
+    %% 	      insert(Tab,DID,name,to_binary(Value));
+    %% 	  ({msisdn,Value}) ->
+    %% 	      insert(Tab,DID,msisdn, to_binary(Value));
+    %% 	  ({imsi,Value}) ->
+    %% 	      insert(Tab,DID,imsi,to_binary(Value));
+    %% 	  ({imei,Value}) ->
+    %% 	      insert(Tab,DID,imei,to_binary(Value));
+    %% 	  ({activity,Act}) ->
+    %% 	      insert(Tab,DID,activity,<<Act:32>>);
+    %% 	  ({latitude,Lat}) ->
+    %% 	      insert(Tab,DID,latitude,<<Lat:32>>);
+    %% 	  ({longitude,Lon}) ->
+    %% 	      insert(Tab,DID,longitude,<<Lon:32>>);
+    %% 	  ({timestamp,Ts}) ->
+    %% 	      insert(Tab,DID,timestamp,<<Ts:32>>);
+    %% 	  ({group,{I,GID}}) ->
+    %% 	      insert_group(AID,Tab,DID,I,GID);
+    %% 	  ({protocol, Protocol0}) ->
+    %% 	      Protocol = to_binary(Protocol0),
+    %% 	      insert_protocol(Tab, DID, Protocol);
+    %% 	  (_) ->
+    %% 	      skip
+    %%   end, Options),
+    %% insert_keys(Tab, DID, Options).
 
 insert_protocol(_Tab, _DID, undefined) ->
     error(unknown_protocol, [undefined]);
@@ -301,7 +322,7 @@ lookup_groups(AID, DID0) ->
       exodm_db:fold_list2(
 	Tab,
 	fun(I,Key,Acc) ->
-		case read_uint32(Tab, Key, '__gid') of
+		case read_uint32(Tab, Key, 'gid') of
 		    [{_,GID}] -> [{group,{I,GID}} | Acc];
 		    [] -> Acc
 		end
@@ -399,7 +420,7 @@ lookup_keys(AID, DID0) ->
       end}.
 
 exist(AID, DID) ->
-    case read(table(AID), exodm_db:encode_id(DID), name) of
+    case read(table(AID), exodm_db:encode_id(DID), did) of
 	[] -> false;
 	[_] -> true
     end.
@@ -418,6 +439,10 @@ insert(Tab, Key, Item, Value) ->
     Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     exodm_db:write(Tab, Key1, Value).
 
+insert_attr(Tab, Key, Item, Value) ->
+    Key1 = exodm_db:join_key([Key, <<"a">>, to_binary(Item)]),
+    exodm_db:write(Tab, Key1, Value).
+
 insert_groups(AID, Tab, DID, Groups) ->
     insert_groups(AID, Tab, 1, DID, Groups).
 
@@ -432,7 +457,7 @@ insert_groups(AID, Tab, I0, DID, Groups0) ->
 insert_group(AID, Tab, DID, I, GID) when is_integer(I) ->
     K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
     exodm_db_group:add_device(AID, GID, DID),
-    insert(Tab, K, '__gid',  gid_value(GID)).
+    insert(Tab, K, 'gid',  gid_value(GID)).
 
 add_groups(AID, DID0, Groups) ->
     DID = exodm_db:encode_id(DID0),
@@ -445,7 +470,7 @@ add_groups(AID, DID0, Groups) ->
 				 {ok,{_,_,<<GID:32>>}} =
 				     kvdb_conf:read(
 				       Tab, kvdb_conf:join_key(
-					      Kl, <<"__gid">>)),
+					      Kl, <<"gid">>)),
 				 case lists:member(GID, Groups) of
 				     true ->
 					 {[GID|Acc],I};

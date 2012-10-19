@@ -185,12 +185,12 @@ list_group_devices(Cfg) ->
     [<<"x00000001">>,
      <<"x00000002">>,
      <<"x00000003">>] =
-	?rpc(exodm_db_group, list_devices, [2,1]),
+	?rpc(exodm_db_group, list_devices, [2,1]), % AID=2, GID=1
     [<<"x00000001">>,
      <<"x00000002">>] =
-	?rpc(exodm_db_group, list_devices, [2,2]),
+	?rpc(exodm_db_group, list_devices, [2,2]), % AID=2, GID=2
     [<<"x00000001">>] =
-	?rpc(exodm_db_group, list_devices, [2,2,1,<<>>]),
+	?rpc(exodm_db_group, list_devices, [2,2,1,<<>>]), % list 1, prev= <<>>
     [<<"x00000002">>,
      <<"x00000003">>] =
 	?rpc(exodm_db_group, list_devices, [2,1,99,<<"x00000001">>]),
@@ -403,17 +403,8 @@ set_access(Filter, Cfg) ->
     {ok, Sn} = bert_rpc_exec:get_session(
 		 Host, Port, [tcp], [{auto_connect,false}], 10000),
     _A = gen_server:call(Sn, get_access),
-    %% io:fwrite(user, "Old Access = ~p~n", [_A]),
     ok = gen_server:call(Sn, {set_access, Filter}),
-    %% io:fwrite(user, "New Access = ~p~n", [gen_server:call(Sn, get_access)]),
     ok.
-
-%% load_this_module(Cfg) ->
-%%     {ok, Bin} = file:read_file(code:which(?MODULE)),
-%%     {module, ?MODULE} =
-%% 	?rpc(code, load_binary,
-%% 	     [?MODULE, atom_to_list(?MODULE) ++ ".beam", Bin]),
-%%     ok.
 
 test_echo([Args]) ->
     io:fwrite(user, "test_echo(~p)~n", [Args]),
@@ -435,18 +426,27 @@ notification_(Cfg) ->
     exoport:rpc(exodm_rpc, notification, [test, 'echo-callback',
 					  [{message, "howdy"}]]),
     Fetched = fetch_json(Cfg),
-    %% io:fwrite(user, "Fetched (howdy): ~p~n", [Fetched]),
     Rep = {struct, [{"jsonrpc","2.0"},
 		    {"method","test:echo-callback"},
 		    {"params", {struct, [{"message", "howdy"}]}}]},
-    [{8898, Rep}, {8899, Rep}] = Fetched,
+    [{8898, [Rep]}, {8899, [Rep]}] = Fetched,
     ok.
 
 
 ask_http_reset(Cfg) ->
-    ReplyF = fun(_) -> basic_200_OK() end,
-    exodm_test_lib:ask_http_servers({reset, [{http_reply,ReplyF}]}, Cfg).
+    ask_http_reset(Cfg, []).
 
+ask_http_reset(Cfg, Opts0) ->
+    Opts = default_opt(http_reply, fun(_) -> basic_200_OK() end,
+		       default_opt(expect, 1, Opts0)),
+    exodm_test_lib:ask_http_servers({reset, Opts}, Cfg).
+
+default_opt(Key, Val, Opts) ->
+    case lists:keymember(Key, 1, Opts) of
+	true -> Opts;
+	false ->
+	    [{Key, Val}|Opts]
+    end.
 
 basic_200_OK() ->
     <<"HTTP/1.1 200 OK\r\n"
@@ -520,10 +520,14 @@ device_json_rpc1(Cfg) ->
     Notification = {struct, [{"jsonrpc","2.0"},
 			     {"method","test:echo-callback"},
 			     {"params", {struct,[{"message","hello"}]}}]},
-    [{8898, Notification}, {8899, Notification}] = Fetched,
+    [{8898, [Notification]}, {8899, [Notification]}] = Fetched,
     ok.
 
+
 push_config_set1(Cfg) ->
+    dbg:tracer(),
+    dbg:tpl(exodm_test_lib,x),
+    dbg:p(all,[c]),
     set_access([{redirect, [{{exoport_config, push_config_set, 1},
 			     {?MODULE, push_config_set_meth, 1}}]}], Cfg),
     spawn_link(fun() ->
@@ -542,18 +546,19 @@ push_config_set1(Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:push-config-set", "3",
 				{struct, [{"name", "test1"}]}),
-    {struct, [{"result", {struct, [{"transaction-id", _},
-				   {"rpc-status", "0"},
-				   {"rpc-status-string",
-				    "Operation has been accepted" ++ _},
-				   {"final", "0"}]}},
-	      {"id",_},
-	      {"jsonrpc","2.0"}]} = Reply,
+    {struct, [{"result", {struct, [{"result", "0"}]}},
+	      {"id", _},
+	      {"jsonrpc", "2.0"}]} = Reply,
     Fetched = fetch_json(Cfg),
-    Notification = {struct, [{"jsonrpc","2.0"},
-			     {"method","exodm:push-config-set-callback"},
-			     {"params", {struct,[{"message","hello"}]}}]},
-    [{8898, Notification}, {8899, Notification}] = Fetched,
+    [{8898, [N]}, {8899, [N]}] = Fetched,
+    {struct, [{"jsonrpc","2.0"},
+	      {"method","exodm:push-config-set-callback"},
+	      {"params",
+	       {struct, [{"transaction-id", _},
+			 {"rpc-status", "1"},
+			 {"rpc-status-string",
+			  "The operation has completed" ++ _},
+			 {"final", "1"}]}}]} = N,
     ok.
 
 push_config_set_meth(Args) ->
@@ -567,8 +572,8 @@ push_config_set_meth(Args) ->
 
 
 fetch_json(Cfg) ->
-    [{Port, ok(json2:decode_string(binary_to_list(Body)))} ||
-	{Port,Body} <- exodm_test_lib:ask_http_servers(fetch_content, Cfg)].
+    [{Port, [ok(json2:decode_string(binary_to_list(Body))) || Body <- Msgs]} ||
+	{Port,Msgs} <- exodm_test_lib:ask_http_servers(fetch_content, Cfg)].
 
 ok({ok, Res}) ->
     Res.

@@ -95,16 +95,25 @@ json_rpc_({request, _ReqEnv,
 
 
 json_rpc_({request, _ReqEnv,
-	   {call, M, 'provision-device',
+	   {call, _, 'provision-device',
 	    [{'dev-id', I},
 	     {'protocol', P} |
-	     Opts]}} = _RPC, _Env) when ?EXO(M) ->
+	     Opts]}} = _RPC, _Env) ->
     ?debug("~p:json_rpc(provision-device) dev-id:~p "
 	   "protocol:~p Optional:~p~n", [?MODULE, I, P, Opts]),
 
     exodm_db_device:new(exodm_db_session:get_aid(), I,
 			[{'protocol', P}|Opts]),
     {ok, result_code(ok)};
+
+json_rpc_({request, _ReqEnv,
+	   {call, _, 'update-device',
+	    [{'dev-id', I} | Opts]}}, _Env) ->
+    ?debug("~p:json_rpc(update-device) dev-id: ~p, Opts = ~p~n",
+	   [?MODULE,I,Opts]),
+    exodm_db_device:update(exodm_db_session:get_aid(), I, Opts),
+    {ok, result_code(ok)};
+
 
 json_rpc_({request, _ReqEnv,
 	   {call, exodm, 'deprovision-devices',

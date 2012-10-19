@@ -82,6 +82,56 @@ module exodm {
 	}
     }
 
+    grouping device-obj {
+      description "Device object leafs";
+
+      leaf dev-id {
+	description "Account-wide unique device-id";
+	type string {
+	  length "1..64";
+	}
+	mandatory true;
+      }
+      leaf protocol {
+	description "Protocol between device and Exosense server";
+	type string;
+	mandatory true;
+      }
+      leaf description {
+	description "User-provided description of device";
+	type string;
+      }
+      leaf server-key {
+	description "Server key";
+	type uint64;
+      }
+      leaf device-key {
+	description "Device key";
+	type uint64;
+      }
+      leaf msisdn {
+	type string;
+      }
+      leaf imsi {
+	type string;
+      }
+      leaf imei {
+	type string;
+      }
+      leaf latitude {
+	description "Latitude of device location";
+	type decimal64 {
+	  fraction-digits 6;
+	}
+      }
+      leaf longitude {
+	description "Longitude of device location";
+	type decimal64 {
+	  fraction-digits 6;
+	}
+      }
+    }
+
     // INTERNAL INFO!
     // <uid>/devices/<did>/name    = string()
     // <uid>/devices/<did>/msisdn  = msisdn()
@@ -259,6 +309,27 @@ module exodm {
         }
     }
 
+    rpc list-devices {
+        description "List provisioned devices, N entries at a time";
+
+        input {
+            leaf n {
+                description "Number of entries to fetch";
+                type uint32;
+            }
+            leaf previous {
+	      description "Previous device ID; \"\" if from beginning";
+                type string;
+            }
+        }
+        output {
+            list devices {
+	      uses device-obj;
+            }
+        }
+    }
+
+
     rpc list-config-sets {
         description "List config sets, N entries at a time";
 
@@ -366,7 +437,8 @@ module exodm {
         description "RPC to store a YANG module either in user or system space";
         input {
             leaf repository {
-                description "Where to store the module: Currently 'system' or 'user'";
+                description
+		  "Where to store the module: Currently \"system\" or \"user\"";
                 type string {
                     length "1..32";
                 }
@@ -387,6 +459,29 @@ module exodm {
                 type result-code;
             }
         }
+    }
+
+    rpc list-yang-modules {
+      description "RPC to list existing yang modules.";
+      input {
+	leaf repository {
+	  description "\"system\" or \"user\"; default: \"user\"";
+	  type string {
+	    length "1..32";
+	  }
+	  default "user";
+	}
+	leaf n {
+	  description "Number of entries to fetch.";
+	  type uint32;
+	}
+	leaf previous {
+	  description "Previous yang filename.";
+	  type string {
+	    length "1..32";
+	  }
+	}
+      }
     }
 
     rpc create-config-set {
@@ -450,51 +545,52 @@ module exodm {
 	  "Create a new device. " +
 	  "augment this call if you want to add device-data";
         input {
-            leaf dev-id {
-	      description "Account-wide unique device-id";
-	      type string {
-		length "1..64";
-	      }
-	      mandatory true;
-            }
-	    leaf protocol {
-	      description "Protocol between device and Exosense server";
-	      type string;
-	      mandatory true;
-	    }
-	    leaf description {
-	      description "User-provided description of device";
-	      type string;
-	    }
-            leaf server-key {
-	      description "Server key";
-	      type uint64;
-            }
-            leaf device-key {
-	      description "Device key";
-	      type uint64;
-            }
-	    leaf msisdn {
-	      type string;
-	    }
-	    leaf imsi {
-	      type string;
-	    }
-	    leaf imei {
-	      type string;
-	    }
-	    leaf latitude {
-	      description "Latitude of device location";
-	      type decimal64 {
-		fraction-digits 6;
-	      }
-	    }
-	    leaf longitude {
-	      description "Longitude of device location";
-	      type decimal64 {
-		fraction-digits 6;
-	      }
-	    }
+	  uses device-obj;
+            // leaf dev-id {
+	    //   description "Account-wide unique device-id";
+	    //   type string {
+	    // 	length "1..64";
+	    //   }
+	    //   mandatory true;
+            // }
+	    // leaf protocol {
+	    //   description "Protocol between device and Exosense server";
+	    //   type string;
+	    //   mandatory true;
+	    // }
+	    // leaf description {
+	    //   description "User-provided description of device";
+	    //   type string;
+	    // }
+            // leaf server-key {
+	    //   description "Server key";
+	    //   type uint64;
+            // }
+            // leaf device-key {
+	    //   description "Device key";
+	    //   type uint64;
+            // }
+	    // leaf msisdn {
+	    //   type string;
+	    // }
+	    // leaf imsi {
+	    //   type string;
+	    // }
+	    // leaf imei {
+	    //   type string;
+	    // }
+	    // leaf latitude {
+	    //   description "Latitude of device location";
+	    //   type decimal64 {
+	    // 	fraction-digits 6;
+	    //   }
+	    // }
+	    // leaf longitude {
+	    //   description "Longitude of device location";
+	    //   type decimal64 {
+	    // 	fraction-digits 6;
+	    //   }
+	    // }
         }
 
         output {
@@ -502,6 +598,22 @@ module exodm {
                 type result-code;
             }
         }
+    }
+
+    rpc update-device {
+      description "RPC to update an existing device object.";
+      input {
+	uses device-obj {
+	  refine protocol {
+	    mandatory false;
+	  }
+	}
+      }
+      output {
+	leaf result {
+	  type result-code;
+	}
+      }
     }
 
     rpc deprovision-device {
@@ -525,16 +637,21 @@ module exodm {
 
 
     rpc add-config-set-members {
-        description "Create a new device. augment this call if you want to add device-data";
+        description
+	  "Create a new device. augment this call if you want to add " +
+	  "device-data";
         input {
             leaf-list name {
-                description "Configuration data instances to associate with the given device(s)";
+                description
+		  "Configuration data instances to associate with " +
+		  "the given device(s)";
                 type string {
                     length "1..32";
                 }
             }
             leaf-list dev-id {
-                description "Devices to push the given config data instances to (s)";
+                description
+		  "Devices to push the given config data instances to (s)";
                 type string {
                     length "1..64";
                 }

@@ -123,9 +123,8 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 	    ?debug("no device-id~n", []),
 	    case is_exodm_method(Method, AID) of
 		{ok, Yang, Module, ShortMeth, Protocol, URL, Spec} ->
-		    ?debug("ExoDM method spec (~p): ~p~n"
-			   "Module = ~p; ShortM = ~p~n",
-			   [Method, Spec, Module, ShortMeth]),
+		    ?debug("ExoDM method: ~p; Module = ~p; ShortM = ~p~n",
+			   [Method, Module, ShortMeth]),
 		    Env1 = [{yang, Yang},
 			    {protocol, Protocol}]
 			++ [{'notification-url', URL} || URL =/= <<>>] ++ Env0,
@@ -156,8 +155,8 @@ check_if_device_exists(AID, DID) ->
 
 handle_exodm_rpc(Protocol, Env, RPC, Session, Spec) ->
     Mod = exodm_rpc_protocol:module(Protocol),
-    ?debug("handle_exodm_rpc(~p, ~p, ~p, ~p, ~p)~n"
-	   "Mod = ~p~n", [Protocol, Env, RPC, Session, Spec, Mod]),
+    ?debug("handle_exodm_rpc(~p, ~p, ~p, ~p); Mod = ~p~n",
+	   [Protocol, Env, RPC, Session, Mod]),
     try Mod:json_rpc(RPC, Env) of
 	{ok, Result} = _OK when is_list(Result) ->
 	    ?debug("~p:json_rpc(...) -> ~p~n", [?MODULE, _OK]),
@@ -312,10 +311,10 @@ find_method_spec_(Module, Specs, Method, Protocol) ->
     Yang = <<Module/binary, ".yang">>,
     case lists:keyfind(Yang, 2, Specs) of
 	{_CfgName, _Y} = _Found ->
-	    ?debug("found spec = ~p~n", [_Found]),
+	    ?debug("found spec in = ~p~n", [_CfgName]),
 	    find_method_rpcs_(Yang, Module, Method, Protocol, <<>>);
 	{_CfgName, _Y, URL} = _Found ->
-	    ?debug("found spec = ~p~n", [_Found]),
+	    ?debug("found spec in = ~p~n", [_CfgName]),
 	    find_method_rpcs_(Yang, Module, Method, Protocol, URL);
 	false ->
 	    error
@@ -332,8 +331,8 @@ find_method_rpcs_(Yang, Module, Method, Protocol, URL) ->
 	    Key = binary_to_list(<<Module/binary,":",Method/binary>>),
 	    case lists:keyfind(Key, 1, Spec) of
 		{_, RPC} ->
-		    io:fwrite("Method found: Mod = ~p;~n  RPC = ~P~n",
-			      [Module,RPC,5]),
+		    ?debug("Method found: Mod = ~p;~n  RPC = ~P~n",
+			   [Module,RPC,5]),
 		    {ok, Yang, Module, Method, Protocol, URL, RPC};
 		false ->
 		    case lists:keyfind(binary_to_list(Method),1,Spec) of
@@ -358,7 +357,6 @@ validate_request(Method, Module, {struct, InputArgs},
     ?debug("validate_request(~p, ~p)~n", [Method,InputArgs]),
     case lists:keyfind("params", 1, L) of
 	{_, {struct, Params}} ->
-	    ?debug("Params = ~p~n", [Params]),
 	    VerifyRes = do_validate(Method, Module, InputArgs, Params),
 	    ?debug("VerifyRes = ~p~n", [VerifyRes]),
 	    VerifyRes;
@@ -468,14 +466,13 @@ success_response(Result, Env, {request, Attrs, _},
     ?debug("success_response(~p, Env = ~p, Attrs = ~p, Elems = ~p)~n",
 	   [Result, Env, Attrs, Elems]),
     {_, {struct, ResultSpec}} = lists:keyfind("result", 1, Elems),
-    ?debug("ResultSpec = ~p~n", [ResultSpec]),
     {_, TID} = lists:keyfind(transaction_id, 1, Attrs),
     {struct, to_json_(ResultSpec, Attrs ++ Env,
 		      [{'transaction-id', TID}|Result], [])}.
 
 
 accept_response(Attrs, {_, _, {reply, {struct, Elems}}} = Spec) ->
-    ?debug("~p:accept_response(~p, ~p)~n", [?MODULE, Attrs, Spec]),
+    ?debug("~p:accept_response(~p, ...)~n", [?MODULE, Attrs]),
     case lists:keyfind("result", 1, Elems) of
 	{_, void} ->
 	    "\"ok\"";
@@ -692,13 +689,20 @@ convert_req_([{K, Ch, _Descr, [Type|_] = Info}|Spec1], Req) ->
 	false ->
 	    case lists:keyfind(mandatory,1,Info) of
 		{mandatory,true} ->
+		    %% Mandatory leafs MUST NOT have a default statement
+		    %% (RFC6020, 7.6.4)
 		    AlsoMissing =
 			[K1 || {K1,_,_,I} <- Spec1,
 			       (lists:member({mandatory,true}, I) andalso
 				not(lists:keymember(K1, 1, Spec1)))],
 		    throw({invalid_params, {required, [K|AlsoMissing]}});
 		_ ->
-		    convert_req_(Spec1, Req)
+		    case lists:keyfind(default, 1, Info) of
+			{_, Def} ->
+			    convert_req_(K, Def, Ch, Info, Spec1, Req);
+			false ->
+			    convert_req_(Spec1, Req)
+		    end
 	    end
     end;
 convert_req_([], []) ->

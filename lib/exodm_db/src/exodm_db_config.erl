@@ -24,7 +24,8 @@
     list_config_set_members/2,     %% (AID, CfgDataName)
     cache_values/2,                %% (AID, Name)
     map_device_to_cached_values/4, %% (AID, Name)
-    get_cached/4
+    get_cached/4,
+    switch_to_active/2             %% (AID, Name)
    ]).
 -export([table/1]).
 
@@ -247,7 +248,7 @@ switch_to_active(AID0, Name0) ->
 		      kvdb_conf:delete_tree(
 			Tab, exodm_db:join_key(Name, <<"values">>)),
 		      Root = exodm_db:join_key(Name, <<"active">>),
-		      kvdb_conf:write_tree(CT#conf_tree{root = Root});
+		      kvdb_conf:write_tree(Tab, Root, CT);
 		  {error, not_found} = Err ->
 		      error(Err)
 	      end

@@ -214,7 +214,7 @@ pop_and_dispatch_(From, Db, Tab, Q, Sessions) ->
 		    Mod = exodm_rpc_protocol:module(Protocol),
 		    ?debug("Calling ~p:dispatch(~p, ~p, ~p, ~p)~n",
 			   [Mod, Env, AID, DID, Pid]),
-		    case Mod:dispatch(Tab, Req, Env, AID, DID, Pid) of
+		     case Mod:dispatch(Tab, Req, Env, AID, DID, Pid) of
 			ok ->
 			    done(From),
 			    next;

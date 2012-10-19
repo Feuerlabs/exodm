@@ -86,13 +86,13 @@ http_accept_loop(L, Port, Buf0, St0) ->
     case gen_tcp:accept(L, 500) of
 	{ok, S} ->
 	    %% io:fwrite(user, "HTTP (~p) accepted~n", [Port]),
-	    St1 = try Msg = http_recv_loop(S, Port, Buf, St),
-		       await_fetch(Msg, St)
+	    NewSt = try St1 = http_recv_loop(S, Port, Buf, St),
+			 await_fetch(St1)
 		  catch
 		      throw:reset -> state0();
 		      throw:{reset, Opts} -> merge_opts(Opts, St)
 		  end,
-	    http_accept_loop(L, Port, <<>>, St1);
+	    http_accept_loop(L, Port, <<>>, NewSt);
 	{error, timeout} ->
 	    http_accept_loop(L, Port, Buf, St)
     end.
@@ -114,10 +114,11 @@ accept_reset(Buf, St) ->
     after 0 -> {Buf, St}
     end.
 
-await_fetch(Msg, St) ->
+await_fetch(St) ->
     receive
 	{From, Ref, fetch_content} ->
-	    From ! {Ref, Msg}, St;
+	    From ! {Ref, proplists:get_value(received, St, [])},
+	    lists:keydelete(received, 1, St);
 	{From, Ref, reset} ->
 	    io:fwrite(user, "RESET in await_fetch()~n", []),
 	    From ! {Ref, reset},
@@ -167,12 +168,30 @@ tcp_received(What, S, Port, Buf, St) ->
 		    Rep = F(Body),
 		    send_reply(S, Rep)
 	    end,
-	    Body;
+	    St1 = keep_received(Body, St),
+	    io:fwrite("Msg received = ~n~s~n"
+		      "St1 = ~p~n", [Body, St1]),
+	    case proplists:get_value(expect, St, 1) of
+		1 -> St1;
+		N when N > 1 ->
+		    case length(proplists:get_value(received, St, [])) of
+			N -> St1;
+			N1 when N1 < N ->
+			    http_recv_loop(S, Port, NewBuf, St1)
+		    end
+	    end;
 	{more, _} ->
 	    io:fwrite(user, "HTTP more...~n", []),
 	    http_recv_loop(S, Port, NewBuf, St)
     end.
 
+keep_received(Msg, St) ->
+    case lists:keyfind(received, 1, St) of
+	{_, Hist} ->
+	    lists:keyreplace(received, 1, St, {received, Hist ++ [Msg]});
+	false ->
+	    [{received, [Msg]}]
+    end.
 
 send_reply(S, Reply) ->
     gen_tcp:send(S, Reply),
