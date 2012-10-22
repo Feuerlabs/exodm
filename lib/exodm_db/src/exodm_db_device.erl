@@ -65,6 +65,10 @@ new_(AID0, ID0, Options) ->
 %%    DID = exodm_db_system:new_did(),
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(ID0),
+    case lists:keymember(protocol, 1, Options) of
+	true -> ok;
+	false -> error(missing_protocol)
+    end,
     Tab = table(AID),
     insert_(Tab, AID, DID, Options).
 
@@ -72,7 +76,12 @@ insert_(Tab, AID, DID, Options) ->
     insert(Tab,DID, 'did',  exodm_db:decode_id(DID)),
     insert_keys(Tab, DID, Options),
     insert_groups(AID, Tab, DID, proplists:get_value(groups, Options, [])),
-    insert_protocol(Tab, DID, proplists:get_value(protocol, Options)),
+    case lists:keyfind(protocol, 1, Options) of
+	{_, Protocol} ->
+	    insert_protocol(Tab, DID, Protocol);
+	false ->
+	    ok  % only mandatory at new()
+    end,
     _ = [insert_attr(Tab, DID, K,to_binary(V)) ||
 	    {K,V} <- Options,
 	    not lists:member(K, ['device-id','gid',

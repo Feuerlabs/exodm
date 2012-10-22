@@ -140,7 +140,7 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 		    end;
 		error ->
 		    ?debug("is_exodm_method(~p, ~p) -> error~n", [Method,AID]),
-		    false
+		    {false, error_response({method_not_found, Method})}
 	    end
     end.
 
@@ -429,8 +429,15 @@ error_response({Error, Data}) ->
 	end,
     {error, {struct, [{"code", Code},
 		      {"message", Str},
-		      {"data", lists:flatten(
-				 io_lib:fwrite("~p", [Data]))}]}}.
+		      {"data", pp_data(Data)}]}}.
+
+pp_data(Data) when is_binary(Data) -> Data;
+pp_data(Data) when is_list(Data) ->
+    try iolist_to_binary(Data)
+    catch
+	error:_ ->
+	    lists:flatten(io_lib:fwrite("~p", [Data]))
+    end.
 
 convert_error(undef, Data) ->
     {method_not_found, Data};

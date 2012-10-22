@@ -68,7 +68,10 @@ exodm_test_() ->
 		      fun(Cfg1) -> stop_http_client(Cfg1) end,
 		      fun(Cfg1) ->
 			      [
-			       ?my_t(json_rpc1(Cfg1)),
+			       ?my_t(json_create_config_set(Cfg1)),
+			       ?my_t(json_update_config_set(Cfg1)),
+			       ?my_t(json_list_config_sets(Cfg1)),
+			       ?my_t(json_delete_config_set(Cfg1)),
 			       {setup,
 				fun() -> start_rpc_client(Config) end,
 				fun(Cfg2) ->
@@ -472,7 +475,7 @@ stop_http_client(_Cfg) ->
     application:stop(public_key),
     application:stop(crypto).
 
-json_rpc1(Cfg) ->
+json_create_config_set(Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:create-config-set", "1",
 				{struct,[{"name","test_cfg_1"},
@@ -483,6 +486,64 @@ json_rpc1(Cfg) ->
 							   ]}}
 					]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct,[{"result","0"}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+json_update_config_set(Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:update-config-set", "1",
+				{struct,[{"name","test_cfg_1"},
+					 {"values",{struct,[{"c","yy"}]}}
+					]}),
+    io:fwrite(user, "~p: update-config-set -> ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct,[{"result","0"}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+json_list_config_sets(Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:list-config-sets", "1",
+				{struct,[{"n",3},
+					 {"previous",""}
+					]}),
+    io:fwrite(user, "~p: list-config-sets -> ~p~n", [?LINE, Reply]),
+    {struct, [{"result",
+	       {struct,[{"config-sets",
+			 {array, [{struct, [{"name", "test1"} | _]},
+				  {struct, [{"name", "test2"} | _]},
+				  {struct, [{"name", "test_cfg_1"} | _]}
+				  ]}
+			}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+json_add_config_set_members(Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:add-config-set-members", "1",
+				{struct,[{"name","test_cfg_1"},
+					 {"values",{struct,[{"c","yy"}]}}
+					]}),
+    io:fwrite(user, "~p: update-config-set -> ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct,[{"result","0"}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+%% json_list_config_set_members(Cfg) ->
+%%     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+%% 				"exodm:list-config-set-members", "1",
+%% 				{array,[{struct, [{"name", 
+
+json_delete_config_set(Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:delete-config-set", "1",
+				{struct,[{"name","test_cfg_1"}
+					]}),
+    io:fwrite(user, "~p: delete-config-set -> ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct,[{"result","0"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
@@ -525,9 +586,6 @@ device_json_rpc1(Cfg) ->
 
 
 push_config_set1(Cfg) ->
-    dbg:tracer(),
-    dbg:tpl(exodm_test_lib,x),
-    dbg:p(all,[c]),
     set_access([{redirect, [{{exoport_config, push_config_set, 1},
 			     {?MODULE, push_config_set_meth, 1}}]}], Cfg),
     spawn_link(fun() ->

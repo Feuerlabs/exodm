@@ -53,27 +53,6 @@ cache(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     <<AID/binary, "_conf_cache">>.
 
-%% new_config_data(AID, Name0, Yang0, Values) ->
-%%     Tab = table(AID),
-%%     Name = to_binary(Name0),
-%%     Yang = to_binary(Yang0),
-%%     NameKey = exodm_db:encode_id(Name),
-%%     exodm_db:transaction(
-%%       fun(_) ->
-%% 	      case exists(Tab, NameKey) of
-%% 		  true ->
-%% 		      error(exists);
-%% 		  false ->
-%% 		      validate_config(Tab, AID, Yang, Values),
-%% 		      write(Tab, NameKey, <<"name">>, Name),
-%% 		      write(Tab, NameKey, <<"yang">>, Yang),
-%% 		      ValsToWrite = value_tree(NameKey, Values),
-%% 		      %% write_values(Tab, NameKey, Values),
-%% 		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
-%% 		      {ok, Name}
-%% 	      end
-%%       end).
-
 new_config_set(AID, Opts) ->
     Tab = table(AID),
     Name = binary_opt(name, Opts),
@@ -97,29 +76,6 @@ new_config_set(AID, Opts) ->
 		      {ok, Name}
 	      end
       end).
-
-%% FIXME: If you add a key/val pair that was not present in the
-%%        new_config_set() call, the entire config entry gets corrupted.
-%%
-%% update_config_set(AID, Name0, Values) ->
-%%     Tab = table(AID),
-%%     Name = to_binary(Name0),
-%%     NameKey = exodm_db:encode_id(Name),
-%%     exodm_db:transaction(
-%%       fun(_) ->
-%% 	      case exists(Tab, NameKey) of
-%% 		  true ->
-%% 		      CT = kvdb_conf:read_tree(Tab, NameKey),
-%% %%		      validate_config(
-%% %%			Tab, AID, YangSpec, Values),
-%% 		      ValsToWrite =
-%% 			  update_value_tree(Values, CT),
-%% 		      [kvdb_conf:write(Tab, Obj) || Obj <- ValsToWrite],
-%% 		      {ok, Name};
-%% 		  false ->
-%% 		      { error, not_found }
-%% 	      end
-%%       end).
 
 update_config_set(AID, Name0, Opts) ->
     Tab = table(AID),
@@ -441,7 +397,7 @@ value_tree(Root, Values) ->
 update_value_tree(Values, #conf_tree{root = Root, tree = T}) ->
     ?debug("update_value_tree(~p, T = ~p)~n", [Values, T]),
     Vs = case lists:keyfind(<<"values">>, 1, T) of
-	     {_, _, X} -> X;
+	     {_, X} -> X;
 	     false -> []
 	 end,
     NewVs = update_tree_(Values, Vs),

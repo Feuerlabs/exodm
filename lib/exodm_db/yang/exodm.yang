@@ -540,6 +540,26 @@ module exodm {
         }
     }
 
+    rpc delete-config-set {
+        description
+	  "RPC to delete a config data set. " +
+	  "Any member devices must first be removed.";
+        input {
+            leaf name {
+                description "Name of the config data set";
+                type string {
+                    length "1..32";
+                }
+            }
+        }
+
+        output {
+            leaf result {
+                type result-code;
+            }
+        }
+    }
+
     rpc provision-device {
         description
 	  "Create a new device. " +

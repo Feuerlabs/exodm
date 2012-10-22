@@ -6,6 +6,10 @@ module exosense {
 
     description "Exosense standard RPC structures.";
 
+    // Timer entry
+    // typedef timer {
+      
+
     // Transaction id.
     typedef transaction-id {
 	type uint32;
