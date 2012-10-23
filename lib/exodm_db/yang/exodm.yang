@@ -358,6 +358,33 @@ module exodm {
         }
     }
 
+    rpc list-config-set-members {
+        description "List members of a config set, N entries at a time";
+
+        input {
+	  leaf name {
+	    description "Name of the config set";
+	    type string;
+	  }
+	  leaf n {
+	    description "Number of entries to fetch";
+	    type uint32;
+	  }
+	  leaf previous {
+	    description "Previous member; \"\" if from beginning";
+	    type string;
+	  }
+        }
+        output {
+	  leaf-list config-set-members {
+	    description "";
+	    type string {
+	      length "1..64";
+            }
+	  }
+	}
+    }
+
     rpc list-device-groups {
         description "List device groups, N entries at a time";
 
@@ -480,6 +507,11 @@ module exodm {
 	  type string {
 	    length "1..32";
 	  }
+	}
+      }
+      output {
+	leaf-list yang-modules {
+	  type string;
 	}
       }
     }
@@ -632,6 +664,24 @@ module exodm {
       output {
 	leaf result {
 	  type result-code;
+	}
+      }
+    }
+
+    rpc lookup-device {
+      description
+	"RPC to read a single device object." +
+	"Returns a list of zero or one device object.";
+      input {
+	leaf dev-id {
+	  type string {
+	    length "1..64";
+	  }
+	}
+      }
+      output {
+	list devices {
+	  uses device-obj;
 	}
       }
     }

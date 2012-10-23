@@ -634,7 +634,7 @@ to_json_([{K, {struct, Ch}, _, Info}|T], Attrs, Reply, Hist) ->
 to_json_([], _, _, _) ->
     [].
 
-to_json_array_({[],[],_,[Type|_]}, _Attrs, Reply, _Hist) ->
+to_json_array_({_,[],_,[Type|_]}, _Attrs, Reply, _Hist) ->
     [yang_json:to_json_type(X, Type) || X <- Reply];
 to_json_array_({struct, L}, Attrs, Reply, Hist) ->
     [{struct, to_json_(L, Attrs, R, Hist)} || {struct, R} <- Reply].
