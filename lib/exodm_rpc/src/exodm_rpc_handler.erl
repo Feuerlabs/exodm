@@ -432,6 +432,9 @@ error_response({Error, Data}) ->
 		      {"data", pp_data(Data)}]}}.
 
 pp_data(Data) when is_binary(Data) -> Data;
+pp_data({wrong_type, [Key, Val, {type,_,Type,_}]}) ->
+    lists:flatten(io_lib:fwrite("Wrong type: Attr=~s; Value=~p; Expected=~s",
+				[Key, Val, Type]));
 pp_data(Data) when is_list(Data) ->
     try iolist_to_binary(Data)
     catch
