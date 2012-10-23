@@ -69,6 +69,8 @@ exodm_test_() ->
 		      fun(Cfg1) ->
 			      [
 			       ?my_t(json_provision_device(Cfg1)),
+			       ?my_t(json_lookup_device(Cfg1)),
+			       ?my_t(json_lookup_bad_device(Cfg1)),
 			       ?my_t(json_create_config_set(Cfg1)),
 			       ?my_t(json_update_config_set(Cfg1)),
 			       ?my_t(json_list_config_sets(Cfg1)),
@@ -490,6 +492,36 @@ json_provision_device(Cfg) ->
 					 {"device-key", 4}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct,[{"result","0"}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+json_lookup_device(Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:lookup-device", "1",
+				{struct,[{"dev-id", "y00000001"}]}),
+    io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
+    %% lookup-device doesn't return the server- and device-key attributes
+    {struct, [{"result",
+	       {struct,[{"devices",
+			 {array, [{struct, [{"dev-id", "y00000001"},
+					    {"protocol", "exodm_bert"}]}]}}
+		       ]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+
+json_lookup_bad_device(Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:lookup-device", "1",
+				{struct,[{"dev-id", "---------"}]}),
+    io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
+    %% lookup-device doesn't return the server- and device-key attributes
+    {struct, [{"result",
+	       {struct,[{"devices",
+			 {array, []}}
+		       ]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.

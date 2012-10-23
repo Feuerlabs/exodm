@@ -164,7 +164,7 @@ update_(AID0, DID0, DeleteOther, Options) ->
 	    end,
 	    insert_(Tab, AID, DID, Options)
     end.
-    %% lists:foreach(
+    %% lists:foreac Nh(
     %%   fun
     %% 	  ({name,Value}) ->
     %% 	      insert(Tab,DID,name,to_binary(Value));
@@ -282,22 +282,45 @@ protocol(AID0, DID0) ->
 
 
 lookup(AID, DID) ->
-    lookup_(table(AID), exodm_db:encode_id(DID)).
+    exodm_db:in_transaction(
+      fun(_) ->
+	      lookup_(table(AID), exodm_db:encode_id(DID))
+      end).
 
 lookup_(Tab,Key) ->
-    [{id,Key}] ++
-	read(Tab,Key,name) ++
-	read(Tab,Key, msisdn) ++
-	read(Tab,Key, imsi) ++
-	read(Tab,Key, imei) ++
-	read(Tab,Key, 'device-key') ++
-	read(Tab,Key, 'server-key') ++
-	read(Tab,Key, yang) ++
-	read_uint32(Tab,Key, activity) ++
-	read_uint32(Tab,Key, status) ++
-	read_uint32(Tab,Key, longitude) ++
-	read_uint32(Tab,Key, latitude) ++
-	read_uint32(Tab,Key, timestamp).
+    case kvdb_conf:read(Tab, kvdb_conf:join_key(Key, <<"did">>)) of
+	{ok, {_, _, _}} ->
+	    [{'dev-id', exodm_db:decode_id(Key)} |
+	     read(Tab,Key,protocol)  ++
+		 lookup_attrs(Tab, Key)];
+	{error, _} ->
+	    []
+    end.
+
+lookup_attrs(Tab, Key) ->
+    Res = kvdb_conf:fold_children(
+	    Tab, fun(K, Acc) ->
+			 case kvdb_conf:read(Tab, K) of
+			     {ok, {_, _, V}} ->
+				 [{lists:last(kvdb_conf:split_key(K)), V}|Acc];
+			     _ ->
+				 Acc
+			 end
+		 end, [], kvdb_conf:join_key(Key, <<"a">>)),
+    lists:reverse(Res).
+
+%% ++
+%% 	read(Tab,Key, msisdn) ++
+%% 	read(Tab,Key, imsi) ++
+%% 	read(Tab,Key, imei) ++
+%% 	read(Tab,Key, 'device-key') ++
+%% 	read(Tab,Key, 'server-key') ++
+%% 	read(Tab,Key, yang) ++
+%% 	read_uint32(Tab,Key, activity) ++
+%% 	read_uint32(Tab,Key, status) ++
+%% 	read_uint32(Tab,Key, longitude) ++
+%% 	read_uint32(Tab,Key, latitude) ++
+%% 	read_uint32(Tab,Key, timestamp).
 
 lookup_attr(AID, DID, Attr) ->
     read(table(AID), exodm_db:encode_id(DID), Attr).
@@ -497,9 +520,14 @@ remove_groups(AID, DID0, Groups) ->
 gid_value(GID) ->
     <<(exodm_db:group_id_num(GID)):32>>.
 
-read(Tab, Key,Item) ->
-    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
-    case exodm_db:read(Tab, Key1) of
+read(Tab, Key, Item) ->
+    read_(Tab, Item, exodm_db:join_key([Key, to_binary(Item)])).
+
+%% read(Tab, Key, Sub, Item) ->
+%%     read_(Tab, Item, exodm_db:join_key([Key, Sub, to_binary(Item)])).
+
+read_(Tab, Item, Key) ->
+    case exodm_db:read(Tab, Key) of
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []
     end.

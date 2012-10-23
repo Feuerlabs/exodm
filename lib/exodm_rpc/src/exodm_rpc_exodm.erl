@@ -69,7 +69,7 @@ json_rpc_({request, _ReqEnv,
 
 json_rpc_({request, _ReqEnv,
 	   {call, M, 'delete-config-set',
-	    [{'name', C}]}} = RPC, _Env) when ?EXO(M) ->
+	    [{'name', C}]}} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(delete-config-set) name:~p~n", [?MODULE, C]),
     AID = exodm_db_session:get_aid(),
     case exodm_db_config:delete_config_set(AID, C) of
@@ -119,6 +119,14 @@ json_rpc_({request, _ReqEnv,
 			[{'protocol', P}|Opts]),
     {ok, result_code(ok)};
 
+json_rpc_({request, _ReqEnv,
+	   {call, _, 'lookup-device',
+	    [{'dev-id', I}]}}, _Env) ->
+    ?debug("~p:json_rpc(update-device) dev-id: ~p~n",
+	   [?MODULE,I]),
+    Res = exodm_db_device:lookup(exodm_db_session:get_aid(), I),
+    {ok, [{devices, {array, [{struct, Res} || Res =/= []]}}]};
+	 
 json_rpc_({request, _ReqEnv,
 	   {call, _, 'update-device',
 	    [{'dev-id', I} | Opts]}}, _Env) ->
