@@ -173,16 +173,39 @@ vsn_matches(V, FullV) ->
 
 make_current(F) ->
     {ok, Cwd} = file:get_cwd(),
-    file:set_cwd(rel_dir()),
-    io:fwrite("-- now in ~p~n", [file:get_cwd()]),
-    Res = file:make_symlink(A = filename:join("lib", filename:basename(F)),
-			    B = ?TARGET),
-    io:fwrite("make_symlink(~p, ~p) -> ~p~n", [A, B, Res]),
-    file:copy(A, filename:join(rel_dir(), "reltool.config")),
-    file:set_cwd(Cwd).
+    RelD = rel_dir(),
+    LibD = rel_lib_dir(),
+    Source = filename:join(LibD, Base = filename:basename(F)),
+    CwdRes1 = file:set_cwd(RelD),
+    io:fwrite("CwdRes(~p) = ~p~n", [RelD, CwdRes1]),
+    io:fwrite("-- now in ~p~n", [element(2, file:get_cwd())]),
+    Res = file:make_symlink(Source, ?TARGET),
+    io:fwrite("make_symlink(Dir = ~p, ~p, ~p) -> ~p~n",
+	      [RelD, Source, ?TARGET, Res]),
+    file:set_cwd(Cwd),
+    CwdRes2 = file:set_cwd(rel_lib_dir()),
+    Res2 = file:make_symlink(Base, ?TARGET),
+    io:fwrite("make_symlink(Dir = ~p, ~p, ~p) -> ~p~n",
+	      [LibD, Base, ?TARGET, Res2]),
+    io:fwrite("CwdRes(~p) = ~p~n", [rel_lib_dir(), CwdRes2]),
+    file:set_cwd(Cwd),
+    file:copy(Source, filename:join(rel_dir(), "reltool.config")).
+
+    %% make_current_(rel_dir(), Source),
+    %% make_current_(rel_lib_dir(), Source),
+    %% file:set_cwd(Cwd),
     %% file:set_cwd(filename:dirname(filename:absname(F))),
     %% file:make_symlink(filename:basename(F), filename:join("..", ?TARGET)),
     %% file:set_cwd(Cwd).
+
+%% make_current_(Dir, SourceDir) ->
+%%     CwdRes = file:set_cwd(Dir),
+%%     io:fwrite("CwdRes = ~p~n", [CwdRes]),
+%%     io:fwrite("-- now in ~p~n", [element(2, file:get_cwd())]),
+%%     Res = file:make_symlink(SourceDir, B = ?TARGET),
+%%     io:fwrite("make_symlink(Dir = ~p, ~p, ~p) -> ~p~n", [Dir, SourceDir, B, Res]),
+%%     Res.
+
 
 list_files(Fs0, Dir) ->
     case [F1 || F1 <- lists:sort(Fs0),

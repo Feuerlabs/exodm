@@ -31,7 +31,7 @@ init() ->
               add_table(tab_name(system)),
               add_table(tab_name(shared)),
               exodm_db_session:set_trusted_proc(),
-              YangDir = filename:join(code:priv_dir(exodm_db), "yang"),
+              YangDir = filename:join(code:priv_dir(exosense_specs), "yang"),
               {ok, Bin1} = file:read_file(
                              filename:join(YangDir, "ietf-inet-types.yang")),
               _Res1 = write_system("ietf-inet-types.yang", Bin1),

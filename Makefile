@@ -1,5 +1,7 @@
 
 RELNAME=exodm
+REBAR=./rebar
+PREBAR=../rebar
 
 .PHONY: all compile clean release upgrade test node console start attach tar \
 	recompile dev devrun
@@ -10,18 +12,18 @@ tar:
 	./exorel tar `./exorel current`
 
 compile:
-	./rebar get-deps
-	./rebar compile
+	$(REBAR) get-deps
+	$(REBAR) compile
 
 recompile:
-	./rebar compile
+	$(REBAR) compile
 
 release: compile
-	cd rel; ../rebar create-node skip_deps=true nodeid=$(RELNAME)
+	cd rel; $(PREBAR) create-node skip_deps=true nodeid=$(RELNAME)
 
 generate:
 	rm -f ./rel/exodm
-	(cd rel && ../rebar generate -f skip_deps=true)
+	(cd rel && $(PREBAR) generate -f skip_deps=true)
 	./exorel current `./exorel last_build`
 
 dev:
@@ -104,7 +106,7 @@ endif
 
 upgrade:
 ifneq ($(strip $(PREV)),)
-	./rebar generate-appup previous_version=$(PREV)
+	(cd rel; $(PREBAR) -vvv generate-appup skip_deps=true previous_release=../rel/lib/$(PREV))
 else
 	echo "no PREV set"
 	exit 2
@@ -123,7 +125,7 @@ test_console:
 	cd .eunit/exodm_tmp; ../../rel/exodm/bin/exodm console
 
 clean:
-	./rebar clean
+	$(REBAR) clean
 
 realclean:
 	rm -f rel/reltool.config
