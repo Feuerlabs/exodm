@@ -16,6 +16,8 @@
          find/3,     %% (AID, Index, Value)
 	 rpcs/1,     %% (YangF) -> rpcs(get_aid(), YangF)
          rpcs/2,     %% (AID, YangF)
+         find_rpc/2, %% (YangF, Method) -> find_rpc(get_aid(), YangF, Method)
+         find_rpc/3, %% (AID, YangF, Method)
          specs/0,    %% () -> specs(get_aid())
          specs/1]).  %% (AID)
 -export([init/0, init/1,
@@ -55,7 +57,7 @@ init(AID) ->
       end).
 
 add_table(Tab) ->
-    kvdb:add_table(?DB, Tab, [{encoding, {raw,sext,raw}},
+    kvdb:add_table(?DB, Tab, [{encoding, {raw,sext,term}},
                               {index, ix_attrs()}]).
 
 
@@ -98,7 +100,7 @@ read(Y) -> read(get_aid(), Y).
 read(AID, Y) -> read(AID, Y, []).
 
 read(AID0, Y, Opts0) ->
-    {AID, _Key} = file_key(AID0, Y),
+    {AID, _Key, _} = file_key(AID0, Y),
     yang_parser:parse(Y, [{open_hook, fun(F, Opts) ->
 					      open_file_hook(AID, F, Opts)
 				      end}|Opts0]).
@@ -116,7 +118,7 @@ tag_file(File, Tag) ->
     tag_file(get_aid(), File, Tag).
 
 tag_file(AID0, File, Tag) ->
-    {AID, _} = file_key(AID0, File),
+    {AID, _, _} = file_key(AID0, File),
     check_access(write, AID),
     exodm_db:in_transaction(
       fun(_) ->
@@ -149,7 +151,7 @@ write_system(File, Y) ->
       end).
 
 write_(AID0, File0, Y) ->
-    {AID, _Key} = file_key(AID0, File0),
+    {AID, _Key, _} = file_key(AID0, File0),
     check_access(write, AID),
     File = to_string(File0),
     Opts = [{open_hook, fun(F, Os) when F == File ->
@@ -194,7 +196,7 @@ delete(File) ->
     delete(get_aid(), File).
 
 delete(AID0, File) ->
-    {AID, Key} = file_key(AID0, File),
+    {AID, Key, _} = file_key(AID0, File),
     exodm_db:in_transaction(
       fun(_) ->
               kvdb:delete(?DB, tab_name(AID), Key)
@@ -205,8 +207,8 @@ rpcs(File) ->
 
 rpcs(AID0, File0) ->
     ?debug("rpcs(~p, ~p)~n", [AID0, File0]),
-    File = internal_filename(to_binary(File0)),
-    {AID, Key} = file_key(AID0, File),
+    {File, Rev} = internal_filename(to_binary(File0)),
+    {AID, Key, _} = file_key(AID0, File),
     check_access(read, AID),
     case kvdb:get_attrs(?DB, tab_name(AID), Key, [rpcs]) of
         {ok, Res} ->
@@ -220,6 +222,61 @@ rpcs(AID0, File0) ->
                     rpcs(AID, <<"system.", Key/binary>>)
             end
     end.
+
+find_rpc(File, Method) ->
+    find_rpc(get_aid(), File, Method).
+
+find_rpc(AID0, File0, Method) ->
+    ?debug("find_rpc(~p, ~p, ~p)~n", [AID0, File0, Method]),
+    {File, Rev} = internal_filename(to_binary(File0)),
+    {AID, Key, IsTagged} = file_key(AID0, File),
+    check_access(read, AID),
+    case Rev of
+        <<>> ->
+            %% no revision specified
+            find_rpc_latest(AID, Key, Method, IsTagged);
+        _ ->
+            find_rpc_specified(AID, Key, Method, IsTagged)
+    end.
+
+find_rpc_latest(system, Key, Method, _) ->
+    case latest_file_version(Tab = tab_name(system), Key) of
+        {ok, FullName} ->
+            lookup_rpc(Tab, FullName, Method);
+        error ->
+            {error, not_found}
+    end;
+find_rpc_latest(AID, Key, Method, IsTagged) ->
+    case latest_file_version(Tab = tab_name(AID), Key) of
+        {ok, FullName} ->
+            %% Given that we have the spec here, we only search in this spec.
+            lookup_rpc(Tab, FullName, Method);
+        error ->
+            if IsTagged ->
+                    {error, not_found};
+               true ->
+                    find_rpc_latest(system, Key, Method, IsTagged)
+            end
+    end.
+
+find_rpc_specified(system, Key, Method, _) ->
+    lookup_rpc(tab_name(system), Key, Method);
+find_rpc_specified(AID, Key, Method, IsTagged) ->
+    case lookup_rpc(tab_name(AID), Key, Method) of
+        {ok, _} = Found ->
+            Found;
+        {error, not_found} ->
+            if IsTagged ->
+                    {error, not_found};
+               true ->
+                    find_rpc_specified(system, Key, Method, IsTagged)
+            end
+    end.
+
+lookup_rpc(Tab, FullName, Method) ->
+    Key = kvdb_conf:join_key([FullName, <<"rpc">>, to_binary(Method)]),
+    kvdb_conf:read(Tab, Key).
+
 
 specs() ->
     specs(get_aid()).
@@ -241,11 +298,15 @@ store(AID, File, {Tag, _, M, L} = Mod, RPCs, Src) when
                        Other ->
                            {tab_name(AID), Other}
                    end,
-    kvdb:put(?DB, Tab,
-	     {set_revision(FName, Revision), [{'__checksum', Checksum},
-                      {rpcs, RPCs}
-                      |attrs(M, L)],
-	      to_binary(Src)}).
+    Key1 = set_revision(FName, Revision),
+    kvdb:put(?DB, Tab, {Key1, [{'__checksum', Checksum}], <<>>}),
+    kvdb:put(?DB, Tab, {kvdb_conf:join_key(Key1, <<"src">>), [],
+                        to_binary(Src)}),
+    [kvdb:put(?DB, Tab, {kvdb_conf:join_key([Key1, <<"a">>, to_binary(A)]),
+                         [], A}) || {A, V} <- attrs(M, L)],
+    [kvdb:put(?DB, Tab,
+              {kvdb_conf:join_key([Key1, <<"rpc">>, to_binary(R)]), [], RPC})
+     || {R, RPC} <- RPCs].
 
 get_revision(L) ->
     case [R || {revision,_,R,_} <- L] of
@@ -262,9 +323,9 @@ set_revision(F, Rev) ->
 
 file_key(AID, File) ->
     case filename:basename(to_binary(File)) of
-        <<"system.", Key/binary>> -> {system, Key};
-        <<"user.", Key/binary>>   -> {account_id_key(AID), Key};
-        _ -> {account_id_key(AID), File}
+        <<"system.", Key/binary>> -> {system, Key, true};
+        <<"user.", Key/binary>>   -> {account_id_key(AID), Key, true};
+        _ -> {account_id_key(AID), File, false}
     end.
 
 account_id_key(system) -> system;
@@ -313,72 +374,58 @@ try_file(AID, File, Opts) ->
 	    {error, einval}
     end.
 
-try_file_(AID, File, Opts) ->
+try_file_(AID, File0, Opts) ->
+    {File, Rev} = internal_filename(File0),
     Tab = tab_name(AID),
-    case re:run(File, <<"(^[^@]+)@([-0-9]*)\\.yang\$">>,
-                [{capture, all_but_first, binary}]) of
-        {match, [Base, Date]} ->
-            ?debug("Looking for yang file ~s.yang, rev ~s~n", [Base, Date]),
-            case kvdb:get(?DB, Tab, File) of
+    case Rev of
+        <<>> ->
+            case latest_file_version(Tab, File) of
+                {ok, FullName} ->
+                    Key = kvdb_conf:join_key(FullName, <<"src">>),
+                    case kvdb_conf:read(Tab, Key) of
+                        {ok, Obj} ->
+                            {ok, Tab, Obj};
+                        {error, _} = Err ->
+                            Err
+                    end;
+                error ->
+                    {error, not_found}
+            end;
+        _ ->
+            case kvdb_conf:read(Tab, kvdb_conf:join_key(File, <<"src">>)) of
                 {ok, Obj} ->
                     {ok, Tab, Obj};
-                {error, _} = Err ->
-                    Err
-            end;
-        nomatch ->
-            ?debug("No revision given (~s)~n", [File]),
-            case proplists:get_value(exodm_tag, Opts) of
-                undefined ->
-                    ?debug("No revision tag~n", []),
-                    try_latest_file(AID, Tab, File, Opts);
-                Tag ->
-                    case find(AID, exodm_tag, Tag) of
-                        [] ->
-                            {error, not_found};
-                        [_|_] = Keys->
-                            BaseName = filename:basename(File, <<".yang">>),
-                            Sz = byte_size(BaseName),
-                            case lists:filter(
-                                   fun(K) ->
-                                           case K of
-                                               <<BaseName:Sz/binary,
-                                                 _/binary>> -> true;
-                                               (_) -> false
-                                           end
-                                   end, Keys) of
-                                [] -> {error, not_found};
-                                Cands ->
-                                    case kvdb:get(?DB, Tab, lists:last(Cands)) of
-                                        {ok, Obj} ->
-                                            {ok, Tab, Obj};
-                                        {error,_} = Err ->
-                                            Err
-                                    end
-                            end
-                    end
+                {error, _} = Err1 ->
+                    Err1
             end
     end.
 
-try_latest_file(_AID, Tab, File, _Opts) ->
+
+latest_file_version(Tab, File) ->
     Base = filename:basename(File, <<".yang">>),
     Sz = byte_size(Base),
     case kvdb:prev(?DB, Tab, <<Base/binary, "@:">>) of
-        {ok, {<<Base:Sz/binary, _/binary>> = FullName, _, _Bin} = Obj} ->
-            ?debug("Latest version: ~s~n", [FullName]),
-            {ok, Tab, Obj};
-        _ ->
-            {error, not_found}
+        {ok, {FoundKey, _, _}} ->
+            case kvdb_conf:split_key(FoundKey) of
+                [<<Base:Sz/binary, _/binary>> = FullName|_] ->
+                    ?debug("Latest version: ~s~n", [FullName]),
+                    {ok, FullName};
+                _ ->
+                    error
+            end;
+        done ->
+            error
     end.
 
 
 internal_filename(File) ->
     case re:run(File, <<"(^[^@]+)@([-0-9]*)\\.yang\$">>,
                 [{capture, all_but_first, binary}]) of
-        {match, [_Base, _Date]} ->
-            File;
+        {match, [_Base, Date]} ->
+            {File, Date};
         nomatch ->
             Base = filename:basename(File, ".yang"),
-            <<Base/binary, "@.yang">>
+            {<<Base/binary, "@.yang">>, <<>>}
     end.
 
 open_bin_hook(AID0, File, Opts) ->

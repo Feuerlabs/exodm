@@ -1,6 +1,7 @@
 -module(exodm_rpc_bert).
 
--export([dispatch/6]).
+-export([dispatch/6,
+	 request_timeout/1]).
 
 -include_lib("lager/include/log.hrl").
 
@@ -26,6 +27,9 @@ dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
 	{request, _, {call, M, F, As}} ->
 	    bert_rpc(Pid, M, F, [As], Req, Env, AID, DID)
     end.
+
+request_timeout({_, Env, {request, _, {call, M, Req, _}}}) ->
+    ok.
 
 bert_rpc(Pid, M, F, As, Req, Env, AID, DID) ->
     Result = (catch nice_bert_rpc:call(Pid, M, F, [As])),

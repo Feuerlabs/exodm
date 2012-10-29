@@ -59,6 +59,7 @@ make_node(#state{target = T, rel = R, vm_args = As}) when T=/=undefined, R=/=und
     end.
 
 read_start_erl_data(R) ->
+    io:fwrite("Reading ~s/releases/start_erl.data~n", [R]),
     case file:read_file(filename:join(R, "releases/start_erl.data")) of
 	{ok, B} ->
 	    [_, V, []] = re:split(B,"\\s",[{return,list}]),

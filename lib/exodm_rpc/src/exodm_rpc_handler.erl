@@ -11,6 +11,7 @@
 -export([add_device_session/2, add_device_session/3]).
 -export([rm_device_session/2, rm_device_session/3]).
 -export([std_specs/0]).
+-export([request_timeout/6]).
 
 -include_lib("lager/include/log.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
@@ -191,37 +192,37 @@ notification(Method, Elems, Env, AID, DID) ->
 		 _ ->
 		     []
 	     end,
-    case exodm_db_yang:rpcs(Yang) of
-	[] ->
-	    error({no_rpcs, Yang});
-	[{_, Spec}] ->
-	    ?debug("Spec found~n", []),
-	    Module = mod(Yang),
-	    MethodBin = atom_to_binary(Method, latin1),
-	    Key = binary_to_list(qualified_method(MethodBin, Module)),
-	    case lists:keyfind(Key, 1, Spec) of
-		{_, {notification,_,{struct, SubSpec}}} ->
-		    ?debug("SubSpec = ~p~n", [lists:sublist(SubSpec,1,2)]),
-		    {_, Params} = lists:keyfind("params", 1, SubSpec),
-		    NewParams = to_json(Params, Env, Elems),
-		    JSON = {struct, lists:keyreplace("params", 1, SubSpec,
-						     {"params", NewParams})},
-		    ?debug("JSON = ~p~n", [JSON]),
-		    post_json(URLEnv ++ Env, JSON);
-		{_, {_Descr, {request, {struct,SubSpec}}, {reply, _}} = RPC} ->
-		    {_, Params} = lists:keyfind("params", 1, SubSpec),
-		    ?debug("Northbound RPC = ~p~n", [RPC]),
-		    NewParams = to_json(Params, Env, Elems),
-		    JSONElems1 = lists:keyreplace("params", 1, SubSpec,
-						  {"params", NewParams}),
-		    JSONElems2 = lists:keyreplace("id", 1, JSONElems1,
-						  {"id", make_id(Env, AID)}),
-		    JSON = {struct, JSONElems2},
-		    ?debug("JSON = ~p~n", [JSON]),
-		    post_json(URLEnv ++ Env, JSON)
-	    end
-    end,
-    ok.
+    [Module|_] = re:split(filename:basename(Yang, ".yang"), "@",
+			  [{return,binary}]),
+    FullMethod = case re:split(to_binary(Method), ":", [{return,binary}]) of
+		     [Meth] ->
+			 <<Module/binary, ":", Meth/binary>>;
+		     [A,B] ->
+			 <<A/binary, ":", B/binary>>
+		 end,
+    case exodm_db_yang:find_rpc(Yang, FullMethod) of
+	{error, not_found} ->
+	    error(method_not_found);
+	{ok, {_, _, {notification,_,{struct, SubSpec}}}} ->
+	    ?debug("SubSpec = ~p~n", [lists:sublist(SubSpec,1,2)]),
+	    {_, Params} = lists:keyfind("params", 1, SubSpec),
+	    NewParams = to_json(Params, Env, Elems),
+	    JSON = {struct, lists:keyreplace("params", 1, SubSpec,
+					     {"params", NewParams})},
+	    ?debug("JSON = ~p~n", [JSON]),
+	    post_json(URLEnv ++ Env, JSON);
+	{ok, {_, _, {_Descr, {request, {struct,SubSpec}}, {reply, _}} = RPC}} ->
+	    {_, Params} = lists:keyfind("params", 1, SubSpec),
+	    ?debug("Northbound RPC = ~p~n", [RPC]),
+	    NewParams = to_json(Params, Env, Elems),
+	    JSONElems1 = lists:keyreplace("params", 1, SubSpec,
+					  {"params", NewParams}),
+	    JSONElems2 = lists:keyreplace("id", 1, JSONElems1,
+					  {"id", make_id(Env, AID)}),
+	    JSON = {struct, JSONElems2},
+	    ?debug("JSON = ~p~n", [JSON]),
+	    post_json(URLEnv ++ Env, JSON)
+    end.
 
 qualified_method(M, Mod) ->
     case binary:split(M, <<":">>) of
@@ -321,27 +322,14 @@ find_method_spec_(Module, Specs, Method, Protocol) ->
     end.
 
 find_method_rpcs_(Yang, Module, Method, Protocol, URL) ->
-    case exodm_db_yang:rpcs(Yang) of
-	[] ->
-	    io:fwrite("No RPCs for ~p~n", [Yang]),
-	    error;
-	[{_, Spec}] ->
-	    io:fwrite("Found RPCs of ~p~n"
-		      "Methods = ~p~n", [Yang, catch [M || {M,_} <- Spec]]),
-	    Key = binary_to_list(<<Module/binary,":",Method/binary>>),
-	    case lists:keyfind(Key, 1, Spec) of
-		{_, RPC} ->
-		    ?debug("Method found: Mod = ~p;~n  RPC = ~P~n",
-			   [Module,RPC,5]),
-		    {ok, Yang, Module, Method, Protocol, URL, RPC};
-		false ->
-		    case lists:keyfind(binary_to_list(Method),1,Spec) of
-			{_,RPC} -> {ok, Module, Method, Protocol, URL, RPC};
-			false   -> error
-		    end
-	    end
+    case exodm_db_yang:find_rpc(Yang, <<Module/binary, ":", Method/binary>>) of
+	{ok, {_, _, RPC}} ->
+	    ?debug("Method found: Mod = ~p;~n  RPC = ~P~n",
+		   [Module,RPC,5]),
+	    {ok, Yang, Module, Method, Protocol, URL, RPC};
+	{error, _} ->
+	    error
     end.
-
 
 get_default_module(AID, DID) ->
     case exodm_db_device:lookup_attr(AID, DID, yang) of
@@ -381,12 +369,16 @@ queue_message(Db, AID, Tab, Env, {Type, Attrs, _} = Msg) when Type==request;
 queue_message(Db, AID, Tab, Env, {reverse_request,_Meth,Elems} = Msg) ->
     queue_message_(Db, AID, Tab, Elems, Env, Msg).
 
-queue_message_(Db, AID, Tab, Attrs, Env, Msg) ->
-    {_, DeviceID} = lists:keyfind('device-id', 1, Attrs ++ Env),
+queue_message_(Db, AID, Tab, Attrs, Env0, Msg) ->
+    TimerID = make_ref(),
+    Env = [{'$timer_id', TimerID}|Env0],
+    AllAttrs = Attrs ++ Env,
+    {_, DeviceID} = lists:keyfind('device-id', 1, AllAttrs),
     Q = exodm_db_device:enc_ext_key(AID, DeviceID),
     Ret = case kvdb:push(Db, Tab, Q,
-			 _Obj = {<<>>, Env, Msg}) of
+			 Obj = {<<>>, Env, Msg}) of
 	      {ok, AbsKey} ->
+		  maybe_start_timer(AllAttrs, Db, Tab, TimerID, AbsKey, Obj),
 		  {ok, Q, AbsKey};
 	      Error ->
 		  Error
@@ -395,6 +387,30 @@ queue_message_(Db, AID, Tab, Attrs, Env, Msg) ->
 	   "  ~p~n", [Tab, Env, Msg, Ret]),
     attempt_dispatch(Ret, Db, Tab, Q),
     Ret.
+
+maybe_start_timer(Attrs, Db, Tab, TimerID, Key, Obj) ->
+    case lists:keyfind('timeout', 1, Attrs) of
+	{_, Timeout} ->
+	    TimerQ = <<>>,
+	    kvdb_cron:add(Db, rpc_timers, TimerQ, Timeout, [{id, TimerID}],
+			  ?MODULE, request_timeout,
+			  [TimerID, TimerQ, kvdb:db_name(Db), Tab, Key, Obj]);
+	false ->
+	    ok
+    end.
+
+request_timeout(TimerID, TimerQ, Db, Tab, Key, Obj) ->
+    kvdb:delete(Db, Tab, Key),
+    kvdb:delete(Db, rpc_timers, TimerQ, TimerID),
+    {_, Env, _} = Obj,
+    case lists:keyfind(protocol, 1, Env) of
+	{_, Protocol} ->
+	    Mod = exodm_rpc_protocol:module(Protocol),
+	    Mod:request_timeout(Obj);
+	false ->
+	    ok
+    end.
+
 
 attempt_dispatch({ok, _, _} = _Ret, Db, Tab, Q) ->
     ?debug("attempt_dispatch(~p, ~p, ~p)~n", [_Ret, Tab, Q]),

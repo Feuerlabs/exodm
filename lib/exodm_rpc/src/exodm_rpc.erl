@@ -184,23 +184,22 @@ notification(Method, Elems, Env, Req, AID, DID) ->
     ?debug("notification(~p, ~p, ~p, ~p, ~p, ~p)~n",
 	   [Method, Elems, Env, Req, AID, DID]),
     {_, Yang} = lists:keyfind(yang, 1, Env),
-    case exodm_db_yang:rpcs(Yang) of
-	[] ->
-	    error({no_rpcs, Yang});
-	[{_, Spec}] ->
-	    Key = binary_to_list(
-		    <<(mod(Yang))/binary, ":",
-		       (atom_to_binary(Method, latin1))/binary>>),
-	    case lists:keyfind(Key, 1, Spec) of
-		{_, {notification,_,{struct, SubSpec}}} ->
-		    ?debug("SubSpec = ~p~n", [SubSpec]),
-		    {_, Params} = lists:keyfind("params", 1, SubSpec),
-		    NewParams = to_json(Params, Env, Elems),
-		    JSON = {struct, lists:keyreplace("params", 1, SubSpec,
-						     {"params", NewParams})},
-		    ?debug("JSON = ~p~n", [JSON]),
-		    post_json(Env, JSON)
-	    end
+    Mod = filename:basename(to_binary(Yang), ".yang"),
+    FullMethod = case re:split(to_binary(Method), ":", [{return,binary}]) of
+		     [Meth] ->
+			 <<Mod/binary, ":", Meth/binary>>;
+		     [A,B] ->
+			 <<A/binary, ":", B/binary>>
+		 end,
+    case exodm_db_yang:find_rpc(Yang, FullMethod) of
+	{ok, {_, _, {notification,_,{struct, SubSpec}}}} ->
+	    ?debug("SubSpec = ~p~n", [SubSpec]),
+	    {_, Params} = lists:keyfind("params", 1, SubSpec),
+	    NewParams = to_json(Params, Env, Elems),
+	    JSON = {struct, lists:keyreplace("params", 1, SubSpec,
+					     {"params", NewParams})},
+	    ?debug("JSON = ~p~n", [JSON]),
+	    post_json(Env, JSON)
     end,
     ok.
 
@@ -369,32 +368,6 @@ attempt_dispatch(_, _, _, _) ->
 
 
 
-%% %% Do we queue this on IP or URL?
-%% queue_reply(Reply, Attrs, {call, _Mod, Method, _Args} = _OriginalRequest) ->
-%%     %% {_, IP} = lists:keyfind(ip, 1, Attrs),
-%%     {_, DeviceID} = lists:keyfind(device_id, 1, Attrs),
-%%     kvdb:push(rpc_queues, ck3_from_device, DeviceID, {reply, Method, Attrs, Reply}).
-
-
-%% If we pushed on URL, we must also pop on URL
-%% pop_and_deliver_reply(URL) ->
-%%     case kvdb:pop(rpc_queues, ck3_from_device, URL) of
-%% 	{ok, {Method, Attrs, Reply}} ->
-%% 	    encode_and_deliver(Method, Attrs, Reply);
-%% 	done ->
-%% 	    done
-%%     end.
-
-%% encode_and_deliver({reply, Attrs, Reply} = R) ->
-%%     Method = get_method(R),
-%%     case lookup({Method, reply}) of
-%% 	{ok, {_, _RAttrs, Spec}} ->
-%% 	    JSON = {struct, to_json(Spec, Attrs, Reply)},
-%% 	    post_json(Attrs, JSON);
-%% 	Error ->
-%% 	    Error
-%%     end.
-
 error_response({Error, Data}) ->
     {Code, Str} =
 	case lists:keyfind(
@@ -461,18 +434,6 @@ accept_response(Attrs, {_, _, {reply, {struct, Elems}}} = Spec) ->
 			       {'rpc-status', <<"accepted">>},
 			       {final, false}], [])}
     end.
-%% accept_response(Attrs, {request, Attrs, {call, _M, ShortMeth, _}}) ->
-%%     {_, TID} = lists:keyfind(transaction_id, 1, Attrs),
-%%     {_, Pfx} = lists:keyfind(prefix, 1, Attrs),
-%%     Method = join_method(Pfx, ShortMeth),
-%%     case lookup({Method, reply}) of
-%% 	{ok, {_, _, Spec}} ->
-%% 	    {struct, to_json_(Spec, Attrs, [{'transaction-id', TID},
-%% 					    {'rpc-status', <<"accepted">>},
-%% 					    {final, false}], [])};
-%% 	_ ->
-%% 	    error({unknown_response, Method})
-%%     end.
 
 get_method({request, _, {call, _Mod, Method, _}}) ->
     Method;
@@ -685,66 +646,6 @@ convert_req_(K, V, Ch, Type, Spec1, Req1) ->
 	    throw({invalid_params, {mismatch, [K, V, Expected]}})
     end.
 
-%% convert_req_([{K, V}|T], Spec) ->
-%%     case lists:keytake(K, 1, Spec) of
-%% 	{value, {_, [], _Descr, {type, _, <<"anyxml">>, _}},  Spec1} ->
-%% 	    %% Do not convert; keep original (decoded) JSON
-%% 	    [{list_to_atom(K), V} | convert_req_(T, Spec1)];
-%% 	{value, {_, Ch, _Descr, Type}, Spec1} ->
-%% 	    case {V, Ch} of
-%% 		{{array,Sub}, {array,[SubSpec]}} ->
-%% 		    [{list_to_atom(K), {array, convert_array_(Sub, SubSpec)}}
-%% 		     | convert_req_(T, Spec1)];
-%% 		{{St,Sub}, {St, SubSpec}} when St==struct; St==array ->
-%% 		    [{list_to_atom(K), convert_req_(Sub, SubSpec)}
-%% 		     | convert_req_(T, Spec1)];
-%% 		{_, []} ->
-%% 		    case yang:check_type(V, Type) of
-%% 			{true, Val} ->
-%% 			    [{list_to_atom(K), Val}|convert_req_(T, Spec1)];
-%% 			false ->
-%% 			    ?debug("Wrong type: ~p (~p)~n", [{K,V}, Type]),
-%% 			    throw({invalid_params, {wrong_type, [K,V,Type]}})
-%% 		    end;
-%% 		{V, Expected} ->
-%% 		    throw({invalid_params, {mismatch, [K, V, Expected]}})
-%% 	    end;
-%% 	false ->
-%% 	    throw({invalid_params, {unknown_param, [K]}})
-%%     end;
-%% convert_req_([], []) ->
-%%     [];
-%% convert_req_([], [_|_] = Required) ->
-%%     throw({invalid_params, {required, [element(1, R) || R <- Required]}}).
-
-
-%% convert_req_([{K, V}|T], Spec) ->
-%%     case lists:keyfind(K, 1, Spec) of
-%% 	{_, Ch, _Descr, Type} ->
-%% 	    case {V, Ch} of
-%% 		{{array,Sub}, {array,[SubSpec]}} ->
-%% 		    [{list_to_atom(K), {array, convert_array_(Sub, SubSpec)}}
-%% 		     | convert_req_(T, Spec)];
-%% 		{{St,Sub}, {St, SubSpec}} when St==struct; St==array ->
-%% 		    [{list_to_atom(K), convert_req_(Sub, SubSpec)}
-%% 		     | convert_req_(T, Spec)];
-%% 		{_, []} ->
-%% 		    case yang:check_type(V, Type) of
-%% 			{true, Val} ->
-%% 			    [{list_to_atom(K), Val}|convert_req_(T, Spec)];
-%% 			false ->
-%% 			    ?debug("Wrong type: ~p (~p)~n", [{K,V}, Type]),
-%% 			    throw({wrong_type, [K,V,Type]})
-%% 		    end;
-%% 		{V, Expected} ->
-%% 		    throw({mismatch, [K, V, Expected]})
-%% 	    end;
-%% 	false ->
-%% 	    throw({unknown_param, [K]})
-%%     end;
-%% convert_req_([], _) ->
-%%     [].
-
 
 convert_array_([{struct, _}|_] = L, {struct, Spec}) ->
     lists:map(fun({struct, X}) ->
@@ -795,21 +696,6 @@ init([]) ->
     {ok, #st{}}.
 
 
-%% handle_call(load_specs, From, S) ->
-%%     gen:reply(From, ok),
-%%     do_load_specs(?TAB),
-%%     {noreply, S};
-%% handle_call(reload_specs, From, S) ->
-%%     create_ets(?TMP_TAB),
-%%     %% The following will result in an error report, since the supervisor will
-%%     %% receive an unexpected message
-%%     ets:give_away(?TMP_TAB, whereis(exodm_rpc_sup), []),
-%%     gen:reply(From, ok),
-%%     do_load_specs(?TMP_TAB),
-%%     %% There will be a tiny time gap here when the table doesn't exist.
-%%     ets:delete(?TAB),
-%%     ets:rename(?TMP_TAB, ?TAB),
-%%     {noreply, S};
 handle_call(_Req, _From, S) ->
     {noreply, S}.
 
