@@ -378,7 +378,7 @@ queue_message_(Db, AID, Tab, Attrs, Env0, Msg) ->
     Ret = case kvdb:push(Db, Tab, Q,
 			 Obj = {<<>>, Env, Msg}) of
 	      {ok, AbsKey} ->
-		  maybe_start_timer(AllAttrs, Db, Tab, TimerID, AbsKey, Obj),
+		  maybe_start_timer(Msg, Db, Tab, TimerID, AbsKey, Obj),
 		  {ok, Q, AbsKey};
 	      Error ->
 		  Error
@@ -388,16 +388,23 @@ queue_message_(Db, AID, Tab, Attrs, Env0, Msg) ->
     attempt_dispatch(Ret, Db, Tab, Q),
     Ret.
 
-maybe_start_timer(Attrs, Db, Tab, TimerID, Key, Obj) ->
-    case lists:keyfind('timeout', 1, Attrs) of
+maybe_start_timer({request, _, {call,_,_,Args}}, Db, Tab, TimerID, Key, Obj) ->
+    case lists:keyfind('timeout', 1, Args) of
 	{_, Timeout} ->
+	    ?debug("Request timeout = ~p; starting timer~n", [Timeout]),
 	    TimerQ = <<>>,
-	    kvdb_cron:add(Db, rpc_timers, TimerQ, Timeout, [{id, TimerID}],
-			  ?MODULE, request_timeout,
-			  [TimerID, TimerQ, kvdb:db_name(Db), Tab, Key, Obj]);
+	    Res = kvdb_cron:add(Db, rpc_timers, TimerQ, Timeout, [{id, TimerID}],
+				?MODULE, request_timeout,
+				[TimerID, TimerQ,
+				 kvdb:db_name(Db), Tab, Key, Obj]),
+	    ?debug("Timer requested = ~p~n", [Res]),
+	    Res;
 	false ->
 	    ok
-    end.
+    end;
+maybe_start_timer(_, _, _, _, _, _) ->
+    ok.
+
 
 request_timeout(TimerID, TimerQ, Db, Tab, Key, Obj) ->
     kvdb:delete(Db, Tab, Key),
@@ -497,7 +504,7 @@ success_response(Result, Env, {request, Attrs, _},
 		      [{'transaction-id', TID}|Result], [])}.
 
 
-accept_response(Attrs, {_, _, {reply, {struct, Elems}}} = Spec) ->
+accept_response(Attrs, {_, _, {reply, {struct, Elems}}}) ->
     ?debug("~p:accept_response(~p, ...)~n", [?MODULE, Attrs]),
     case lists:keyfind("result", 1, Elems) of
 	{_, void} ->
