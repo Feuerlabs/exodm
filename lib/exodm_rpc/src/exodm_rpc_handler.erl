@@ -407,12 +407,15 @@ maybe_start_timer(_, _, _, _, _, _) ->
 
 
 request_timeout(TimerID, TimerQ, Db, Tab, Key, Obj) ->
+    ?debug("request_timeout(~p, ~p, ~p, ~p, ~p, ~p)~n",
+	   [TimerID, TimerQ, Db, Tab, Key, Obj]),
     kvdb:delete(Db, Tab, Key),
-    kvdb:delete(Db, rpc_timers, TimerQ, TimerID),
+    kvdb_cron:delete(Db, rpc_timers, TimerQ, TimerID),
     {_, Env, _} = Obj,
     case lists:keyfind(protocol, 1, Env) of
 	{_, Protocol} ->
 	    Mod = exodm_rpc_protocol:module(Protocol),
+	    ?debug("Protocol = ~p; Mod = ~p~n", [Protocol, Mod]),
 	    Mod:request_timeout(Obj);
 	false ->
 	    ok
