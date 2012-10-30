@@ -537,3 +537,27 @@ read_uint32(Tab, Key,Item) ->
 	[{Item,<<Value:32>>}] -> [{Item,Value}];
 	[] -> []
     end.
+
+
+code_change(FromVsn, ToVsn) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      Tabs = kvdb:list_tables(kvdb_conf),
+	      [{T,ok} = {T, transform_tab(T, FromVsn, ToVsn)}
+	       || T <- Tabs, is_dev_table(T)]
+      end).
+
+transform_tab(T, FromVsn, ToVsn) ->
+    transform_tab(kvdb_conf:first(T), T, FromVsn, ToVsn).
+
+transform_tab({ok, Key}, T, From, To) ->
+    [Top|_] = kvdb_conf:split_key(First),
+    #conf_tree{} = CT = kvdb_conf:read_tree(T, Top),
+    kvdb_conf:delete_tree(T, Top),
+    kvdb_conf:write_tree(T, Top, transform_tree(CT, From, To)),
+    transform_tab(kvdb_conf:next_at_level(T, Top), T, From, To);
+transform_tab(done, _, _, _) ->
+    ok.
+
+transform_tree(#conf_tree{tree = T} = CT, _, _) ->
+    CT.

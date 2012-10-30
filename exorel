@@ -46,11 +46,18 @@ tar([V]) ->
     case filelib:is_regular(Target0) of
 	false ->
 	    TmpDir = make_temp_dir(),
-	    Res = os:cmd(Cmd = "cp -r " ++ Top ++ " " ++ TmpDir ++ "/"),
+	    io:fwrite("TmpDir: ~s~n", [os:cmd("ls -R " ++ TmpDir)]),
+	    Res = os:cmd(Cmd = "cp -r " ++ Top ++ " " ++
+			     TmpDir ++ "/" ++ rel_path()),
 	    io:fwrite("~s ->~n  ~s~n", [Cmd, Res]),
-	    TmpTop = filename:join(TmpDir, Base),
-	    {ok,_} = beam_lib:strip_release(TmpTop),
-	    make_tar(TmpDir, Base, Target),
+	    NewDir = filename:join([TmpDir, rel_path(), Base]),
+	    io:fwrite("NewDir = ~s~n", [NewDir]),
+	    Res1 = os:cmd(Cmd1 = "(cd " ++ root_dir() ++ "; "
+			  "cp exorel make_node " ++ NewDir ++ "/)"),
+	    io:fwrite("~s ->~n  ~s~n", [Cmd1, Res1]),
+%%	    TmpTop = filename:join(TmpDir, Base),
+	    {ok,_} = beam_lib:strip_release(NewDir),
+	    make_tar(TmpDir, "*", Target),
 	    %% TarRes = os:cmd(TarCmd = "tar czf " ++ Target ++ " " ++ TmpTop),
 	    %% io:fwrite("~s ->~n~s~n", [TarCmd, TarRes]),
 	    os:cmd("rm -rf " ++ TmpDir),
@@ -58,6 +65,9 @@ tar([V]) ->
 	true ->
 	    abort("Archive exists [~s]~n", [Target0])
     end.
+
+rel_path() ->
+    "rel/lib".
 
 make_tar(Dir, SubDir, Target) ->
     {ok, Cwd} = file:get_cwd(),
@@ -74,6 +84,7 @@ make_temp_dir() ->
 					    integer_to_list(S),".",
 					    integer_to_list(U)])),
     ok = file:make_dir(D),
+    ok = filelib:ensure_dir(filename:join([D, rel_path(), "foo"])),
     D.
 
 git_vsn([V]) -> io:fwrite("~s~n", [V]);
@@ -126,24 +137,33 @@ current([]) ->
 	    end
     end;
 current([Vsn]) ->
-    case file:list_dir(Dir = rel_lib_dir()) of
+    case file:list_dir(rel_lib_dir()) of
 	{ok, Fs} ->
-	    case [F || F <- Fs, vsn_matches(Vsn, F)] of
+	    case [F || F <- Fs -- "exodm", vsn_matches(Vsn, F)] of
 		[ActualVsn] ->
-		    file:delete(filename:join(rel_dir(), ?TARGET)),
-		    make_current(filename:join(Dir, ActualVsn)),
-		    io:fwrite("~s~n", [vsn_part(ActualVsn)]);
+		    current_(ActualVsn);
 		[] ->
 		    io:fwrite("error: no such version~n", []),
 		    halt(1);
-		[_|_] ->
-		    io:fwrite("error: ambiguous~n", []),
-		    halt(1)
+		[_|_] = Multiple ->
+		    case lists:member(Actual = "exodm_" ++ Vsn, Multiple) of
+			true ->
+			    current_(Actual);
+			false ->
+			    io:fwrite("error: ambiguous~n", []),
+			    halt(1)
+		    end
 	    end;
 	_ ->
 	    io:fwrite("error: no such version~n", []),
 	    halt(1)
     end.
+
+current_(ActualVsn) ->
+    file:delete(filename:join(rel_dir(), ?TARGET)),
+    make_current(filename:join(rel_lib_dir(), ActualVsn)),
+    io:fwrite("~s~n", [vsn_part(ActualVsn)]).
+
 
 vsn_part(F) ->
     case re:split(Base = filename:basename(F), "_", [{return,list}]) of

@@ -424,22 +424,22 @@ request_timeout(TimerID, TimerQ, Db, Tab, Key, Obj) ->
 
 attempt_dispatch({ok, _, _} = _Ret, Db, Tab, Q) ->
     ?debug("attempt_dispatch(~p, ~p, ~p)~n", [_Ret, Tab, Q]),
-    case exodm_rpc_dispatcher:attempt_dispatch(Db, Tab, Q) of
-	{ok, Pid} ->
-	    ?debug("dispatcher Pid = ~p~n", [Pid]),
-	    MRef = erlang:monitor(process, Pid),
-	    receive
-		{Pid, exodm_rpc_dispatcher, done} ->
-		    ?debug("dispatcher is done.~n", []),
-		    erlang:demonitor(MRef, [flush]),
-		    ok;
-		{'DOWN', MRef, _, _, _Reason} ->
-		    ?debug("dispatcher DOWN: ~p.~n", [_Reason]),
-		    ok
-	    end;
-	pending ->
-	    ok
-    end;
+    catch exodm_rpc_dispatcher:attempt_dispatch(Db, Tab, Q);
+    %% 	{ok, Pid} ->
+    %% 	    ?debug("dispatcher Pid = ~p~n", [Pid]),
+    %% 	    MRef = erlang:monitor(process, Pid),
+    %% 	    receive
+    %% 		{Pid, exodm_rpc_dispatcher, done} ->
+    %% 		    ?debug("dispatcher is done.~n", []),
+    %% 		    erlang:demonitor(MRef, [flush]),
+    %% 		    ok;
+    %% 		{'DOWN', MRef, _, _, _Reason} ->
+    %% 		    ?debug("dispatcher DOWN: ~p.~n", [_Reason]),
+    %% 		    ok
+    %% 	    end;
+    %% 	pending ->
+    %% 	    ok
+    %% end;
 attempt_dispatch(_, _, _, _) ->
     ok.
 
