@@ -577,6 +577,7 @@ remove_groups_(Tab, AID, DID, Groups) ->
       fun(GID0) ->
 	      GID = exodm_db:group_id_key(GID0),
 	      Key = kvdb_conf:join_key([DID, <<"groups">>, GID]),
+	      kvdb_conf:delete(Tab, Key),
 	      exodm_db_group:remove_device(AID, GID, DID)
       end, Groups).
     %% 	      Found =
