@@ -303,9 +303,9 @@ json_rpc_({request, _ReqEnv,
     Res =
 	exodm_db:in_transaction(
 	  fun(_) ->
-		  FullNext = kvdb_conf:join_key(exodm_db:account_id_key(AID),
-						Prev),
-		  exodm_db:list_next(exodm_db_config:table(AID), N, FullNext,
+		  %% FullNext = kvdb_conf:join_key(exodm_db:account_id_key(AID),
+		  %% 				Prev),
+		  exodm_db:list_next(exodm_db_config:table(AID), N, Prev,
 				     fun(Key) ->
 					     [CfgSet|_] =
 						 kvdb_conf:split_key(Key),
