@@ -25,6 +25,7 @@
 -export([client_auth_config/2]).
 
 -include_lib("lager/include/log.hrl").
+-include_lib("kvdb/include/kvdb_conf.hrl").
 
 -import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).
 -import(lists, [reverse/1]).
@@ -547,11 +548,21 @@ code_change(FromVsn, ToVsn) ->
 	       || T <- Tabs, is_dev_table(T)]
       end).
 
+is_dev_table(T) ->
+    Sz = byte_size(T),
+    PSz = Sz - 4,
+    case T of
+	<<_:PSz/binary, "_dev">> ->
+	    true;
+	_ ->
+	    false
+    end.
+
 transform_tab(T, FromVsn, ToVsn) ->
     transform_tab(kvdb_conf:first(T), T, FromVsn, ToVsn).
 
 transform_tab({ok, Key}, T, From, To) ->
-    [Top|_] = kvdb_conf:split_key(First),
+    [Top|_] = kvdb_conf:split_key(Key),
     #conf_tree{} = CT = kvdb_conf:read_tree(T, Top),
     kvdb_conf:delete_tree(T, Top),
     kvdb_conf:write_tree(T, Top, transform_tree(CT, From, To)),
@@ -560,4 +571,10 @@ transform_tab(done, _, _, _) ->
     ok.
 
 transform_tree(#conf_tree{tree = T} = CT, _, _) ->
+    lists:map(
+      fun({<<"__did">>, [], DID}) ->
+	      {<<"did">>, [], DID};
+	 ({K, _, _} = X) ->
+	      X
+      end, T),
     CT.
