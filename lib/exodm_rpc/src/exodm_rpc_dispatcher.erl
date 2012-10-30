@@ -150,6 +150,7 @@ spawn_dispatcher(Q, Db, From, Reply, #st{tab = Tab, pids = Pids, queues = Qs,
 					 jobs_queue = JobsQ} = St) ->
     {Pid, _} = spawn_monitor(fun() ->
 				     jobs:ask(JobsQ),
+				     timer:sleep(500),
 				     dispatch(Db, Tab, Q, From, Reply)
 			     end),
     {Pid, St#st{pids = dict:store(Pid, Q, Pids),
