@@ -110,7 +110,10 @@ handle_call({check_queue, Q}, _From, St) ->
 handle_call({attempt_dispatch, Q, Db, Reply}, From, #st{queues = Qs} = St) ->
     case dict:find(Q, Qs) of
 	error ->
-	    {Pid, St1} = spawn_dispatcher(Q, Db, From, Reply, St),
+	    DbArg = if Reply -> Db;
+		       true -> kvdb:db_name(Db)
+		    end,
+	    {Pid, St1} = spawn_dispatcher(Q, DbArg, From, Reply, St),
 	    {reply, {ok, Pid}, St1};
 	{ok, CurPid} ->
 	    {_, St1} = mark_pending(CurPid, Q, St),
@@ -164,7 +167,7 @@ dispatch(Db, Tab, Q, From, Reply) ->
 	    done(From, Reply)
     end.
 
-pop_and_dispatch(undefined, _, Db, Tab, Q, Sessions) ->
+pop_and_dispatch(_, false, Db, Tab, Q, Sessions) ->
     kvdb:transaction(
       Db,
       fun(Db1) ->
