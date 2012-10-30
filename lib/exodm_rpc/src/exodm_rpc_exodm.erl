@@ -125,8 +125,13 @@ json_rpc_({request, _ReqEnv,
     ?debug("~p:json_rpc(update-device) dev-id: ~p~n",
 	   [?MODULE,I]),
     Res = exodm_db_device:lookup(exodm_db_session:get_aid(), I),
-    {ok, [{devices, {array, [{struct, Res} || Res =/= []]}}]};
-	 
+    case Res of
+	[] ->
+	    {ok, result_code('device-not-found')};
+	[_|_] ->
+	    {ok, [{devices, {array, [{struct, Res} || Res =/= []]}}]}
+    end;
+
 json_rpc_({request, _ReqEnv,
 	   {call, _, 'update-device',
 	    [{'dev-id', I} | Opts]}}, _Env) ->
