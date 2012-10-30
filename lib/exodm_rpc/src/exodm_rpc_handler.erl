@@ -185,6 +185,7 @@ notification(Method, Elems, Env, AID, DID) ->
     ?debug("notification(~p, ~p, ~p, ~p, ~p)~n",
 	   [Method, Elems, Env, AID, DID]),
     {_, Yang} = lists:keyfind(yang, 1, Env),
+    stop_timer(Env),
     YangSpecs = exodm_db_device:yang_modules(AID, DID),
     URLEnv = case lists:keyfind(Yang, 2, YangSpecs) of
 		 {_, _, URL} when URL =/= <<>> ->
@@ -222,6 +223,15 @@ notification(Method, Elems, Env, AID, DID) ->
 	    JSON = {struct, JSONElems2},
 	    ?debug("JSON = ~p~n", [JSON]),
 	    post_json(URLEnv ++ Env, JSON)
+    end.
+
+stop_timer(Env) ->
+    case lists:keyfind('$timer_id', 1, Env) of
+	{_, TID} ->
+	    ?debug("Deleting timer ~p~n", [TID]),
+	    kvdb_cron:delete(kvdb_conf, rpc_timers, TID);
+	false ->
+	    ok
     end.
 
 qualified_method(M, Mod) ->
