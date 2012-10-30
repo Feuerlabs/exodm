@@ -359,6 +359,26 @@ json_rpc_({request, _ReqEnv,
     ?debug("config set members = ~p~n", [Res]),
     {ok, [{'config-set-members', {array, Res}}]};
 
+json_rpc_({request, _ReqEnv,
+	   {call, M, 'list-device-group-members',
+	    [{'gid', G}, {'n', N}, {'previous', Prev} = Params]}} = _RPC,
+	  _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(list-device-group-members) args = ~p~n", [?MODULE,Params]),
+    AID = exodm_db_session:get_aid(),
+    Res =
+	exodm_db:in_transaction(
+	  fun(_) ->
+		  exodm_db_group:list_devices(AID,G,N,Prev)
+		  %% FullNext = kvdb_conf:join_key([exodm_db:account_id_key(AID),
+		  %% 				 C, <<"members">>, Prev]),
+		  %% exodm_db:list_next(exodm_db_config:table(AID), N, FullNext,
+		  %% 		     fun(Key) ->
+		  %% 			     lists:last(kvdb_conf:split_key(Key))
+		  %% 		     end)
+	  end),
+    ?debug("config set members = ~p~n", [Res]),
+    {ok, [{'config-set-members', {array, Res}}]};
+
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),
     {ok, result_code('validation-failed')}.
