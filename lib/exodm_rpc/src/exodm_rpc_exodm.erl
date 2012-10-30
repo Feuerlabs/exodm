@@ -307,7 +307,8 @@ json_rpc_({request, _ReqEnv,
 						Prev),
 		  exodm_db:list_next(exodm_db_config:table(AID), N, FullNext,
 				     fun(Key) ->
-					     [CfgSet] = kvdb_conf:split_key(Key),
+					     [CfgSet|_] =
+						 kvdb_conf:split_key(Key),
 					     exodm_db_config:read_config_set(
 					       AID, CfgSet)
 				     end)
