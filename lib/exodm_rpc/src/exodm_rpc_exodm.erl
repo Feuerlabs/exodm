@@ -376,8 +376,8 @@ json_rpc_({request, _ReqEnv,
 		  %% 			     lists:last(kvdb_conf:split_key(Key))
 		  %% 		     end)
 	  end),
-    ?debug("config set members = ~p~n", [Res]),
-    {ok, [{'config-set-members', {array, Res}}]};
+    ?debug("device group members = ~p~n", [Res]),
+    {ok, [{'device-group-members', {array, Res}}]};
 
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),
