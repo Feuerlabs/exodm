@@ -160,11 +160,17 @@ spawn_dispatcher(Q, Db, From, Reply, #st{tab = Tab, pids = Pids, queues = Qs,
 
 dispatch(Db, Tab, Q, From, Reply) ->
     ?debug("dispatch(~p, ~p)~n", [Tab, Q]),
-    case exodm_rpc_handler:device_sessions(Q) of
-	[_|_] = Sessions ->
-	    pop_and_dispatch(From, Reply, Db, Tab, Q, Sessions);
-	[] ->
-	    done(From, Reply)
+    try
+	case exodm_rpc_handler:device_sessions(Q) of
+	    [_|_] = Sessions ->
+		pop_and_dispatch(From, Reply, Db, Tab, Q, Sessions);
+	    [] ->
+		done(From, Reply)
+	end
+    catch
+	error:Reason ->
+	    ?error("ERROR in ~p:dispatch(): ~p~n~p~n",
+		   [?MODULE,Reason, erlang:get_stacktrace()])
     end.
 
 pop_and_dispatch(_, false, Db, Tab, Q, Sessions) ->
