@@ -351,30 +351,45 @@ fold_devices(F, Acc, AID, Limit) when
 lookup_groups(AID, DID0) ->
     Tab = table(AID),
     DID = exodm_db:encode_id(DID0),
-    lists:reverse(
-      exodm_db:fold_list2(
-	Tab,
-	fun(I,Key,Acc) ->
-		case read_uint32(Tab, Key, 'gid') of
-		    [{_,GID}] -> [{group,{I,GID}} | Acc];
-		    [] -> Acc
-		end
-	end, [], DID, groups)).
+    case kvdb_conf:read_tree(Tab, kvdb_conf:join_key(DID, <<"groups">>)) of
+	#conf_tree{tree = T} ->
+	    [GID || {GID,_, _} <- T];
+	_ ->
+	    []
+    end.
+    %% lists:reverse(
+    %%   exodm_db:fold_list2(
+    %% 	Tab,
+    %% 	fun(I,Key,Acc) ->
+    %% 		case read_uint32(Tab, Key, 'gid') of
+    %% 		    [{_,GID}] -> [{group,{I,GID}} | Acc];
+    %% 		    [] -> Acc
+    %% 		end
+    %% 	end, [], DID, groups)).
 
 
 lookup_group_notifications(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
-    lists:foldl(
-      fun({group,{_I,GID0}},Acc) ->
-	      GID = exodm_db:group_id_key(GID0),
+    lists:flatmap(
+      fun(GID) ->
 	      case exodm_db_group:lookup(AID, GID, url) of
 		  [{_, URL}] ->
-		      [URL | Acc];
+		      [URL];
 		  [] ->
-		      Acc
+		      []
 	      end
-      end,[],lookup_groups(AID, DID)).
+      end, lookup_groups(AID, DID)).
+    %% lists:foldl(
+    %%   fun({group,{_I,GID0}},Acc) ->
+    %% 	      GID = exodm_db:group_id_key(GID0),
+    %% 	      case exodm_db_group:lookup(AID, GID, url) of
+    %% 		  [{_, URL}] ->
+    %% 		      [URL | Acc];
+    %% 		  [] ->
+    %% 		      Acc
+    %% 	      end
+    %%   end,[],lookup_groups(AID, DID)).
 
 %% find last known position or {0,0,0} if not found
 lookup_position(AID, DID0) ->
@@ -477,20 +492,28 @@ insert_attr(Tab, Key, Item, Value) ->
     exodm_db:write(Tab, Key1, Value).
 
 insert_groups(AID, Tab, DID, Groups) ->
-    insert_groups(AID, Tab, 1, DID, Groups).
+%%     insert_groups(AID, Tab, 1, DID, Groups).
 
-insert_groups(AID, Tab, I0, DID, Groups0) ->
-    {Groups,_} = lists:mapfoldl(fun(G,I) ->
-					{{I,G}, I+1}
-				end, I0, Groups0),
-    lists:foreach(fun({I,G}) ->
-			  insert_group(AID, Tab, DID, I, G)
+%% insert_groups(AID, Tab, I0, DID, Groups0) ->
+    lists:foreach(fun(G) ->
+			  insert_group_(AID, Tab, DID, G)
 		  end, Groups).
+    %% {Groups,_} = lists:mapfoldl(fun(G,I) ->
+    %% 					{{I,G}, I+1}
+    %% 				end, I0, Groups0),
+    %% lists:foreach(fun({I,G}) ->
+    %% 			  insert_group(AID, Tab, DID, I, G)
+    %% 		  end, Groups).
 
-insert_group(AID, Tab, DID, I, GID) when is_integer(I) ->
-    K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
+insert_group_(AID, Tab, DID, GID) ->
+    K = exodm_db:join_key([DID, <<"groups">>, exodm_db:group_id_key(GID)]),
     exodm_db_group:add_device(AID, GID, DID),
-    insert(Tab, K, 'gid',  gid_value(GID)).
+    kvdb_conf:write(Tab, {K, [], <<>>}).
+
+%% insert_group(AID, Tab, DID, I, GID) when is_integer(I) ->
+%%     K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
+%%     exodm_db_group:add_device(AID, GID, DID),
+%%     insert(Tab, K, 'gid',  gid_value(GID)).
 
 remove_group(AID, Tab, DID, I, GID) ->
     K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
@@ -502,49 +525,80 @@ add_groups(AID, DID0, Groups) ->
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->
-	      {Existing, Last} =
-		  kvdb_conf:fold_list(
-		    Tab, fun(I, Kl, {Acc,_}) ->
-				 {ok,{_,_,<<GID:32>>}} =
-				     kvdb_conf:read(
-				       Tab, kvdb_conf:join_key(
-					      Kl, <<"gid">>)),
-				 case lists:member(GID, Groups) of
-				     true ->
-					 {[GID|Acc],I};
-				     false ->
-					 {Acc,I}
-				 end
-			 end, {[],0}, kvdb_conf:join_key(DID,<<"groups">>)),
-	      ToAdd = Groups -- Existing,
-	      insert_groups(AID, Tab, Last+1, DID, ToAdd)
+	      case exist(AID, DID) of
+		  true ->
+		      add_groups_(Tab, AID, DID, Groups);
+		  false ->
+		      error(unknown_device)
+	      end
       end).
+
+add_groups_(Tab, AID, DID, Groups) ->
+    lists:foreach(
+      fun(GID0) ->
+	      GID = exodm_db:group_id_key(GID0),
+	      Key = kvdb_conf:join_key([DID, <<"groups">>, GID]),
+	      kvdb_conf:write(Tab, {Key, [], <<>>}),
+	      exodm_db_group:add_device(AID, GID, DID)
+      end, Groups).
+      %% 	      {Existing, Last} =
+      %% 		  kvdb_conf:fold_list(
+      %% 		    Tab, fun(I, Kl, {Acc,_}) ->
+      %% 				 {ok,{_,_,<<GID:32>>}} =
+      %% 				     kvdb_conf:read(
+      %% 				       Tab, kvdb_conf:join_key(
+      %% 					      Kl, <<"gid">>)),
+      %% 				 case lists:member(GID, Groups) of
+      %% 				     true ->
+      %% 					 {[GID|Acc],I};
+      %% 				     false ->
+      %% 					 {Acc,I}
+      %% 				 end
+      %% 			 end, {[],0}, kvdb_conf:join_key(DID,<<"groups">>)),
+      %% 	      ToAdd = Groups -- Existing,
+      %% 	      insert_groups(AID, Tab, Last+1, DID, ToAdd)
+      %% end).
 
 remove_groups(AID, DID0, Groups) ->
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->
-	      Found =
-		  kvdb_conf:fold_list(
-		    Tab, fun(I, Kl, Acc) ->
-				 {ok,{_,_,<<GID:32>>}} =
-				     kvdb_conf:read(
-				       Tab, kvdb_conf:join_key(
-					      Kl, <<"gid">>)),
-				 case lists:member(GID, Groups) of
-				     true ->
-					 [{I,GID}|Acc];
-				     false ->
-					 Acc
-				 end
-			 end, [], kvdb_conf:join_key(DID,<<"groups">>)),
-	      lists:foreach(
-		fun({I, GID}) ->
-			remove_group(AID, Tab, DID, I, GID)
-		end, Found)
-      end),
-    ok.
+	      case exist(AID, DID) of
+		  true ->
+		      remove_groups_(Tab, AID, DID, Groups);
+		  false ->
+		      error(unknown_device)
+	      end
+      end).
+
+remove_groups_(Tab, AID, DID, Groups) ->
+    lists:foreach(
+      fun(GID0) ->
+	      GID = exodm_db:group_id_key(GID0),
+	      Key = kvdb_conf:join_key([DID, <<"groups">>, GID]),
+	      exodm_db_group:remove_device(AID, GID, DID)
+      end, Groups).
+    %% 	      Found =
+    %% 		  kvdb_conf:fold_list(
+    %% 		    Tab, fun(I, Kl, Acc) ->
+    %% 				 {ok,{_,_,<<GID:32>>}} =
+    %% 				     kvdb_conf:read(
+    %% 				       Tab, kvdb_conf:join_key(
+    %% 					      Kl, <<"gid">>)),
+    %% 				 case lists:member(GID, Groups) of
+    %% 				     true ->
+    %% 					 [{I,GID}|Acc];
+    %% 				     false ->
+    %% 					 Acc
+    %% 				 end
+    %% 			 end, [], kvdb_conf:join_key(DID,<<"groups">>)),
+    %% 	      lists:foreach(
+    %% 		fun({I, GID}) ->
+    %% 			remove_group(AID, Tab, DID, I, GID)
+    %% 		end, Found)
+    %%   end),
+    %% ok.
 
 gid_value(GID) ->
     <<(exodm_db:group_id_num(GID)):32>>.
