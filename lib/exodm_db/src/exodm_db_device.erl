@@ -19,7 +19,7 @@
 -export([key/2, tab_and_key/1]).
 -export([enc_ext_key/2, dec_ext_key/1]).
 -export([lookup_position/2, lookup_keys/2]).
--export([add_groups/3, lookup_groups/2]).
+-export([add_groups/3, lookup_groups/2, remove_groups/3]).
 -export([lookup_group_notifications/2]).
 -export([table/1]).
 -export([client_auth_config/2]).
@@ -165,7 +165,7 @@ update_(AID0, DID0, DeleteOther, Options) ->
 	    end,
 	    insert_(Tab, AID, DID, Options)
     end.
-    %% lists:foreac Nh(
+%% lists:foreac Nh(
     %%   fun
     %% 	  ({name,Value}) ->
     %% 	      insert(Tab,DID,name,to_binary(Value));
@@ -492,6 +492,11 @@ insert_group(AID, Tab, DID, I, GID) when is_integer(I) ->
     exodm_db_group:add_device(AID, GID, DID),
     insert(Tab, K, 'gid',  gid_value(GID)).
 
+remove_group(AID, Tab, DID, I, GID) ->
+    K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
+    exodm_db_group:remove_device(AID, GID, DID),
+    kvdb_conf:delete_tree(Tab, K).
+
 add_groups(AID, DID0, Groups) ->
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
@@ -516,7 +521,30 @@ add_groups(AID, DID0, Groups) ->
       end).
 
 remove_groups(AID, DID0, Groups) ->
-    foo.
+    DID = exodm_db:encode_id(DID0),
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      Found =
+		  kvdb_conf:fold_list(
+		    Tab, fun(I, Kl, Acc) ->
+				 {ok,{_,_,<<GID:32>>}} =
+				     kvdb_conf:read(
+				       Tab, kvdb_conf:join_key(
+					      Kl, <<"gid">>)),
+				 case lists:member(GID, Groups) of
+				     true ->
+					 [{I,GID}|Acc];
+				     false ->
+					 Acc
+				 end
+			 end, [], kvdb_conf:join_key(DID,<<"groups">>)),
+	      lists:foreach(
+		fun({I, GID}) ->
+			remove_group(AID, Tab, DID, I, GID)
+		end, Found)
+      end),
+    ok.
 
 gid_value(GID) ->
     <<(exodm_db:group_id_num(GID)):32>>.
