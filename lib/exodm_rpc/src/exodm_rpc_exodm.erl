@@ -129,7 +129,8 @@ json_rpc_({request, _ReqEnv,
 	[] ->
 	    {ok, result_code('device-not-found')};
 	[_|_] ->
-	    {ok, [{devices, {array, [{struct, Res} || Res =/= []]}}]}
+	    {ok, result_code(ok) ++
+		 [{devices, {array, [{struct, Res} || Res =/= []]}}]}
     end;
 
 json_rpc_({request, _ReqEnv,
