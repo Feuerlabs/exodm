@@ -604,7 +604,9 @@ to_json_([{"rpc-status-string", [], _, _}|T], Attrs, Reply, Hist) ->
     end;
 to_json_([{K, [], _, [Type,Mand|_]} = H|T], Attrs, Reply, Hist) ->
     Ka = list_to_atom(K),
-    case lists:keyfind(Ka, 1, Reply) of
+    Kb = list_to_binary(K),
+    case find_leaf(Reply, K, Ka, Kb) of
+    %% case lists:keyfind(Ka, 1, Reply) of
 	{_, X} ->
 	    X1 = yang_json:to_json_type(X, Type),
 	    [{K, X1}
@@ -628,7 +630,9 @@ to_json_([{K, [], _, [Type,Mand|_]} = H|T], Attrs, Reply, Hist) ->
     end;
 to_json_([{K, {array,[Ch]}, _, Info}|T], Attrs, Reply, Hist) ->
     Ka = list_to_atom(K),
-    case lists:keyfind(Ka, 1, Reply) of
+    Kb = list_to_binary(K),
+    case find_leaf(Reply, Ka, Kb, K) of
+    %% case lists:keyfind(Ka, 1, Reply) of
 	{_, {array, L}} when is_list(L) ->
 	    [{Ka, {array, to_json_array_(Ch, Attrs, L, Hist)}}
 	     | to_json_(T, Attrs, Reply, Hist)];
@@ -642,12 +646,15 @@ to_json_([{K, {array,[Ch]}, _, Info}|T], Attrs, Reply, Hist) ->
     end;
 to_json_([{K, {struct, Ch}, _, Info}|T], Attrs, Reply, Hist) ->
     Ka = list_to_atom(K),
-    case lists:keyfind(Ka, 1, Reply) of
+    Kb = list_to_binary(K),
+    case find_leaf(Reply, Ka, Kb, K) of
+    %% case lists:keyfind(Ka, 1, Reply) of
 	{_, {struct, L}} when is_list(L) ->
 	    [{K, {struct, to_json_(Ch, Attrs, L, Hist)}}
 	     | to_json_(T, Attrs, Reply, Hist)];
 	false ->
-	    case lists:keyfind(Ka, 1, Attrs) of
+	    case find_leaf(Attrs, Ka, Kb, K) of
+	    %% case lists:keyfind(Ka, 1, Attrs) of
 		{_, L} when is_list(L) ->
 		    [{K, {struct, to_json_(L, Attrs, Ch, Hist)}}
 		     | to_json_(T, Attrs, Reply, Hist)];
@@ -662,6 +669,18 @@ to_json_([{K, {struct, Ch}, _, Info}|T], Attrs, Reply, Hist) ->
     end;
 to_json_([], _, _, _) ->
     [].
+
+find_leaf([{K,_} = H|_T], A, B, S) when K==A; K==B; K==S->
+    H;
+find_leaf([{K,_,_,_} = H|_T], A, B, S) when K==A; K==B; K==S->
+    H;
+find_leaf([_|T], A, B, S) ->
+    find_leaf(T, A, B, S);
+find_leaf([], _, _, _) ->
+    false.
+
+
+
 
 to_json_array_({_,[],_,[Type|_]}, _Attrs, Reply, _Hist) ->
     [yang_json:to_json_type(X, Type) || X <- Reply];
