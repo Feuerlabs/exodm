@@ -7,7 +7,7 @@
 
 -module(exodm_db).
 
--export([init/0]).
+-export([init/0, init_timers/0]).
 
 -export([transaction/1, in_transaction/1]).
 
@@ -89,7 +89,11 @@ init() ->
     exodm_db_account:init(),
     exodm_db_user:init(),
     exodm_db_system:init(),
-    exodm_db_yang:init().
+    exodm_db_yang:init(),
+    init_timers().
+
+init_timers() ->
+    kvdb_cron:create_crontab(kvdb_conf, <<"rpc_timers">>).
 
 
 transaction(F) when is_function(F, 1) ->

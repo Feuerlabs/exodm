@@ -24,6 +24,8 @@
 -export([table/1]).
 -export([client_auth_config/2]).
 
+-export([code_change/2]).
+
 -include_lib("lager/include/log.hrl").
 -include_lib("kvdb/include/kvdb_conf.hrl").
 
@@ -624,12 +626,12 @@ read_uint32(Tab, Key,Item) ->
 
 
 code_change(FromVsn, ToVsn) ->
-    exodm_db:in_transaction(
-      fun(_) ->
-	      Tabs = kvdb:list_tables(kvdb_conf),
+    Tabs = kvdb:list_tables(kvdb_conf),
+    %% exodm_db:in_transaction(
+    %%   fun(_) ->
 	      [{T,ok} = {T, transform_tab(T, FromVsn, ToVsn)}
-	       || T <- Tabs, is_dev_table(T)]
-      end).
+	       || T <- Tabs, is_dev_table(T)].
+      %% end).
 
 is_dev_table(T) ->
     Sz = byte_size(T),
@@ -642,7 +644,12 @@ is_dev_table(T) ->
     end.
 
 transform_tab(T, FromVsn, ToVsn) ->
-    transform_tab(kvdb_conf:first(T), T, FromVsn, ToVsn).
+    case kvdb_conf:first(T) of
+	{ok, {Key, _, _}} ->
+	    transform_tab({ok, Key}, T, FromVsn, ToVsn);
+	done ->
+	    ok
+    end.
 
 transform_tab({ok, Key}, T, From, To) ->
     [Top|_] = kvdb_conf:split_key(Key),
@@ -653,11 +660,27 @@ transform_tab({ok, Key}, T, From, To) ->
 transform_tab(done, _, _, _) ->
     ok.
 
+
+
 transform_tree(#conf_tree{tree = T} = CT, _, _) ->
-    lists:map(
-      fun({<<"__did">>, [], DID}) ->
-	      {<<"did">>, [], DID};
-	 ({K, _, _} = X) ->
-	      X
-      end, T),
-    CT.
+    T1 = lists:map(
+	   fun({<<"__did">>, [], DID}) ->
+		   {<<"did">>, [], DID};
+	      ({K, _, _} = X) ->
+		   case lists:member(K, [<<"config_set">>, <<"device-key">>,
+					 <<"server-key">>, <<"did">>,
+					 <<"protocol">>]) of
+		       true ->
+			   X;
+		       false ->
+			   {a,X}
+		   end;
+	      ({<<"config_set">>, L} = X) when is_list(L) ->
+		   X;
+	      ({<<"groups">>, L} = X) when is_list(L) ->
+		   X
+	   end, T),
+    Attrs = [C || {a, C} <- T1],
+    CT#conf_tree{tree = lists:sort([{<<"a">>,Attrs}|
+				    [X || X <- T1,
+					  element(1,X) =/= a]])}.
