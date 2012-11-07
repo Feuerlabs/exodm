@@ -19,12 +19,15 @@
 -export([key/2, tab_and_key/1]).
 -export([enc_ext_key/2, dec_ext_key/1]).
 -export([lookup_position/2, lookup_keys/2]).
--export([add_groups/3, lookup_groups/2]).
+-export([add_groups/3, lookup_groups/2, remove_groups/3]).
 -export([lookup_group_notifications/2]).
 -export([table/1]).
 -export([client_auth_config/2]).
 
+-export([code_change/2]).
+
 -include_lib("lager/include/log.hrl").
+-include_lib("kvdb/include/kvdb_conf.hrl").
 
 -import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).
 -import(lists, [reverse/1]).
@@ -164,7 +167,7 @@ update_(AID0, DID0, DeleteOther, Options) ->
 	    end,
 	    insert_(Tab, AID, DID, Options)
     end.
-    %% lists:foreac Nh(
+%% lists:foreac Nh(
     %%   fun
     %% 	  ({name,Value}) ->
     %% 	      insert(Tab,DID,name,to_binary(Value));
@@ -350,30 +353,45 @@ fold_devices(F, Acc, AID, Limit) when
 lookup_groups(AID, DID0) ->
     Tab = table(AID),
     DID = exodm_db:encode_id(DID0),
-    lists:reverse(
-      exodm_db:fold_list2(
-	Tab,
-	fun(I,Key,Acc) ->
-		case read_uint32(Tab, Key, 'gid') of
-		    [{_,GID}] -> [{group,{I,GID}} | Acc];
-		    [] -> Acc
-		end
-	end, [], DID, groups)).
+    case kvdb_conf:read_tree(Tab, kvdb_conf:join_key(DID, <<"groups">>)) of
+	#conf_tree{tree = T} ->
+	    [GID || {GID,_, _} <- T];
+	_ ->
+	    []
+    end.
+    %% lists:reverse(
+    %%   exodm_db:fold_list2(
+    %% 	Tab,
+    %% 	fun(I,Key,Acc) ->
+    %% 		case read_uint32(Tab, Key, 'gid') of
+    %% 		    [{_,GID}] -> [{group,{I,GID}} | Acc];
+    %% 		    [] -> Acc
+    %% 		end
+    %% 	end, [], DID, groups)).
 
 
 lookup_group_notifications(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
-    lists:foldl(
-      fun({group,{_I,GID0}},Acc) ->
-	      GID = exodm_db:group_id_key(GID0),
+    lists:flatmap(
+      fun(GID) ->
 	      case exodm_db_group:lookup(AID, GID, url) of
 		  [{_, URL}] ->
-		      [URL | Acc];
+		      [URL];
 		  [] ->
-		      Acc
+		      []
 	      end
-      end,[],lookup_groups(AID, DID)).
+      end, lookup_groups(AID, DID)).
+    %% lists:foldl(
+    %%   fun({group,{_I,GID0}},Acc) ->
+    %% 	      GID = exodm_db:group_id_key(GID0),
+    %% 	      case exodm_db_group:lookup(AID, GID, url) of
+    %% 		  [{_, URL}] ->
+    %% 		      [URL | Acc];
+    %% 		  [] ->
+    %% 		      Acc
+    %% 	      end
+    %%   end,[],lookup_groups(AID, DID)).
 
 %% find last known position or {0,0,0} if not found
 lookup_position(AID, DID0) ->
@@ -476,46 +494,114 @@ insert_attr(Tab, Key, Item, Value) ->
     exodm_db:write(Tab, Key1, Value).
 
 insert_groups(AID, Tab, DID, Groups) ->
-    insert_groups(AID, Tab, 1, DID, Groups).
+%%     insert_groups(AID, Tab, 1, DID, Groups).
 
-insert_groups(AID, Tab, I0, DID, Groups0) ->
-    {Groups,_} = lists:mapfoldl(fun(G,I) ->
-					{{I,G}, I+1}
-				end, I0, Groups0),
-    lists:foreach(fun({I,G}) ->
-			  insert_group(AID, Tab, DID, I, G)
+%% insert_groups(AID, Tab, I0, DID, Groups0) ->
+    lists:foreach(fun(G) ->
+			  insert_group_(AID, Tab, DID, G)
 		  end, Groups).
+    %% {Groups,_} = lists:mapfoldl(fun(G,I) ->
+    %% 					{{I,G}, I+1}
+    %% 				end, I0, Groups0),
+    %% lists:foreach(fun({I,G}) ->
+    %% 			  insert_group(AID, Tab, DID, I, G)
+    %% 		  end, Groups).
 
-insert_group(AID, Tab, DID, I, GID) when is_integer(I) ->
-    K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
+insert_group_(AID, Tab, DID, GID) ->
+    K = exodm_db:join_key([DID, <<"groups">>, exodm_db:group_id_key(GID)]),
     exodm_db_group:add_device(AID, GID, DID),
-    insert(Tab, K, 'gid',  gid_value(GID)).
+    kvdb_conf:write(Tab, {K, [], <<>>}).
+
+%% insert_group(AID, Tab, DID, I, GID) when is_integer(I) ->
+%%     K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
+%%     exodm_db_group:add_device(AID, GID, DID),
+%%     insert(Tab, K, 'gid',  gid_value(GID)).
+
+remove_group(AID, Tab, DID, I, GID) ->
+    K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
+    exodm_db_group:remove_device(AID, GID, DID),
+    kvdb_conf:delete_tree(Tab, K).
 
 add_groups(AID, DID0, Groups) ->
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->
-	      {Existing, Last} =
-		  kvdb_conf:fold_list(
-		    Tab, fun(I, Kl, {Acc,_}) ->
-				 {ok,{_,_,<<GID:32>>}} =
-				     kvdb_conf:read(
-				       Tab, kvdb_conf:join_key(
-					      Kl, <<"gid">>)),
-				 case lists:member(GID, Groups) of
-				     true ->
-					 {[GID|Acc],I};
-				     false ->
-					 {Acc,I}
-				 end
-			 end, {[],0}, kvdb_conf:join_key(DID,<<"groups">>)),
-	      ToAdd = Groups -- Existing,
-	      insert_groups(AID, Tab, Last+1, DID, ToAdd)
+	      case exist(AID, DID) of
+		  true ->
+		      add_groups_(Tab, AID, DID, Groups);
+		  false ->
+		      error(unknown_device)
+	      end
       end).
 
+add_groups_(Tab, AID, DID, Groups) ->
+    lists:foreach(
+      fun(GID0) ->
+	      GID = exodm_db:group_id_key(GID0),
+	      Key = kvdb_conf:join_key([DID, <<"groups">>, GID]),
+	      kvdb_conf:write(Tab, {Key, [], <<>>}),
+	      exodm_db_group:add_device(AID, GID, DID)
+      end, Groups).
+      %% 	      {Existing, Last} =
+      %% 		  kvdb_conf:fold_list(
+      %% 		    Tab, fun(I, Kl, {Acc,_}) ->
+      %% 				 {ok,{_,_,<<GID:32>>}} =
+      %% 				     kvdb_conf:read(
+      %% 				       Tab, kvdb_conf:join_key(
+      %% 					      Kl, <<"gid">>)),
+      %% 				 case lists:member(GID, Groups) of
+      %% 				     true ->
+      %% 					 {[GID|Acc],I};
+      %% 				     false ->
+      %% 					 {Acc,I}
+      %% 				 end
+      %% 			 end, {[],0}, kvdb_conf:join_key(DID,<<"groups">>)),
+      %% 	      ToAdd = Groups -- Existing,
+      %% 	      insert_groups(AID, Tab, Last+1, DID, ToAdd)
+      %% end).
+
 remove_groups(AID, DID0, Groups) ->
-    foo.
+    DID = exodm_db:encode_id(DID0),
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      case exist(AID, DID) of
+		  true ->
+		      remove_groups_(Tab, AID, DID, Groups);
+		  false ->
+		      error(unknown_device)
+	      end
+      end).
+
+remove_groups_(Tab, AID, DID, Groups) ->
+    lists:foreach(
+      fun(GID0) ->
+	      GID = exodm_db:group_id_key(GID0),
+	      Key = kvdb_conf:join_key([DID, <<"groups">>, GID]),
+	      kvdb_conf:delete(Tab, Key),
+	      exodm_db_group:remove_device(AID, GID, DID)
+      end, Groups).
+    %% 	      Found =
+    %% 		  kvdb_conf:fold_list(
+    %% 		    Tab, fun(I, Kl, Acc) ->
+    %% 				 {ok,{_,_,<<GID:32>>}} =
+    %% 				     kvdb_conf:read(
+    %% 				       Tab, kvdb_conf:join_key(
+    %% 					      Kl, <<"gid">>)),
+    %% 				 case lists:member(GID, Groups) of
+    %% 				     true ->
+    %% 					 [{I,GID}|Acc];
+    %% 				     false ->
+    %% 					 Acc
+    %% 				 end
+    %% 			 end, [], kvdb_conf:join_key(DID,<<"groups">>)),
+    %% 	      lists:foreach(
+    %% 		fun({I, GID}) ->
+    %% 			remove_group(AID, Tab, DID, I, GID)
+    %% 		end, Found)
+    %%   end),
+    %% ok.
 
 gid_value(GID) ->
     <<(exodm_db:group_id_num(GID)):32>>.
@@ -537,3 +623,64 @@ read_uint32(Tab, Key,Item) ->
 	[{Item,<<Value:32>>}] -> [{Item,Value}];
 	[] -> []
     end.
+
+
+code_change(FromVsn, ToVsn) ->
+    Tabs = kvdb:list_tables(kvdb_conf),
+    %% exodm_db:in_transaction(
+    %%   fun(_) ->
+	      [{T,ok} = {T, transform_tab(T, FromVsn, ToVsn)}
+	       || T <- Tabs, is_dev_table(T)].
+      %% end).
+
+is_dev_table(T) ->
+    Sz = byte_size(T),
+    PSz = Sz - 4,
+    case T of
+	<<_:PSz/binary, "_dev">> ->
+	    true;
+	_ ->
+	    false
+    end.
+
+transform_tab(T, FromVsn, ToVsn) ->
+    case kvdb_conf:first(T) of
+	{ok, {Key, _, _}} ->
+	    transform_tab({ok, Key}, T, FromVsn, ToVsn);
+	done ->
+	    ok
+    end.
+
+transform_tab({ok, Key}, T, From, To) ->
+    [Top|_] = kvdb_conf:split_key(Key),
+    #conf_tree{} = CT = kvdb_conf:read_tree(T, Top),
+    kvdb_conf:delete_tree(T, Top),
+    kvdb_conf:write_tree(T, Top, transform_tree(CT, From, To)),
+    transform_tab(kvdb_conf:next_at_level(T, Top), T, From, To);
+transform_tab(done, _, _, _) ->
+    ok.
+
+
+
+transform_tree(#conf_tree{tree = T} = CT, _, _) ->
+    T1 = lists:map(
+	   fun({<<"__did">>, [], DID}) ->
+		   {<<"did">>, [], DID};
+	      ({K, _, _} = X) ->
+		   case lists:member(K, [<<"config_set">>, <<"device-key">>,
+					 <<"server-key">>, <<"did">>,
+					 <<"protocol">>]) of
+		       true ->
+			   X;
+		       false ->
+			   {a,X}
+		   end;
+	      ({<<"config_set">>, L} = X) when is_list(L) ->
+		   X;
+	      ({<<"groups">>, L} = X) when is_list(L) ->
+		   X
+	   end, T),
+    Attrs = [C || {a, C} <- T1],
+    CT#conf_tree{tree = lists:sort([{<<"a">>,Attrs}|
+				    [X || X <- T1,
+					  element(1,X) =/= a]])}.

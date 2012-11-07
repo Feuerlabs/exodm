@@ -7,7 +7,7 @@
 
 -module(exodm_db).
 
--export([init/0]).
+-export([init/0, init_timers/0]).
 
 -export([transaction/1, in_transaction/1]).
 
@@ -27,7 +27,7 @@
 -export([first_child/1, first_child/2,
 	 next_child/1, next_child/2,
 	 last_child/1, last_child/2]).
--export([list_next/4, n_children/4, list_cont/4]).
+-export([list_next/4, n_children/4, list_cont/4, list_cont/5]).
 -export([fold_children/3, fold_children/4]).
 -export([fold_list/3, fold_list/4]).   % ([Tab,] Fun, Acc, Key)
 -export([fold_list2/4, fold_list2/5]). % ([Tab,] Fun, Acc, Key, ListItem)
@@ -89,7 +89,11 @@ init() ->
     exodm_db_account:init(),
     exodm_db_user:init(),
     exodm_db_system:init(),
-    exodm_db_yang:init().
+    exodm_db_yang:init(),
+    init_timers().
+
+init_timers() ->
+    kvdb_cron:create_crontab(kvdb_conf, <<"rpc_timers">>).
 
 
 transaction(F) when is_function(F, 1) ->
@@ -339,7 +343,8 @@ last_child(Tab, K) ->
 
 list_next(_, 0, _, _) -> [];
 list_next(Tab, N, Prev, F) when is_integer(N), N > 0 ->
-    case list_cont(Tab, N, Prev, F) of
+    Level = length(kvdb_conf:split_key(Prev)),
+    case list_cont(Tab, N, Prev, Level, F) of
 	{L, _} -> L;
 	done   -> []
     end.
@@ -358,12 +363,15 @@ n_children(Tab, N, Parent, F) when is_integer(N), N > 0 ->
       end).
 
 list_cont(Tab, N, Prev, F) when is_integer(N) ->
+    list_cont(Tab, N, Prev, 0, F).
+
+list_cont(Tab, N, Prev, Level, F) when is_integer(N) ->
     in_transaction(fun(_Db) ->
-			   Next = kvdb_conf:next_at_level(Tab, Prev),
-			   list_cont_(Next, Tab, N, N, F, [])
+			   Next = next_at_level(Tab, Prev, Level),
+			   list_cont_(Next, Tab, Level, N, N, F, [])
 		   end).
 
-list_cont_({ok, Key}, Tab, N, N0, F, Acc) when N > 0 ->
+list_cont_({ok, Key}, Tab, Level, N, N0, F, Acc) when N > 0 ->
     NewAcc = [F(Key) | Acc],
     case decr(N) of
 	0 ->
@@ -371,16 +379,25 @@ list_cont_({ok, Key}, Tab, N, N0, F, Acc) when N > 0 ->
 	     fun() ->
 		     in_transaction(
 		       fun(_) ->
-			       Next = kvdb_conf:next_at_level(Tab, Key),
-			       list_cont_(Next, Tab, N0, N0, F, [])
+			       Next = next_at_level(Tab, Key, Level),
+			       list_cont_(Next, Tab, Level, N0, N0, F, [])
 		       end)
 	     end};
 	NewN ->
-	    Next = kvdb_conf:next_at_level(Tab, Key),
-	    list_cont_(Next, Tab, NewN, N0, F, NewAcc)
+	    Next = next_at_level(Tab, Key, Level),
+	    list_cont_(Next, Tab, Level, NewN, N0, F, NewAcc)
     end;
-list_cont_(_, _, _, _, _, Acc) ->
+list_cont_(_, _, _, _, _, _, Acc) ->
     {lists:reverse(Acc), fun() -> done end}.
+
+next_at_level(Tab, Key, Level) ->
+    if Level == 0 ->
+	    kvdb_conf:next_at_level(Tab, Key);
+       true ->
+	    kvdb_conf:next_at_level(
+	      Tab, kvdb_conf:join_key(
+		     lists:sublist(kvdb_conf:split_key(Key), 1, Level)))
+    end.
 
 all_children(K) ->
     all_children(<<"data">>, K).

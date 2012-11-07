@@ -211,7 +211,7 @@ list_group_devices(Cfg) ->
 list_group_notifications(Cfg) ->
     %% [<<"https://ulf:wiger@localhost:8000/exodm/test_callback2">>,
     %%  <<"https://ulf:wiger@localhost:8000/exodm/test_callback">>] =
-    [?URL2, ?URL1] =
+    [?URL1, ?URL2] =
 	?rpc(exodm_db_device,lookup_group_notifications, [2, <<"x00000001">>]),
     ok.
 
@@ -496,7 +496,7 @@ json_provision_device(Cfg) ->
 					 {"server-key", 3},
 					 {"device-key", 4}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result","0"}]}},
+    {struct, [{"result", {struct,[{"result",0}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -508,7 +508,8 @@ json_lookup_device(Cfg) ->
     io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
     %% lookup-device doesn't return the server- and device-key attributes
     {struct, [{"result",
-	       {struct,[{"devices",
+	       {struct,[{"result", 0},
+			{"devices",
 			 {array, [{struct, [{"dev-id", "y00000001"},
 					    {"protocol", "exodm_bert"}]}]}}
 		       ]}},
@@ -524,9 +525,7 @@ json_lookup_bad_device(Cfg) ->
     io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
     %% lookup-device doesn't return the server- and device-key attributes
     {struct, [{"result",
-	       {struct,[{"devices",
-			 {array, []}}
-		       ]}},
+	       {struct,[ {"result", 5} ]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -546,7 +545,7 @@ json_create_config_set_(Cfg, Name) ->
 							   ]}}
 					]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result","0"}]}},
+    {struct, [{"result", {struct,[{"result",0}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -560,7 +559,7 @@ json_update_config_set(Cfg) ->
 					 {"values",{struct,[{"c","yy"}]}}
 					]}),
     io:fwrite(user, "~p: update-config-set -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result","0"}]}},
+    {struct, [{"result", {struct,[{"result",0}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -591,7 +590,7 @@ json_add_config_set_members(Cfg) ->
 							     "x00000002"]}}
 					]}),
     io:fwrite(user, "~p: add-config-set-members -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result","0"}]}},
+    {struct, [{"result", {struct,[{"result",0}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -616,7 +615,7 @@ json_delete_config_set(Cfg) ->
 				"exodm:delete-config-set", "1",
 				{struct,[{"name","test_cfg_2"}]}),
     io:fwrite(user, "~p: delete-config-set -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result","0"}]}},
+    {struct, [{"result", {struct,[{"result",0}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -631,7 +630,7 @@ json_create_device_group(Cfg) ->
 					 {"notification-url",?URL1}
 					]}),
     io:fwrite(user, "~p: create-device-group -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result","0"},{"gid",_}]}},
+    {struct, [{"result", {struct,[{"result",0},{"gid",_}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -676,10 +675,10 @@ device_json_rpc1(Cfg) ->
 					  {"message", "hello"}]}),
     %% io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"transaction-id",_},
-				   {"rpc-status", "0"},
+				   {"rpc-status", 0},
 				   {"rpc-status-string",
 				    "Operation has been accepted" ++ _},
-				   {"final","0"}]}},
+				   {"final",false}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     Fetched = fetch_json(Cfg),
@@ -709,7 +708,7 @@ push_config_set1(Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:push-config-set", "3",
 				{struct, [{"name", "test1"}]}),
-    {struct, [{"result", {struct, [{"result", "0"}]}},
+    {struct, [{"result", {struct, [{"result", 0}]}},
 	      {"id", _},
 	      {"jsonrpc", "2.0"}]} = Reply,
     Fetched = fetch_json(Cfg),
@@ -718,10 +717,10 @@ push_config_set1(Cfg) ->
 	      {"method","exodm:push-config-set-callback"},
 	      {"params",
 	       {struct, [{"transaction-id", _},
-			 {"rpc-status", "1"},
+			 {"rpc-status", 1},
 			 {"rpc-status-string",
 			  "The operation has completed" ++ _},
-			 {"final", "1"}]}}]} = N,
+			 {"final", true}]}}]} = N,
     ok.
 
 push_config_set_meth(Args) ->

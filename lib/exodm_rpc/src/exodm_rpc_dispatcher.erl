@@ -2,7 +2,8 @@
 -behaviour(gen_server).
 
 -export([check_queue/2]).
--export([attempt_dispatch/3]).
+-export([attempt_dispatch/3,
+	 attempt_dispatch/4]).
 -export([start_link/3]).
 -export([init/1,
 	 handle_call/3,
@@ -25,7 +26,10 @@ check_queue(Tab, Q) ->
     call(Tab, {check_queue, Q}).
 
 attempt_dispatch(Db, Tab, Q) ->
-    call(Tab, {attempt_dispatch, Q, Db}).
+    attempt_dispatch(Db, Tab, Q, false).
+
+attempt_dispatch(Db, Tab, Q, Reply) when is_boolean(Reply) ->
+    call(Tab, {attempt_dispatch, Q, Db, Reply}).
 
 call(Tab0, Req) ->
     Tab = kvdb_lib:table_name(Tab0),
@@ -46,7 +50,7 @@ init({Tab0, M, JobQ} = Arg) ->
     try
 	ok = kvdb_conf:add_table(Tab, [{type, fifo},
 				       {encoding, {raw,sext,sext}}]),
-	%% kvdb_schema_events:notify_all_queues(kvdb:db(kvdb_conf), Tab),
+	kvdb_schema_events:notify_all_queues(kvdb:db(kvdb_conf), Tab),
 	io:fwrite("checking queues in ~p~n", [Tab]),
 	St = check_queues(kvdb:first_queue(kvdb_conf, Tab),
 			  #st{tab = Tab, mod = M,
@@ -103,10 +107,13 @@ handle_info(_Msg, St) ->
 handle_call({check_queue, Q}, _From, St) ->
     {Res, St1} = check_queue_(Q, St),
     {reply, Res, St1};
-handle_call({attempt_dispatch, Q, Db}, From, #st{queues = Qs} = St) ->
+handle_call({attempt_dispatch, Q, Db, Reply}, From, #st{queues = Qs} = St) ->
     case dict:find(Q, Qs) of
 	error ->
-	    {Pid, St1} = spawn_dispatcher(Q, Db, From, St),
+	    DbArg = if Reply -> Db;
+		       true -> kvdb:db_name(Db)
+		    end,
+	    {Pid, St1} = spawn_dispatcher(Q, DbArg, From, Reply, St),
 	    {reply, {ok, Pid}, St1};
 	{ok, CurPid} ->
 	    {_, St1} = mark_pending(CurPid, Q, St),
@@ -137,13 +144,14 @@ mark_pending(CurPid, Q, #st{pending = Pending} = St) ->
 		     end}}.
 
 spawn_dispatcher(Q, St) ->
-    spawn_dispatcher(Q, kvdb_conf, undefined, St).
+    spawn_dispatcher(Q, kvdb_conf, undefined, false, St).
 
-spawn_dispatcher(Q, Db, From, #st{tab = Tab, pids = Pids, queues = Qs,
-				  jobs_queue = JobsQ} = St) ->
+spawn_dispatcher(Q, Db, From, Reply, #st{tab = Tab, pids = Pids, queues = Qs,
+					 jobs_queue = JobsQ} = St) ->
     {Pid, _} = spawn_monitor(fun() ->
 				     jobs:ask(JobsQ),
-				     dispatch(Db, Tab, Q, From)
+				     timer:sleep(500),
+				     dispatch(Db, Tab, Q, From, Reply)
 			     end),
     {Pid, St#st{pids = dict:store(Pid, Q, Pids),
 		queues = dict:store(Q, Pid, Qs)}}.
@@ -151,26 +159,32 @@ spawn_dispatcher(Q, Db, From, #st{tab = Tab, pids = Pids, queues = Qs,
 %% dispatch(Tab, Q) ->
 %%     dispatch(kvdb_conf, Tab, Q, undefined).
 
-dispatch(Db, Tab, Q, From) ->
+dispatch(Db, Tab, Q, From, Reply) ->
     ?debug("dispatch(~p, ~p)~n", [Tab, Q]),
-    case exodm_rpc_handler:device_sessions(Q) of
-	[_|_] = Sessions ->
-	    pop_and_dispatch(From, Db, Tab, Q, Sessions);
-	[] ->
-	    done(From)
+    try
+	case exodm_rpc_handler:device_sessions(Q) of
+	    [_|_] = Sessions ->
+		pop_and_dispatch(From, Reply, Db, Tab, Q, Sessions);
+	    [] ->
+		done(From, Reply)
+	end
+    catch
+	error:Reason ->
+	    ?error("ERROR in ~p:dispatch(): ~p~n~p~n",
+		   [?MODULE,Reason, erlang:get_stacktrace()])
     end.
 
-pop_and_dispatch(undefined, Db, Tab, Q, Sessions) ->
+pop_and_dispatch(_, false, Db, Tab, Q, Sessions) ->
     kvdb:transaction(
       Db,
       fun(Db1) ->
 	      until_done(Db1, Tab, Q, Sessions)
 	   end);
-pop_and_dispatch(From, Db, Tab, Q, Sessions) ->
+pop_and_dispatch(From, Reply, Db, Tab, Q, Sessions) ->
     case kvdb:in_transaction(
 	   Db,
 	   fun(Db1) ->
-		   pop_and_dispatch_(From, Db1, Tab, Q, Sessions)
+		   pop_and_dispatch_(From, Reply, Db1, Tab, Q, Sessions)
 	   end) of
 	done ->
 	    done;
@@ -183,27 +197,28 @@ pop_and_dispatch(From, Db, Tab, Q, Sessions) ->
     end.
 
 until_done(Db, Tab, Q, Sessions) ->
-    case pop_and_dispatch_(undefined, Db, Tab, Q, Sessions) of
+    case pop_and_dispatch_(undefined, false, Db, Tab, Q, Sessions) of
 	done -> done;
 	next -> until_done(Db, Tab, Q, Sessions)
     end.
 
-done(undefined) ->
-    done;
-done({Pid, _}) ->
+done({Pid, _}, true) ->
     Pid ! {self(), ?MODULE, done},
+    done;
+done(_, _) ->
     done.
+
 
 %% The first time, we may be popping the queue from within a transaction
 %% store, and need to ack to the transaction master that we're done. Note that
 %% *we* delete the object if successful, so the master may be committing an
 %% empty set (which is ok).
-pop_and_dispatch_(From, Db, Tab, Q, Sessions) ->
+pop_and_dispatch_(From, Reply, Db, Tab, Q, Sessions) ->
     ?debug("pop_and_dispatch_(~p, ~p, ~p, ~p, ~p)~n",
 	   [Db, Tab, Q, Sessions, From]),
     case kvdb:pop(Db, Tab, Q) of
 	done ->
-	    done(From);
+	    done(From, Reply);
 	{ok, {_, Env, Req} = Entry} ->
 	    ?debug("POP: Entry = ~p~n", [Entry]),
 	    set_user(Env, Db),
@@ -214,18 +229,19 @@ pop_and_dispatch_(From, Db, Tab, Q, Sessions) ->
 		    Mod = exodm_rpc_protocol:module(Protocol),
 		    ?debug("Calling ~p:dispatch(~p, ~p, ~p, ~p)~n",
 			   [Mod, Env, AID, DID, Pid]),
-		     case Mod:dispatch(Tab, Req, Env, AID, DID, Pid) of
+		     case Mod:dispatch(Tab, Req, Env, AID,
+				       exodm_db:decode_id(DID), Pid) of
 			ok ->
-			    done(From),
+			    done(From, Reply),
 			    next;
 			error ->
-			    done(From)
+			    done(From, Reply)
 		    end;
 		false ->
 		    ?error("No matching protocol session for ~p (~p)~n"
 			   "Entry now blocking queue~n",
 			   [Entry, Sessions]),
-		    done(From)
+		    done(From, Reply)
 	    end
     end.
 

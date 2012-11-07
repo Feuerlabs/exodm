@@ -104,9 +104,17 @@ else
 	exit 2
 endif
 
+appup:
+ifneq ($(strip $(PREV)),)
+	(cd rel; $(PREBAR) -vvv generate-appup skip_deps=true previous_release=$(PREV))
+else
+	echo "no PREV set"
+	exit 2
+endif
+
 upgrade:
 ifneq ($(strip $(PREV)),)
-	(cd rel; $(PREBAR) -vvv generate-appup skip_deps=true previous_release=../rel/lib/$(PREV))
+	(cd rel; $(PREBAR) -vvv generate-upgrade skip_deps=true previous_release=$(PREV))
 else
 	echo "no PREV set"
 	exit 2
