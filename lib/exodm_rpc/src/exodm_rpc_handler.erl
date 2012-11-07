@@ -373,8 +373,8 @@ do_validate(Method, Module, Args, Spec) ->
     end.
 
 queue_message(Db, AID, Tab, Env, {Type, Attrs, _} = Msg) when Type==request;
-							  Type==notify;
-							  Type==reply ->
+							      Type==notify;
+							      Type==reply ->
     queue_message_(Db, AID, Tab, Attrs, Env, Msg);
 queue_message(Db, AID, Tab, Env, {reverse_request,_Meth,Elems} = Msg) ->
     queue_message_(Db, AID, Tab, Elems, Env, Msg).
@@ -759,7 +759,7 @@ convert_req_([{K, Ch, _Descr, [Type|_] = Info}|Spec1], Req) ->
 		    AlsoMissing =
 			[K1 || {K1,_,_,I} <- Spec1,
 			       (lists:member({mandatory,true}, I) andalso
-				not(lists:keymember(K1, 1, Spec1)))],
+				not(lists:keymember(K1, 1, Req)))],
 		    throw({invalid_params, {required, [K|AlsoMissing]}});
 		_ ->
 		    case lists:keyfind(default, 1, Info) of

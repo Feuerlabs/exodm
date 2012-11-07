@@ -297,7 +297,7 @@ list_users(AID) ->
 list_users(AID0, Limit) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:fold_keys(
-      <<"data">>,
+      ?TAB,
       exodm_db:join_key(AID, <<"users">>),
       fun([A, <<"users">>, UID|_], Acc) ->
 	      {next, exodm_db:join_key([A,<<"users">>, UID]), [UID|Acc]};
@@ -320,7 +320,7 @@ system_specs(AID0) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      Set = kvdb_conf:fold_children(
-		      <<"data">>,
+		      ?TAB,
 		      fun(K, Acc) ->
 			      [lists:last(exodm_db:split_key(K))|Acc]
 		      end, [], exodm_db:join_key(AID, <<"system_specs">>)),

@@ -17,7 +17,8 @@
 	 code_change/3]).
 -export([to_json_/4]). % for testing
 -export([ping/0,
-	 notification/3]).
+	 notification/3,
+	 do/4]).
 -export([std_specs/0]).
 
 -include_lib("lager/include/log.hrl").
@@ -52,6 +53,16 @@ queue_notification(Module, Type, Env0, Method, Elems) when
 	      exodm_rpc_handler:queue_message(
 		Db, AID, from_device, Env, {Type, Method, Elems})
       end).
+
+%% For scheduled execution, e.g. do([{aid,<<"a00000001">>},{user,<<"ulf">>}],
+%%                                  exodm_rpc_handler, queue_message, [...]).
+%%
+do(Meta, M, F, A) ->
+    {_, AID} = lists:keyfind(aid, 1, Meta),
+    {_, User} = lists:keyfind(uid, 1, Meta),
+    exodm_db_session:set_auth_as_user(User),
+    AID = exodm_db_session:get_aid(),  % assertion!
+    apply(M, F, A).
 
 
 to_binary(A) when is_atom(A) ->

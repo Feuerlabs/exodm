@@ -233,7 +233,8 @@ make_current(F) ->
 
 list_files(Fs0, Dir) ->
     case [F1 || F1 <- lists:sort(Fs0),
-	       filelib:is_dir(filename:join(Dir, F1))] of
+		filelib:is_dir(filename:join(Dir, F1)),
+		F1 =/= "exodm"] of
 	[F|Fs] ->
 	    io:fwrite("~s~n", [F ++ lists:concat(["," ++ F1 || F1 <- Fs])])
     end.

@@ -23,6 +23,7 @@ release: compile
 
 generate:
 	rm -f ./rel/exodm
+	rm -f rel/exodm rel/lib/exodm
 	(cd rel && $(PREBAR) generate -f skip_deps=true)
 	./exorel current `./exorel last_build`
 
