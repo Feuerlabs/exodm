@@ -76,6 +76,8 @@ exodm_test_() ->
 			       ?my_t(json_list_config_sets(Cfg1)),
 			       ?my_t(json_create_device_group(Cfg1)),
 			       ?my_t(json_list_device_groups(Cfg1)),
+			       ?my_t(json_delete_device_group(Cfg1)),
+			       ?my_t(json_list_device_groups2(Cfg1)),
 			       %% ?my_t(json_add_device_group_members(Cfg1)),
 			       %% ?my_t(json_delete_device_group(Cfg1)),
 			       ?my_t(json_add_config_set_members(Cfg1)),
@@ -660,6 +662,32 @@ json_list_device_groups(Cfg) ->
 					    {"name", _},
 					    {"notification-url",_}]}
 				 |_]}}
+			]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+json_delete_device_group(Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:delete-device-group", "1",
+				{struct, [{"gid","3"}]}),
+    io:fwrite(user, "~p: delete-device-group -> ~p~n", [?LINE, Reply]),
+    {struct, [{"result",
+	       {struct, [{"result",0}]}},
+	       {"id", _},
+	       {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
+json_list_device_groups2(Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:list-device-groups", "1",
+				{struct, [{"n", 1},
+					  {"previous", 2}
+					 ]}),
+    io:fwrite(user, "~p: list-device-groups2 -> ~p~n", [?LINE, Reply]),
+    {struct, [{"result",
+	       {struct,[{"device-groups",
+			 {array, []}}
 			]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,

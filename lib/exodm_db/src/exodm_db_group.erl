@@ -22,6 +22,8 @@
 	 list_groups/3]).
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
+-include_lib("lager/include/log.hrl").
+
 %%
 %% /<aid>/groups/<gid>/name  = <DeviceName>
 %% /<aid>/groups/<gid>/url   = <MSISDN>
@@ -92,6 +94,7 @@ update_(AID, GID, Options) ->
     end.
 
 delete(AID0, GID0) ->
+    ?debug("~p:delete(~p, ~p)~n", [?MODULE, AID0, GID0]),
     AID = exodm_db:account_id_key(AID0),
     GID = exodm_db:group_id_key(GID0),
     exodm_db:in_transaction(
@@ -101,7 +104,7 @@ delete(AID0, GID0) ->
 
 delete_(AID, GID) ->
     Tab = table(AID),
-    case exist(Tab, GID) of
+    case exist(AID, GID) of
 	true ->
 	    kvdb_conf:delete_all(Tab, GID);
 	false ->
