@@ -46,7 +46,18 @@ post_generate(Config, File) ->
     {ok,_} = file:copy("../make_node", MakeNodeTgt),
     set_x_bit(MakeNodeTgt),
     {ok,_} = file:copy(File, filename:join(TargetDir, filename:basename(File))),
+    make_erts_link(TargetDir),
     ok.
+
+make_erts_link(Dir) ->
+    [Erts] = filelib:wildcard(filename:join(Dir, "erts-*")),
+    {ok,OldCWD} = file:get_cwd(),
+    file:set_cwd(Dir),
+    case file:make_symlink(filename:basename(Erts), "erts") of
+	ok -> ok;
+	{error,eexist} -> ok
+    end,
+    file:set_cwd(OldCWD).
 
 load_config(File) ->
     case rebar_config:consult_file(File) of
