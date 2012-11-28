@@ -23,7 +23,8 @@
 
 -export([to_binary/1]).
 -export([list_options/2, binary_opt/2, binary_opt/3, uint32_opt/2, uint64_opt/2,
-	 uint32_bin/1, uint64_bin/1]).
+	 all_required/2,
+	 uint32_bin/1, uint64_bin/1, required_option/2]).
 -export([first_child/1, first_child/2,
 	 next_child/1, next_child/2,
 	 last_child/1, last_child/2]).
@@ -643,6 +644,17 @@ uint64_opt(Key, Options) ->
     case proplists:lookup(Key,Options) of
 	none -> 0;
 	{Key,Value} -> uint64_bin(Value)
+    end.
+
+all_required(Keys, Options) ->
+    lists:all(fun(K) -> _ = required_option(K, Options), true end, Keys).
+
+required_option(Key, Options) ->
+    case lists:keyfind(Key, 1, Options) of
+	{_, V} ->
+	    V;
+	false ->
+	    erlang:error({required, Key})
     end.
 
 uint32_bin(I) when is_integer(I) ->

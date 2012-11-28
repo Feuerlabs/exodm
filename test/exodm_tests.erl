@@ -135,9 +135,16 @@ populate(Cfg) ->
     		      AID2, [{name, <<"travelping">>},
     			     {url, ?URL2}]
     		     ]),
+    ok = ?rpc(exodm_db_device_type, new,
+	      [AID1, <<"type1">>,
+	       [{'protocol', <<"exodm_bert">>}]]),
+    ok = ?rpc(exodm_db_device_type, new,
+	      [AID2, <<"type1">>,
+	       [{'protocol', <<"exodm_bert">>}]]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID1 = <<"x00000001">>,
 	       [{'protocol', <<"exodm_bert">>},
+		{'device-type', <<"type1">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
 		{msisdn,"070100000001"},
@@ -146,6 +153,7 @@ populate(Cfg) ->
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID2 = <<"x00000002">>,
 	       [{'protocol', <<"exodm_bert">>},
+		{'device-type', <<"type1">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
 		{msisdn,"070100000002"},
@@ -154,6 +162,7 @@ populate(Cfg) ->
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID3 = <<"x00000003">>,
 	       [{'protocol', <<"exodm_bert">>},
+		{'device-type', <<"type1">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
 		{msisdn,"070100000003"},
@@ -419,7 +428,7 @@ set_access(Filter, Cfg) ->
     ok = gen_server:call(Sn, {set_access, Filter}),
     ok.
 
-test_echo([Args]) ->
+test_echo(Args) ->
     io:fwrite(user, "test_echo(~p)~n", [Args]),
     device_json_rpc1 ! {self(), got, Args},
     receive
@@ -493,6 +502,7 @@ json_provision_device(Cfg) ->
 				"exodm:provision-device", 1,
 				{struct,[{"dev-id", "y00000001"},
 					 {"protocol", "exodm_bert"},
+					 {"device-type", "type1"},
 					 {"server-key", 3},
 					 {"device-key", 4}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
@@ -511,6 +521,7 @@ json_lookup_device(Cfg) ->
 	       {struct,[{"result", 0},
 			{"devices",
 			 {array, [{struct, [{"dev-id", "y00000001"},
+					    {"device-type", "type1"},
 					    {"protocol", "exodm_bert"}]}]}}
 		       ]}},
 	      {"id",_},
@@ -525,7 +536,8 @@ json_lookup_bad_device(Cfg) ->
     io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
     %% lookup-device doesn't return the server- and device-key attributes
     {struct, [{"result",
-	       {struct,[ {"result", 5} ]}},
+	       {struct,[ {"result", 5},
+			 {"devices", {array, []}} ]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -661,8 +673,7 @@ device_json_rpc1(Cfg) ->
 		       receive
 			   {Pid, got, Args} ->
 			       io:fwrite(user, "Pid got Args = ~p~n", [Args]),
-			       Msg = proplists:get_value(message, Args,
-							 <<"huh?">>),
+			       Msg = get_value(message, Args, <<"huh?">>),
 			       Reply = {notify, 'echo-callback',
 					[{message, Msg}]},
 			       Pid ! {answer, Reply}
@@ -687,6 +698,29 @@ device_json_rpc1(Cfg) ->
 			     {"params", {struct,[{"message","hello"}]}}]},
     [{8898, [Notification]}, {8899, [Notification]}] = Fetched,
     ok.
+
+get_value(K, [H|_], _) when element(1, H) == K ->
+    element(2, H);
+get_value(K, [_|T], Def) ->
+    get_value(K, T, Def);
+get_value(_, [], Def) ->
+    Def.
+
+
+%% run_trace(Cfg) ->
+%%     ok = rscript(Cfg, run_trace_scr()).
+
+%% run_trace_scr() ->
+%%     codegen:exprs(
+%%       fun() ->
+%% 	      dbg:tracer(),
+%% 	      dbg:tpl(exodm_rpc_handler,x),
+%% 	      dbg:tpl(exodm_rpc_bert,x),
+%% 	      dbg:tpl(exodm_rpc_dispatch,x),
+%% 	      dbg:tpl(yang_json,remove_yang_info,x),
+%% 	      dbg:p(all,[c]),
+%% 	      ok
+%%       end).
 
 
 push_config_set1(Cfg) ->
@@ -722,6 +756,7 @@ push_config_set1(Cfg) ->
 			  "The operation has completed" ++ _},
 			 {"final", true}]}}]} = N,
     ok.
+
 
 push_config_set_meth(Args) ->
     push_config_set1 ! {self(), got_push_request, Args},
@@ -891,7 +926,10 @@ start_exodm(Top) ->
 			?debugVal(
 			   os:cmd(MakeNode ++ " -target " ++ Dir
 				  ++ " -rel " ++ Rel ++ " -- -name " ++ NodeStr)),
-			?debugVal(os:cmd(Rel ++ "/bin/exodm start"))
+			ENV = "ERL_SETUP_LIBS=\"" ++
+			    filename:join(Top,"rel/plugins") ++ "\" ",
+			?debugVal(
+			   os:cmd(ENV ++ Rel ++ "/bin/exodm start"))
 		end),
     Http1 = exodm_test_lib:http_server(8898),
     Http2 = exodm_test_lib:http_server(8899),

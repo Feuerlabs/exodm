@@ -3,7 +3,10 @@
 -export(['post_create-node'/2,
 	 post_generate/2]).
 
-'post_create-node'({config,_,Env,_}, _File) ->
+'post_create-node'(Config, _File) when element(1,Config)==config ->
+    %% Rebar really should export some accessor functions
+    %% for the config record
+    Env = element(3, Config),
     case file:consult("reltool.config.src") of
 	{ok, Terms} ->
 	    Vars = [{"TARGET", get_target(Env)},
@@ -38,7 +41,7 @@ get_vsn(Env) ->
 
 post_generate(Config, File) ->
     ReltoolConfig = load_config(File),
-    TargetDir = rebar_rel_utils:get_target_dir(ReltoolConfig),
+    TargetDir = rebar_rel_utils:get_target_dir(Config, ReltoolConfig),
     MakeNodeTgt = filename:join(TargetDir, "make_node"),
     {ok,_} = file:copy("../make_node", MakeNodeTgt),
     set_x_bit(MakeNodeTgt),

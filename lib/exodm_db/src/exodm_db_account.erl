@@ -16,7 +16,8 @@
 -export([list_groups/1, list_groups/2]).
 -export([system_specs/1]).
 -export([list_admins/1]).
--export([incr_request_id/1]).
+-export([incr_request_id/1,
+	 incr_transaction_id/1]).
 -export([key/1,
 	 table/0]).
 -export([init/0]).
@@ -56,8 +57,10 @@ new_(Options) ->
     AID = exodm_db_system:new_aid(),
     Key = exodm_db:escape_key(AID),
     exodm_db_group:init(AID),
+    exodm_db_device_type:init(AID),
     insert(Key, '__last_rid', <<0:32>>),
     insert(Key, '__last_req_id', <<0:32>>),
+    insert(Key, '__last_tid', <<0:32>>),
     {_, AdminUName} = lists:keyfind(uname, 1, UserOpts),
     AcctName = case binary_opt(name, Options) of
 		   <<>> -> AdminUName;
@@ -384,4 +387,9 @@ check_access(AID0) ->
 
 incr_request_id(AID0) ->
     AID = exodm_db:account_id_key(AID0),
-    kvdb:update_counter(?TAB, exodm_db:join_key(AID, <<"__last_req_id">>), 1).
+    kvdb_conf:update_counter(
+      ?TAB, exodm_db:join_key(AID, <<"__last_req_id">>), 1).
+
+incr_transaction_id(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    kvdb_conf:update_counter(?TAB, exodm_db:join_key(AID, <<"__last_tid">>), 1).

@@ -156,9 +156,6 @@ spawn_dispatcher(Q, Db, From, Reply, #st{tab = Tab, pids = Pids, queues = Qs,
     {Pid, St#st{pids = dict:store(Pid, Q, Pids),
 		queues = dict:store(Q, Pid, Qs)}}.
 
-%% dispatch(Tab, Q) ->
-%%     dispatch(kvdb_conf, Tab, Q, undefined).
-
 dispatch(Db, Tab, Q, From, Reply) ->
     ?debug("dispatch(~p, ~p)~n", [Tab, Q]),
     try

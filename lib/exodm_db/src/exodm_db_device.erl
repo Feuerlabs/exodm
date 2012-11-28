@@ -68,42 +68,36 @@ new_(AID0, ID0, Options) ->
 %%    DID = exodm_db_system:new_did(),
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(ID0),
-    case lists:keymember(protocol, 1, Options) of
-	true -> ok;
-	false -> error(missing_protocol)
-    end,
+    exodm_db:all_required([protocol, 'device-type'], Options),
     Tab = table(AID),
     insert_(Tab, AID, DID, Options).
 
+%% Called at both new() and update(). Device-type and protocol are not required
+%% at update, but presence verified in new_/3 above. Thus, below, they are
+%% written if found.
 insert_(Tab, AID, DID, Options) ->
     insert(Tab,DID, 'did',  exodm_db:decode_id(DID)),
     insert_keys(Tab, DID, Options),
     insert_groups(AID, Tab, DID, proplists:get_value(groups, Options, [])),
-    case lists:keyfind(protocol, 1, Options) of
-	{_, Protocol} ->
-	    insert_protocol(Tab, DID, Protocol);
-	false ->
-	    ok  % only mandatory at new()
-    end,
+    insert_device_type(
+      Tab, AID, DID, proplists:get_value('device-type', Options)),
+    insert_protocol(Tab, DID, proplists:get_value(protocol, Options)),
     _ = [insert_attr(Tab, DID, K,to_binary(V)) ||
 	    {K,V} <- Options,
 	    not lists:member(K, ['device-id','gid',
 				 'server-key', 'device-key',
 				 'protocol', 'groups'])],
-    %% insert_attr(Tab,DID,name,     binary_opt(name, Options)),
-    %% insert_attr(Tab,DID,description, binary_opt(description, Options)),
-    %% insert(Tab,DID,msisdn,   binary_opt(msisdn,Options)),
-    %% insert(Tab,DID,imsi,     binary_opt(imsi,Options)),
-    %% insert(Tab,DID,imei,     binary_opt(imei,Options)),
-    %% insert(Tab,DID,activity, uint32_opt(activity,Options)),
-    %% insert(Tab,DID,longitude,uint32_opt(longitude,Options)),
-    %% insert(Tab,DID,latitude, uint32_opt(latitude,Options)),
-    %% insert(Tab,DID,timestamp,uint32_opt(timestamp,Options)),
-    %% lists:foreach(
-    %%   fun({I,GID}) ->
-    %% 	      insert_group(Tab, Key, I, GID)
-      %% end, proplists:get_all_values(group, Options)),
     ok.
+
+
+required(Keys, Options) ->
+    lists:foreach(fun(K) -> required_(K, Options) end, Keys).
+
+required_(K, Options) ->
+    case lists:keymember(K, 1, Options) of
+	true -> true;
+	false -> error({required, K})
+    end.
 
 delete_devices(AID, DevIdList) ->
     exodm_db:in_transaction(
@@ -196,13 +190,23 @@ update_(AID0, DID0, DeleteOther, Options) ->
     %% insert_keys(Tab, DID, Options).
 
 insert_protocol(_Tab, _DID, undefined) ->
-    error(unknown_protocol, [undefined]);
+    ok;
 insert_protocol(Tab, DID, Protocol) ->
     case exodm_rpc_protocol:module(Protocol) of
 	undefined ->
 	    error(unknown_protocol, [Protocol]);
 	_ ->
 	    insert(Tab, DID, protocol, to_binary(Protocol))
+    end.
+
+insert_device_type(_Tab, _AID, _DID, undefined) ->
+    ok;
+insert_device_type(Tab, AID, DID, DevType) ->
+    case exodm_db_device_type:exist(AID, DevType) of
+	undefined ->
+	    error(unknown_device_type, [DevType]);
+	_ ->
+	    insert(Tab, DID, device_type, to_binary(DevType))
     end.
 
 delete(AID0, DID0) ->

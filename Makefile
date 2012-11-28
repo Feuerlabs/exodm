@@ -1,7 +1,9 @@
 
 RELNAME=exodm
-REBAR=./rebar
-PREBAR=../rebar
+REBAR=$(shell which rebar || echo ./rebar)
+PREBAR=$(shell which rebar || echo ../rebar)
+
+ESL="$(PWD)/rel/plugins"
 
 .PHONY: all compile clean release upgrade test node console start attach tar \
 	recompile dev devrun
@@ -50,7 +52,8 @@ endif
 
 start:
 ifdef n
-	(cd nodes/$(n); ../../rel/$(RELNAME)/bin/$(RELNAME) start)
+	(cd nodes/$(n); ERL_SETUP_LIBS=$(ESL) \
+	../../rel/$(RELNAME)/bin/$(RELNAME) start)
 else
 	echo "no node given (e.g. n=foo make start)"
 	$(error, no node given)
@@ -77,7 +80,8 @@ endif
 
 setup:
 ifdef n
-	(cd nodes/$(n); ../../rel/$(RELNAME)/bin/$(RELNAME) \
+	(cd nodes/$(n); ERL_SETUP_LIBS=$(ESL) \
+	../../rel/$(RELNAME)/bin/$(RELNAME) \
 	console_boot $(RELNAME)_setup -- -setup is_first false)
 else
 	echo "no node given (e.g. n=foo make setup)"
@@ -88,7 +92,8 @@ endif
 
 console:
 ifdef n
-	(cd nodes/$(n); ../../rel/$(RELNAME)/bin/$(RELNAME) console)
+	(cd nodes/$(n); ERL_SETUP_LIBS=$(ESL) \
+	../../rel/$(RELNAME)/bin/$(RELNAME) console)
 else
 	echo "no node given (e.g. n=foo make attach)"
 	$(error, no node given)
@@ -131,7 +136,7 @@ retest:
 # and starts exodm in 'console' mode. This is useful after a `make test`,
 # in order to inspect the database, run test commands, etc.
 test_console:
-	cd .eunit/exodm_tmp; ../../rel/exodm/bin/exodm console
+	cd .eunit/exodm_tmp; ERL_SETUP_LIBS=$(ESL) ../../rel/exodm/bin/exodm console
 
 clean:
 	$(REBAR) clean

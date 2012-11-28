@@ -160,13 +160,16 @@ write_(AID0, File0, Y) ->
 				open_file_hook(AID, F, Os)
 			end}],
     %% TODO: we should deep_parse the modules once that's ready
-    case yang_parser:parse(File, Opts) of
-	{ok, [{module,_,_,_} = Module]} ->
-	    RPCs = case yang_json:json_rpc(File, Opts) of
-		       [{module,_,RPCs1}] -> RPCs1;
-                       {error, _} = Error ->
-                           error(Error, [File])
-		   end,
+    case yang_parser:deep_parse(File, Opts) of
+	{ok, [{module,_,_,Data} = Module]} ->
+            RPCs = [D || D <- Data,
+                         element(1, D) == rpc orelse
+                             element(1, D) == notification],
+	    %% RPCs = case yang_json:json_rpc(File, Opts) of
+	    %%            [{module,_,RPCs1}] -> RPCs1;
+            %%            {error, _} = Error ->
+            %%                error(Error, [File])
+	    %%        end,
 	    store(AID, File, Module, RPCs, Y);
         {ok, [{submodule,_,_,_} = SubMod]} ->
             store(AID, File, SubMod, [], Y);
@@ -274,7 +277,11 @@ find_rpc_specified(AID, Key, Method, IsTagged) ->
     end.
 
 lookup_rpc(Tab, FullName, Method) ->
-    Key = kvdb_conf:join_key([FullName, <<"rpc">>, to_binary(Method)]),
+    ShortMethod = case re:split(Method, <<":">>, [{return,binary}]) of
+                      [_, M] -> M;
+                      [M] -> M
+                  end,
+    Key = kvdb_conf:join_key([FullName, <<"rpc">>, to_binary(ShortMethod)]),
     kvdb_conf:read(Tab, Key).
 
 
@@ -304,9 +311,12 @@ store(AID, File, {Tag, _, M, L} = Mod, RPCs, Src) when
                         to_binary(Src)}),
     [kvdb:put(?DB, Tab, {kvdb_conf:join_key([Key1, <<"a">>, to_binary(A)]),
                          [], A}) || {A, V} <- attrs(M, L)],
-    [kvdb:put(?DB, Tab,
-              {kvdb_conf:join_key([Key1, <<"rpc">>, to_binary(R)]), [], RPC})
-     || {R, RPC} <- RPCs].
+    lists:foreach(
+      fun({Stmt,_,R,_} = RPC) when Stmt==rpc; Stmt==notification ->
+              kvdb:put(?DB, Tab, {kvdb_conf:join_key(
+                                    [Key1, <<"rpc">>, to_binary(R)]), [], RPC})
+      end, RPCs).
+
 
 get_revision(L) ->
     case [R || {revision,_,R,_} <- L] of

@@ -5,6 +5,7 @@
   {vsn, git},
   {registered, []},
   {mod, {exodm_app, []}},
+  {start_phases, [{load_plugins, []}]},
   {applications, [
                   kernel,
                   stdlib,

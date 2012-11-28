@@ -2,11 +2,9 @@
 
 -compile(export_all).
 -export([handler_session/1]).
-%% -export([load_specs/0, reload_specs/0]).
 -export([notification/5, notification/6,    % don't use notification/6!
 	 queue_message/5]).
 
--export([to_json_/4]). % for testing
 -export([device_sessions/1, device_sessions/2]).
 -export([add_device_session/2, add_device_session/3]).
 -export([rm_device_session/2, rm_device_session/3]).
@@ -16,7 +14,16 @@
 -include_lib("lager/include/log.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
 
+-type ext_id() :: binary().   %% External representation of AID+DID
+-type aid() :: binary().      %% Account ID
+-type did() :: binary().      %% Device ID
+-type protocol() :: binary(). %% <<"exodm_bert" | "exodm" | "exodm_ck3">>
 
+%% @spec add_device_session(aid(), did(), protocol()) -> true.
+%% @doc Register an active device session
+%%
+%% This enables the rpc handler to locate the device session process.
+%% @end
 add_device_session(AID, DID, Protocol) ->
     ExtID = exodm_db_device:enc_ext_key(AID, DID),
     add_device_session(ExtID, Protocol).
@@ -24,6 +31,11 @@ add_device_session(AID, DID, Protocol) ->
 add_device_session(ExtID, Protocol) ->
     gproc:reg({p,l,{exodm_rpc, active_device, ExtID, Protocol}}).
 
+%% @spec rm_device_session(aid(), did(), protocol()) -> true.
+%% @doc Removes the session registration
+%%
+%% This does not need to be done if the process will terminate anyway.
+%% @end
 rm_device_session(AID, DID, Protocol) ->
     rm_device_session(exodm_db_device:enc_ext_key(AID, DID), Protocol).
 
@@ -31,6 +43,9 @@ rm_device_session(ExtID, Protocol) ->
     catch gproc:unreg({p,l,{exodm_rpc, active_device, ExtID, Protocol}}),
     true.
 
+%% @spec device_sessions(aid(), did()) -> [{pid(), protocol()}].
+%% @doc List active sessions for a given device
+%% @end
 device_sessions(AID, DID) ->
     ExtID = exodm_db_device:enc_ext_key(AID, DID),
     device_sessions(ExtID).
@@ -105,13 +120,17 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 			[{protocol, Protocol}|Env0],
 		    case validate_request(
 			   ShortMeth, Module, Request, Spec) of
-			{verified, {request, Attrs, _} = RPC} ->
+			{ok, Attrs, Meta} ->
+			    RPC = {call, Module, ShortMeth, Attrs},
+			%% {verified, {request, Attrs, _} = RPC} ->
 			    ?debug("request verified: ~p~n", [RPC]),
+			    Env2 = get_tid(Attrs, [{yang_meta, Meta}|Env1], AID),
 			    queue_message(
-			      Db, AID, to_device, Env1, RPC),
-			    Response = accept_response(Attrs ++ Env1, Spec),
+			      Db, AID, to_device, Env2, RPC),
+			    Response = accept_response(Attrs ++ Env2, Spec),
 			    {true, 0, Session, {response, Response}};
-			{not_verified, Reason} ->
+			%% {not_verified, Reason} ->
+			{error, Reason} ->
 			    ?debug("request NOT verified: ~p~n", [Reason]),
 			    Response = error_response(Reason),
 			    {false, Response}
@@ -131,10 +150,14 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 			++ [{'notification-url', URL} || URL =/= <<>>] ++ Env0,
 		    case validate_request(
 			   ShortMeth, Module, Request, Spec) of
-			{verified, RPC} ->
-			    ?debug("request verified: ~p~n", [RPC]),
-			    handle_exodm_rpc(Protocol, Env1, RPC, Session, Spec);
-			{not_verified, Reason} ->
+			%% {verified, RPC} ->
+			{ok, Attrs, Meta} ->
+			    Env2 = get_tid(Attrs, [{yang_meta, Meta}|Env1], AID),
+			    RPC1 = {call, Module, ShortMeth, Attrs},
+			    ?debug("request verified: ~p~n", [RPC1]),
+			    handle_exodm_rpc(Protocol, Env2, RPC1, Session, Spec);
+			%% {not_verified, Reason} ->
+			{error, Reason} ->
 			    ?debug("request NOT verified: ~p~n", [Reason]),
 			    Response = error_response(Reason),
 			    {false, Response}
@@ -204,23 +227,21 @@ notification(Method, Elems, Env, AID, DID) ->
     case exodm_db_yang:find_rpc(Yang, FullMethod) of
 	{error, not_found} ->
 	    error(method_not_found);
-	{ok, {_, _, {notification,_,{struct, SubSpec}}}} ->
+	{ok, {_, _, {notification,_,_,SubSpec} = Notification}} ->
 	    ?debug("SubSpec = ~p~n", [lists:sublist(SubSpec,1,2)]),
-	    {_, Params} = lists:keyfind("params", 1, SubSpec),
-	    NewParams = to_json(Params, Env, Elems),
-	    JSON = {struct, lists:keyreplace("params", 1, SubSpec,
-					     {"params", NewParams})},
+	    Params = data_to_json(SubSpec, Env, Elems),
+	    JSON = {struct, [{"jsonrpc", "2.0"},
+			     {"method", FullMethod},
+			     {"params", {struct, Params}}]},
 	    ?debug("JSON = ~p~n", [JSON]),
 	    post_json(URLEnv ++ Env, JSON);
-	{ok, {_, _, {_Descr, {request, {struct,SubSpec}}, {reply, _}} = RPC}} ->
-	    {_, Params} = lists:keyfind("params", 1, SubSpec),
+	{ok, {_, _, {rpc, _, _, SubSpec} = RPC}} ->
+	    {input, _, _, InputSpec} = lists:keyfind(input, 1, SubSpec),
 	    ?debug("Northbound RPC = ~p~n", [RPC]),
-	    NewParams = to_json(Params, Env, Elems),
-	    JSONElems1 = lists:keyreplace("params", 1, SubSpec,
-					  {"params", NewParams}),
-	    JSONElems2 = lists:keyreplace("id", 1, JSONElems1,
-					  {"id", make_id(Env, AID)}),
-	    JSON = {struct, JSONElems2},
+	    Params = data_to_json(InputSpec, Env, Elems),
+	    JSON = {struct, [{"jsonrpc", "2.0"},
+			     {"id", make_id(Env, AID)},
+			     {"params", Params}]},
 	    ?debug("JSON = ~p~n", [JSON]),
 	    post_json(URLEnv ++ Env, JSON)
     end.
@@ -247,14 +268,26 @@ make_id(Env, AID) ->
 	false ->
 	    <<I:32>> = exodm_db_account:incr_request_id(AID),
 	    integer_to_list(I);
-	{_, ID} when is_integer(ID) ->
-	    integer_to_list(ID);
-	{_, ID} when is_list(ID) ->
-	    _ = list_to_integer(ID),  % assertion
-	    ID;
-	{_, ID} when is_binary(ID) ->
-	    _ = list_to_integer(binary_to_list(ID)),  % assertion
-	    ID
+	{_, ID} ->
+	    id_to_list(ID)
+    end.
+
+id_to_list(ID) when is_integer(ID) ->
+    integer_to_list(ID);
+id_to_list(ID) when is_list(ID) ->
+    _ = list_to_integer(ID),  % assertion
+    ID;
+id_to_list(ID) when is_binary(ID) ->
+    integer_to_list(
+      list_to_integer(binary_to_list(ID))).
+
+get_tid(Attrs, Env, AID) ->
+    case keyfind(<<"transaction-id">>, Attrs) of
+	false ->
+	    <<I:32>> = exodm_db_account:incr_transaction_id(AID),
+	    [{'transaction-id', integer_to_list(I)}|Env];
+	Found ->
+	    [{'transaction-id', id_to_list(element(2,Found))}|Env]
     end.
 
 mod(Yang) ->
@@ -270,8 +303,13 @@ mod(Yang) ->
 
 to_binary(A) when is_atom(A) ->
     atom_to_binary(A, latin1);
+to_binary(I) when is_integer(I) ->
+    list_to_binary(integer_to_list(I));
 to_binary(L) when is_list(L) ->
-    list_to_binary(L).
+    list_to_binary(L);
+to_binary(B) when is_binary(B) ->
+    B.
+
 
 
 is_exodm_method(Method, AID) ->
@@ -323,15 +361,15 @@ find_method_spec_(Module, Specs, Method, Protocol) ->
     case lists:keyfind(Yang, 2, Specs) of
 	{_CfgName, _Y} = _Found ->
 	    ?debug("found spec in = ~p~n", [_CfgName]),
-	    find_method_rpcs_(Yang, Module, Method, Protocol, <<>>);
+	    find_method_(Yang, Module, Method, Protocol, <<>>);
 	{_CfgName, _Y, URL} = _Found ->
 	    ?debug("found spec in = ~p~n", [_CfgName]),
-	    find_method_rpcs_(Yang, Module, Method, Protocol, URL);
+	    find_method_(Yang, Module, Method, Protocol, URL);
 	false ->
 	    error
     end.
 
-find_method_rpcs_(Yang, Module, Method, Protocol, URL) ->
+find_method_(Yang, Module, Method, Protocol, URL) ->
     case exodm_db_yang:find_rpc(Yang, <<Module/binary, ":", Method/binary>>) of
 	{ok, {_, _, RPC}} ->
 	    ?debug("Method found: Mod = ~p;~n  RPC = ~P~n",
@@ -351,39 +389,27 @@ get_default_module(AID, DID) ->
 
 
 validate_request(Method, Module, {struct, InputArgs},
-		 {_Descr, {request,{struct,L}}, _Reply}) ->
-    ?debug("validate_request(~p, ~p)~n", [Method,InputArgs]),
-    case lists:keyfind("params", 1, L) of
-	{_, {struct, Params}} ->
-	    VerifyRes = do_validate(Method, Module, InputArgs, Params),
-	    ?debug("VerifyRes = ~p~n", [VerifyRes]),
-	    VerifyRes;
-	_Other ->
-	    ?debug("couldn't find 'params': ~p~n", [_Other]),
-	    error
+		 {rpc, _, Method, Spec}) ->
+    case lists:keyfind(input, 1, Spec) of
+	{input, _, _, Elems} ->
+	    ?debug("validating~nInputArgs = ~p~nElems = ~p~n",
+		   [InputArgs, Elems]),
+	    yang_json:validate_rpc_request(Elems, InputArgs);
+	false ->
+	    {error, {invalid_params, no_input_statement}}
     end.
 
-do_validate(Method, Module, Args, Spec) ->
-    try  Res = {verified, convert_req(Module, Method, Args, Spec)},
-	 ?debug("converted: Res = ~p~n", [Res]),
-	 Res
-    catch
-	throw:Result ->
-	    {not_verified, Result}
-    end.
-
-queue_message(Db, AID, Tab, Env, {Type, Attrs, _} = Msg) when Type==request;
-							      Type==notify;
-							      Type==reply ->
+queue_message(Db, AID, Tab, Env, {call, _, _, Attrs} = Msg) ->
     queue_message_(Db, AID, Tab, Attrs, Env, Msg);
-queue_message(Db, AID, Tab, Env, {reverse_request,_Meth,Elems} = Msg) ->
+queue_message(Db, AID, Tab, Env, {Type,_Meth,Elems} = Msg)
+  when Type==notify; Type==reverse_request ->
     queue_message_(Db, AID, Tab, Elems, Env, Msg).
 
 queue_message_(Db, AID, Tab, Attrs, Env0, Msg) ->
     TimerID = make_ref(),
     Env = [{'$timer_id', TimerID}|Env0],
     AllAttrs = Attrs ++ Env,
-    {_, DeviceID} = lists:keyfind('device-id', 1, AllAttrs),
+    DeviceID = element(2, lists:keyfind('device-id', 1, AllAttrs)),
     Q = exodm_db_device:enc_ext_key(AID, DeviceID),
     Ret = case kvdb:push(Db, Tab, Q,
 			 Obj = {<<>>, Env, Msg}) of
@@ -398,7 +424,8 @@ queue_message_(Db, AID, Tab, Attrs, Env0, Msg) ->
     attempt_dispatch(Ret, Db, Tab, Q),
     Ret.
 
-maybe_start_timer({request, _, {call,_,_,Args}}, Db, Tab, TimerID, Key, Obj) ->
+
+maybe_start_timer({call,_,_,Args}, Db, Tab, TimerID, Key, Obj) ->
     case lists:keyfind('timeout', 1, Args) of
 	{_, Timeout} ->
 	    ?debug("Request timeout = ~p; starting timer~n", [Timeout]),
@@ -435,21 +462,6 @@ request_timeout(TimerID, TimerQ, Db, Tab, Key, Obj) ->
 attempt_dispatch({ok, _, _} = _Ret, Db, Tab, Q) ->
     ?debug("attempt_dispatch(~p, ~p, ~p)~n", [_Ret, Tab, Q]),
     catch exodm_rpc_dispatcher:attempt_dispatch(Db, Tab, Q);
-    %% 	{ok, Pid} ->
-    %% 	    ?debug("dispatcher Pid = ~p~n", [Pid]),
-    %% 	    MRef = erlang:monitor(process, Pid),
-    %% 	    receive
-    %% 		{Pid, exodm_rpc_dispatcher, done} ->
-    %% 		    ?debug("dispatcher is done.~n", []),
-    %% 		    erlang:demonitor(MRef, [flush]),
-    %% 		    ok;
-    %% 		{'DOWN', MRef, _, _, _Reason} ->
-    %% 		    ?debug("dispatcher DOWN: ~p.~n", [_Reason]),
-    %% 		    ok
-    %% 	    end;
-    %% 	pending ->
-    %% 	    ok
-    %% end;
 attempt_dispatch(_, _, _, _) ->
     ok.
 
@@ -476,7 +488,10 @@ pp_data(Data) when is_list(Data) ->
     catch
 	error:_ ->
 	    lists:flatten(io_lib:fwrite("~p", [Data]))
-    end.
+    end;
+pp_data({Other, Data}) ->
+    lists:flatten(io_lib:fwrite("Unknown error: ~p; ~p~n", [Other, Data])).
+
 
 convert_error(undef, Data) ->
     {method_not_found, Data};
@@ -507,28 +522,113 @@ json_error_message(Code) when Code >= -32099, Code =< -32000 -> "server error";
 json_error_message(_) -> "json error".
 
 
-success_response(Result, Env, {request, Attrs, _},
-		 {_, _, {reply, {struct, Elems}}}) when is_list(Result) ->
-    ?debug("success_response(~p, Env = ~p, Attrs = ~p, Elems = ~p)~n",
-	   [Result, Env, Attrs, Elems]),
-    {_, {struct, ResultSpec}} = lists:keyfind("result", 1, Elems),
-    {_, TID} = lists:keyfind(transaction_id, 1, Attrs),
-    {struct, to_json_(ResultSpec, Attrs ++ Env,
-		      [{'transaction-id', TID}|Result], [])}.
-
-
-accept_response(Attrs, {_, _, {reply, {struct, Elems}}}) ->
-    ?debug("~p:accept_response(~p, ...)~n", [?MODULE, Attrs]),
-    case lists:keyfind("result", 1, Elems) of
-	{_, void} ->
-	    "\"ok\"";
-	{_, {struct, ResultSpec}} ->
-	    {_, TID} = lists:keyfind(transaction_id, 1, Attrs),
-	    {struct, to_json_(ResultSpec, Attrs,
-			      [{'transaction-id', TID},
-			       {'rpc-status', <<"accepted">>},
-			       {final, false}], [])}
+success_response(Result, Env, {call, _, _, _},
+		 {rpc, _, _, Spec}) when is_list(Result) ->
+    case lists:keyfind(output, 1, Spec) of
+	{output, _, _, Elems} ->
+	    ?debug("success_response(~p, Env = ~p, Elems = ~p)~n",
+		   [Result, Env, Elems]),
+	    JSON = data_to_json(Elems, Env, Result),
+	    {struct, JSON}
     end.
+
+
+accept_response(Attrs, {rpc, _, _, Spec}) ->
+    ?debug("~p:accept_response(~p, ...)~n", [?MODULE, Attrs]),
+    case lists:keyfind(output, 1, Spec) of
+	{output, _, _, Elems} ->
+	    %% {_, TID} = lists:keyfind('transaction-id', 1, Attrs),
+	    JSON = data_to_json(
+		     Elems, Attrs, [{'rpc-status', <<"accepted">>},
+				    {final, false}]),
+	    {struct, JSON};
+	false ->
+	    "\"ok\""
+    end.
+
+data_to_json(Elems, Env, Data) ->
+    ?debug("data_to_json(~p, ~p, ~p)~n", [Elems, Env, Data]),
+    case find_leaf(<<"rpc-status-string">>, Elems) of
+	false ->
+	    yang_json:data_to_json(Elems, Env, Data);
+	Leaf ->
+	    case keyfind(<<"rpc-status-string">>, Data) of
+		false ->
+		    case keyfind(<<"rpc-status">>, Data) of
+			false ->
+			    yang_json:data_to_json(Elems, Env, Data);
+			Status ->
+			    case enum_descr(find_leaf(<<"rpc-status">>, Elems),
+					    to_binary(element(2, Status))) of
+				false ->
+				    yang_json:data_to_json(Elems, Env, Data);
+				Descr ->
+				    yang_json:data_to_json(
+				      Elems, Env,
+				      [{<<"rpc-status-string">>, Descr}|Data])
+			    end
+		    end;
+		_ ->
+		    yang_json:data_to_json(Elems, Env, Data)
+	    end
+    end.
+
+enum_descr(false, _) -> false;
+enum_descr({leaf, _, _, I}, V) ->
+    case lists:keyfind(type, 1, I) of
+	{_, _, <<"enumeration">>, I1} ->
+	    enum_descr_(I1, V);
+	_ ->
+	    false
+    end.
+
+%% Assume rpc-status can be either the numeric value or the description.
+enum_descr_([{enum,_,V,I}|T], V) ->
+    case lists:keyfind(description,1,I) of
+	{_, _, Descr, _} -> Descr;
+	false -> V
+    end;
+enum_descr_([{enum,_,D,I}|T], V) ->
+    case lists:keyfind(value, 1, I) of
+	{_, _, V, _} ->
+	    case lists:keyfind(description,1,I) of
+		{_, _, Descr, _} -> Descr;
+		false -> D
+	    end;
+	_ ->
+	    enum_descr_(T, V)
+    end;
+enum_descr_([_|T], V) ->
+    enum_descr_(T, V);
+enum_descr_([], _) ->
+    false.
+
+
+
+find_leaf(K, [{leaf,_,K,_} = L|_]) -> L;
+find_leaf(K, [_|T]) -> find_leaf(K, T);
+find_leaf(_, []) -> false.
+
+keyfind(A, [H|T]) when is_tuple(H) ->
+    K = element(1, H),
+    case comp(A,K) of
+	true ->
+	    H;
+	false ->
+	    keyfind(A, T)
+    end;
+keyfind(_, []) ->
+    false.
+
+comp(A, A) -> true;
+comp(A, B) when is_binary(A), is_list(B) ->
+    binary_to_list(A) == B;
+comp(A, B) when is_binary(A), is_atom(B) ->
+    A == atom_to_binary(B, latin1);
+comp(_, _) ->
+    false.
+
+
 
 post_json(Env, JSON) ->
     {_, DID} = lists:keyfind('device-id', 1, Env),
@@ -588,138 +688,6 @@ post_request(URL, Hdrs, Body) ->
     ?debug("post_request(~p, ...) ->~n  ~p~n", [URL, Res]),
     Res.
 
-
-to_json({struct, L}, Attrs, Reply) ->
-    {struct, to_json_(L, Attrs, Reply, [])};
-to_json({array, L}, Attrs, Reply) ->
-    {array, to_json_(L, Attrs, Reply, [])};
-to_json(L, Attrs, Reply) when is_list(L) ->
-    {array, to_json_(L, Attrs, Reply, [])}.
-
-to_json_([{"rpc-status-string", [], _, _}|T], Attrs, Reply, Hist) ->
-    case lists:keyfind('rpc-status-string', 1, Reply) of
-	{_, S} when is_list(S); is_binary(S) ->
-	    [{'rpc-status-string', S}
-	     | to_json_(T, Attrs, Reply, Hist)];
-	false ->
-	    case lists:keyfind('rpc-status', 1, Reply) of
-		{_, St} ->
-		    D = case lists:keyfind("rpc-status", 1, Hist ++ T) of
-			    {_, [], _, [{type,_,<<"enumeration">>,En}|_]} ->
-				enum_descr(St, En)
-			end,
-		    [{'rpc-status-string', D} | to_json_(T, Attrs, Reply,
-							 Hist)]
-	    end
-    end;
-to_json_([{K, [], _, [Type,Mand|_]} = H|T], Attrs, Reply, Hist) ->
-    Ka = list_to_atom(K),
-    Kb = list_to_binary(K),
-    case find_leaf(Reply, K, Ka, Kb) of
-    %% case lists:keyfind(Ka, 1, Reply) of
-	{_, X} ->
-	    X1 = yang_json:to_json_type(X, Type),
-	    [{K, X1}
-	     | to_json_(T, Attrs, Reply, keep_history(H,Hist))];
-	false ->
-	    case lists:keyfind(Ka, 1, Attrs) of
-		{_, X} ->
-		    X1 = yang_json:to_json_type(X, Type),
-		    [{K, X1}
-		     | to_json_(T, Attrs, Reply, keep_history(H, Hist))];
-		_ ->
-		    case Mand of
-			{mandatory,true} ->
-			    error({cannot_convert_to_json,
-				   [{missing_term, Ka} |
-				    {available_terms, [Reply]}]});
-			_ ->
-			    to_json_(T, Attrs, Reply, Hist)
-		    end
-	    end
-    end;
-to_json_([{K, {array,[Ch]}, _, Info}|T], Attrs, Reply, Hist) ->
-    Ka = list_to_atom(K),
-    Kb = list_to_binary(K),
-    case find_leaf(Reply, Ka, Kb, K) of
-    %% case lists:keyfind(Ka, 1, Reply) of
-	{_, {array, L}} when is_list(L) ->
-	    [{Ka, {array, to_json_array_(Ch, Attrs, L, Hist)}}
-	     | to_json_(T, Attrs, Reply, Hist)];
-	false ->
-	    case lists:keyfind(mandatory,1,Info) of
-		{mandatory,true} ->
-		    error({cannot_convert_to_json, Reply});
-		_ ->
-		    to_json_(T, Attrs, Reply, Hist)
-	    end
-    end;
-to_json_([{K, {struct, Ch}, _, Info}|T], Attrs, Reply, Hist) ->
-    Ka = list_to_atom(K),
-    Kb = list_to_binary(K),
-    case find_leaf(Reply, Ka, Kb, K) of
-    %% case lists:keyfind(Ka, 1, Reply) of
-	{_, {struct, L}} when is_list(L) ->
-	    [{K, {struct, to_json_(Ch, Attrs, L, Hist)}}
-	     | to_json_(T, Attrs, Reply, Hist)];
-	false ->
-	    case find_leaf(Attrs, Ka, Kb, K) of
-	    %% case lists:keyfind(Ka, 1, Attrs) of
-		{_, L} when is_list(L) ->
-		    [{K, {struct, to_json_(L, Attrs, Ch, Hist)}}
-		     | to_json_(T, Attrs, Reply, Hist)];
-		_ ->
-		    case lists:keyfind(mandatory, 1, Info) of
-			{mandatory, true} ->
-			    error({cannot_convert_to_json, Reply});
-			_ ->
-			    to_json_(T, Attrs, Reply, Hist)
-		    end
-	    end
-    end;
-to_json_([], _, _, _) ->
-    [].
-
-find_leaf([{K,_} = H|_T], A, B, S) when K==A; K==B; K==S->
-    H;
-find_leaf([{K,_,_,_} = H|_T], A, B, S) when K==A; K==B; K==S->
-    H;
-find_leaf([_|T], A, B, S) ->
-    find_leaf(T, A, B, S);
-find_leaf([], _, _, _) ->
-    false.
-
-
-
-
-to_json_array_({_,[],_,[Type|_]}, _Attrs, Reply, _Hist) ->
-    [yang_json:to_json_type(X, Type) || X <- Reply];
-to_json_array_({struct, L}, Attrs, Reply, Hist) ->
-    [{struct, to_json_(L, Attrs, R, Hist)} || {struct, R} <- Reply].
-
-keep_history({"rpc-status",_,_,_} = X, H) ->
-    [X|H];
-keep_history(_, H) ->
-    H.
-
-
-enum_descr(St, En) ->
-    case [lists:keyfind(description, 1, I) || {enum,_,E,I} <- En,
-					      E == St] of
-	[{_, _, D,_}] ->
-	    D;
-	_ ->
-	    error({cannot_find_description, [St, En]})
-    end.
-
-convert_req(Mod, Method, Args, Spec) ->
-    %% Conv = convert_req_(Args, Spec),
-    Conv = convert_req_(Spec, Args),
-    TID = proplists:get_value('transaction-id', Conv, 1),
-    {request, [{transaction_id, TID}],
-     {call, to_atom(Mod), to_atom(Method), Conv}}.
-
-
 to_atom(L) when is_list(L) ->
     list_to_atom(L);
 to_atom(B) when is_binary(B) ->
@@ -738,73 +706,3 @@ split_method(Mod, M) ->
 	[P,Ms] ->
 	    {P, list_to_atom(Ms)}
     end.
-
-
-convert_req_([{K, Ch, _Descr, [Type|_] = Info}|Spec1], Req) ->
-    case lists:keytake(K, 1, Req) of
-	{value, {_, V}, Req1} ->
-	    case Type of
-		{type, anyxml} ->
-		    %% Do not convert; keep original (decoded) JSON
-		    [] = Ch,  % assertion
-		    [{list_to_atom(K), V} | convert_req_(Spec1, Req1)];
-		_ ->
-		    convert_req_(K, V, Ch, Info, Spec1, Req1)
-	    end;
-	false ->
-	    case lists:keyfind(mandatory,1,Info) of
-		{mandatory,true} ->
-		    %% Mandatory leafs MUST NOT have a default statement
-		    %% (RFC6020, 7.6.4)
-		    AlsoMissing =
-			[K1 || {K1,_,_,I} <- Spec1,
-			       (lists:member({mandatory,true}, I) andalso
-				not(lists:keymember(K1, 1, Req)))],
-		    throw({invalid_params, {required, [K|AlsoMissing]}});
-		_ ->
-		    case lists:keyfind(default, 1, Info) of
-			{_, Def} ->
-			    convert_req_(K, Def, Ch, Info, Spec1, Req);
-			false ->
-			    convert_req_(Spec1, Req)
-		    end
-	    end
-    end;
-convert_req_([], []) ->
-    [];
-convert_req_([], [_|_] = Unknown) ->
-    throw({invalid_params, {unknown_params, [element(1, U) || U <- Unknown]}}).
-
-convert_req_(K, V, Ch, [Type|_], Spec1, Req1) ->
-    case {V, Ch} of
-	{{array, Sub}, {array,[SubSpec]}} ->
-	    [{list_to_atom(K), convert_array_(Sub, SubSpec)}
-	     | convert_req_(Spec1, Req1)];
-	{{St, Sub}, {St, SubSpec}} when St==struct; St==array ->
-	    [{list_to_atom(K), convert_req_(SubSpec, Sub)}
-	     | convert_req_(Spec1, Req1)];
-	{_, []} ->
-	    case yang:check_type(V, Type) of
-		{true, Val} ->
-		    [{list_to_atom(K), Val} | convert_req_(Spec1, Req1)];
-		false ->
-		    ?debug("Wrong type: ~p (~p)~n", [Type, Spec1]),
-		    throw({invalid_params, {wrong_type, [K, V, Type]}})
-	    end;
-	{_, Expected} ->
-	    throw({invalid_params, {mismatch, [K, V, Expected]}})
-    end.
-
-
-convert_array_([{struct, _}|_] = L, {struct, Spec}) ->
-    lists:map(fun({struct, X}) ->
-		      {struct, convert_req_(Spec, X)}
-		      %% {struct, convert_req_(X, Spec)}
-	      end, L);
-convert_array_(L, Type) ->
-    lists:map(fun(X) ->
-		      case yang:check_type(X, Type) of
-			  {true, V} -> V;
-			  false -> throw(illegal)
-		      end
-	      end, L).

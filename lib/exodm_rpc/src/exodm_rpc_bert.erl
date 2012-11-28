@@ -8,8 +8,8 @@
 dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
     ?debug("~p:dispatch(~p, ~p, ..., ~p)~n", [?MODULE, Req, Env, Pid]),
     case Req of
-	{request, _, {call, M, 'push-config-set', [{'name', Cfg},
-						   {'reference', Ref}]}} ->
+	{call, M, 'push-config-set', [{'name', Cfg},
+				      {'reference', Ref}]} ->
 	    exodm_db:in_transaction(
 	      fun(_Db) ->
 		      case exodm_db_config:get_cached(AID, Cfg, Ref, DID) of
@@ -24,15 +24,16 @@ dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
 			      error
 		      end
 	      end);
-	{request, _, {call, M, F, As}} ->
-	    bert_rpc(Pid, M, F, [As], Req, Env, AID, DID)
+	{call, M, F, As} ->
+	    bert_rpc(Pid, M, F, As,
+		     Req, Env, AID, DID)
     end.
 
 request_timeout({_, Env, {request, _, {call, M, Req, _}}}) ->
     ok.
 
 bert_rpc(Pid, M, F, As, Req, Env, AID, DID) ->
-    Result = (catch nice_bert_rpc:call(Pid, M, F, [As])),
+    Result = (catch nice_bert_rpc:call(Pid, M, F, [remove_yang_info(As)])),
     ?debug("RPC Result = ~p~n", [Result]),
     case Result of
 	{reply, {notify, Method, Elems}, _} ->
@@ -43,3 +44,8 @@ bert_rpc(Pid, M, F, As, Req, Env, AID, DID) ->
 	_Other ->
 	    error
     end.
+
+remove_yang_info([As]) when is_list(As) ->
+    [remove_yang_info(As)];
+remove_yang_info(As) when is_list(As) ->
+    yang_json:remove_yang_info(As).
