@@ -148,13 +148,25 @@ spawn_dispatcher(Q, St) ->
 
 spawn_dispatcher(Q, Db, From, Reply, #st{tab = Tab, pids = Pids, queues = Qs,
 					 jobs_queue = JobsQ} = St) ->
-    {Pid, _} = spawn_monitor(fun() ->
-				     jobs:ask(JobsQ),
-				     timer:sleep(500),
-				     dispatch(Db, Tab, Q, From, Reply)
-			     end),
+    {Pid, _} = spawn_monitor(
+		 fun() ->
+			 run_dispatcher(JobsQ, Db, Tab, Q, From, Reply)
+		 end),
     {Pid, St#st{pids = dict:store(Pid, Q, Pids),
 		queues = dict:store(Q, Pid, Qs)}}.
+
+run_dispatcher(JobsQ, Db, Tab, Q, From, Reply) ->
+    try
+	jobs:ask(JobsQ),
+	timer:sleep(500),
+	dispatch(Db, Tab, Q, From, Reply)
+    catch
+	Type:Exception ->
+	    ?error("Dispatch thread exception: ~p:~p~n~p~n",
+		   [Type, Exception, erlang:get_stacktrace()])
+    end.
+
+
 
 dispatch(Db, Tab, Q, From, Reply) ->
     ?debug("dispatch(~p, ~p)~n", [Tab, Q]),
