@@ -1,7 +1,8 @@
-
 RELNAME=exodm
-REBAR=$(shell which rebar || echo ./rebar)
-PREBAR=$(shell which rebar || echo ../rebar)
+#REBAR=$(shell which rebar || echo ./rebar)
+#PREBAR=$(shell which rebar || echo ../rebar)
+REBAR=./rebar
+PREBAR=../rebar
 
 ESL="$(PWD)/rel/plugins"
 

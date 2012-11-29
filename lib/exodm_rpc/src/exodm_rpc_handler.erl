@@ -427,7 +427,7 @@ queue_message_(Db, AID, Tab, Attrs, Env0, Msg) ->
 
 maybe_start_timer({call,_,_,Args}, Db, Tab, TimerID, Key, Obj) ->
     case lists:keyfind('timeout', 1, Args) of
-	{_, Timeout} ->
+	{_, Timeout, _} ->
 	    ?debug("Request timeout = ~p; starting timer~n", [Timeout]),
 	    TimerQ = <<>>,
 	    Res = kvdb_cron:add(Db, rpc_timers, TimerQ, Timeout, [{id, TimerID}],
@@ -631,6 +631,7 @@ comp(_, _) ->
 
 
 post_json(Env, JSON) ->
+    try
     {_, DID} = lists:keyfind('device-id', 1, Env),
     {_, AID} = lists:keyfind(aid, 1, Env),
     case [U || {'notification-url', U} <- Env] ++
@@ -649,6 +650,10 @@ post_json(Env, JSON) ->
 	    [post_request(URL, Hdrs, Body) ||
 		URL <- remove_duplicate_urls(URLs)],
 	    ok
+    end
+    catch
+	error:Err ->
+	    ?error("CRASH ~p; ~p~n", [Err, erlang:get_stacktrace()])
     end.
 
 %% Since we can end up with multiple URIs that are virtually identical, as we
@@ -682,11 +687,19 @@ ensure_ending_slash(Bin) ->
     end.
 
 post_request(URL, Hdrs, Body) ->
-    Res =
-	lhttpc:request(
-	  binary_to_list(URL), "POST", Hdrs, Body, 1000),
-    ?debug("post_request(~p, ...) ->~n  ~p~n", [URL, Res]),
-    Res.
+    try
+	Res =
+	    lhttpc:request(
+	      binary_to_list(URL), "POST", Hdrs, Body, 1000),
+	?debug("post_request(~p, ...) ->~n  ~p~n", [URL, Res]),
+	Res
+    catch
+	Type:Reason ->
+	    ?error("post_request(~p, ~p, ~p) CRASHED~n"
+		   "~p:~p; ~p~n",
+		   [URL, Hdrs, Body, Type, Reason, erlang:get_stacktrace()]),
+	    error
+    end.
 
 to_atom(L) when is_list(L) ->
     list_to_atom(L);

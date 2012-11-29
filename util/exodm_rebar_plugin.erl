@@ -41,13 +41,20 @@ get_vsn(Env) ->
 
 post_generate(Config, File) ->
     ReltoolConfig = load_config(File),
-    TargetDir = rebar_rel_utils:get_target_dir(Config, ReltoolConfig),
+    TargetDir = get_target_dir(Config, ReltoolConfig),
     MakeNodeTgt = filename:join(TargetDir, "make_node"),
     {ok,_} = file:copy("../make_node", MakeNodeTgt),
     set_x_bit(MakeNodeTgt),
     {ok,_} = file:copy(File, filename:join(TargetDir, filename:basename(File))),
     make_erts_link(TargetDir),
     ok.
+
+get_target_dir(Config, ReltoolConfig) ->
+    try rebar_rel_utils:get_target_dir(Config, ReltoolConfig)
+    catch
+	error:undef ->
+	    rebar_rel_utils:get_target_dir(ReltoolConfig)
+    end.
 
 make_erts_link(Dir) ->
     [Erts] = filelib:wildcard(filename:join(Dir, "erts-*")),
