@@ -12,152 +12,42 @@
 %% Helper macro for declaring children of supervisor
 -define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
 
--record(conf, {id, gconf, docroot, sconf}).
+%% -record(conf, {id, gconf, docroot, sconf}).
 
 %% ===================================================================
 %% API functions
 %% ===================================================================
 
 start_link() ->
-    Sconfs = find_sconfs(),
-    #conf{
-      id = Id,
-      gconf = GconfList,
-      docroot = Docroot,
-      sconf = Sconfs0
-     } = yaws_conf(),
-    AllSconfs = default_sconfs(Sconfs0) ++ Sconfs,
-    {ok, SC, GC, ChildSpecs} =
-        yaws_api:embedded_start_conf(Docroot, AllSconfs, GconfList, Id),
-    io:fwrite("Yaws:~n"
-	      "  SC = ~p~n"
-	      "  GC = ~p~n", [SC, GC]),
-    set_exodm_options(Sconfs),
-    {ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, ChildSpecs),
-    yaws_api:setconf(GC, SC),
-    {ok, Pid}.
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+    %% Sconfs = find_sconfs(),
+    %% #conf{
+    %%   id = Id,
+    %%   gconf = GconfList,
+    %%   docroot = Docroot,
+    %%   sconf = Sconfs0
+    %%  } = yaws_conf(),
+    %% AllSconfs = default_sconfs(Sconfs0) ++ Sconfs,
+    %% {ok, SC, GC, ChildSpecs} =
+    %%     yaws_api:embedded_start_conf(Docroot, AllSconfs, GconfList, Id),
+    %% io:fwrite("Yaws:~n"
+    %% 	      "  SC = ~p~n"
+    %% 	      "  GC = ~p~n", [SC, GC]),
+    %% set_exodm_options(Sconfs),
+    %% {ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, ChildSpecs),
+    %% yaws_api:setconf(GC, SC),
+    %% {ok, Pid}.
 
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
-init(ChildSpecs) ->
-    {ok, { {one_for_one, 5, 10}, ChildSpecs} }.
+%% init(ChildSpecs) ->
+%%     {ok, { {one_for_one, 5, 10}, ChildSpecs} }.
+init([]) ->
+    {ok, { {one_for_all, 3, 10},
+	   [{yaws_sup, {exodm_http_yaws_sup, start_link, []},
+	     permanent, infinity, supervisor, [exodm_http_yaws_sup]},
+	    {http_server, {exodm_http_server, start_link, []},
+	     permanent, 2000, worker, [exodm_http_server]}] }}.
 
-default_sconfs(undefined) -> [];
-default_sconfs(L) when is_list(L) -> L.
-
-yaws_conf() ->
-    Id = env(id, "embedded"),
-    Docroot = env(docroot, filename:join(my_priv_dir(), "www")),
-    LogDir = filename:join(setup:log_dir(), "yaws"),
-    setup:verify_dir(LogDir),
-    Port = env(port, 8888),
-    io:fwrite("Port = ~p~n", [Port]),
-    %% ServerName = env(servername, "exodm_http"),
-    %% Listen = env(listen, {0,0,0,0}),
-    %% AppMods = env(appmods, [{"/ck3", exodm_ck3_appmod}]),
-    #conf{
-	   id = Id,
-	   gconf = [
-		    {id, Id},
-		    {log_dir, LogDir},
-		    {ebin_dir, [Docroot]},
-		    {include_dir, [Docroot]}
-		   ],
-	   docroot = Docroot
-	   %% sconf = [{port, Port},
-	   %% 	    {servername, ServerName},
-	   %% 	    {listen, Listen},
-	   %% 	    {docroot, Docroot},
-	   %% 	    {appmods, AppMods}]
-	 }.
-
-env(K, Def) ->
-    case application:get_env(K) of
-	{ok, V} when V =/= undefined ->
-	    V;
-	_ ->
-	    Def
-    end.
-
-my_priv_dir() ->
-    case application:get_application() of
-	undefined ->
-	    D = filename:join(
-		  filename:dirname(
-		    filename:dirname(code:which(?MODULE))),
-		  "priv"),
-	    case file:read_file_info(D) of
-		{ok, _} ->
-		    D;
- 		_ ->
-		    {ok, Cwd} = file:get_cwd(),
-		    Cwd
-	    end;
-	{ok, A} ->
-	    code:priv_dir(A)
-    end.
-
-set_exodm_options(Sconfs) ->
-    Opts = lists:flatmap(
-	     fun(Conf) ->
-		     case lists:keyfind(exodm_options, 1, Conf) of
-			 {_, Opts} ->
-			     {_, Port} = lists:keyfind(port, 1, Conf),
-			     [{Port, Opts}];
-			 false ->
-			     []
-		     end
-	     end, Sconfs),
-    OldOpts = case application:get_env(exodm_http, session_opts) of
-		  {ok, Opts0} when is_list(Opts0) -> Opts0;
-		  _ -> []
-	      end,
-    NewOpts = lists:foldl(fun({K,V}, Acc) -> orddict:store(K, V, Acc) end,
-			  orddict:from_list(OldOpts), Opts),
-    application:set_env(exodm_http, session_opts, NewOpts),
-    io:fwrite("set_exodm_options(...) -> ~p~n", [NewOpts]),
-    ok.
-
-find_sconfs() ->
-    %% TODO: Use setup:find_env_vars/1 instead, as it does exactly this, and then some.
-    As = application:loaded_applications(),
-    lists:reverse(
-      lists:foldl(
-	fun({A,_,_}, Acc) ->
-		case application:get_env(A, yaws_sconf) of
-		    {ok, SC} when is_list(SC) ->
-			Conf = expand_sconf(SC, A),
-			io:fwrite("Conf (~p): ~p~n", [A, Conf]),
-			[Conf | Acc];
-		    _ ->
-			Acc
-		end
-	end, [], As)).
-
-expand_sconf(L, A) when is_list(L) ->
-    case is_string(L) of
-	true ->
-	    Envs = [{K, env_value(K, A)} || K <- ["PRIV_DIR", "LIB_DIR"]],
-	    expand_env(Envs, L);
-	false ->
-	    [expand_sconf(X, A) || X <- L]
-    end;
-expand_sconf(T, A) when is_tuple(T) ->
-    list_to_tuple([expand_sconf(X, A) || X <- tuple_to_list(T)]);
-expand_sconf(X, _) ->
-    X.
-
-is_string(L) ->
-    lists:all(fun(X) when 0 =< X, X =< 255 -> true;
-		 (_) -> false
-	      end, L).
-
-expand_env(Vs, S) ->
-    lists:foldl(fun({K, Val}, Sx) ->
-			re:replace(Sx, [$\\, $$ | K], Val, [{return,list}])
-		end, S, Vs).
-
-env_value("PRIV_DIR", A) -> code:priv_dir(A);
-env_value("LIB_DIR" , A) -> code:lib_dir(A).
