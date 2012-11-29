@@ -14,10 +14,10 @@
 -include_lib("lager/include/log.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
 
--type ext_id() :: binary().   %% External representation of AID+DID
--type aid() :: binary().      %% Account ID
--type did() :: binary().      %% Device ID
--type protocol() :: binary(). %% <<"exodm_bert" | "exodm" | "exodm_ck3">>
+%% -type ext_id() :: binary().   %% External representation of AID+DID
+%% -type aid() :: binary().      %% Account ID
+%% -type did() :: binary().      %% Device ID
+%% -type protocol() :: binary(). %% <<"exodm_bert" | "exodm" | "exodm_ck3">>
 
 %% @spec add_device_session(aid(), did(), protocol()) -> true.
 %% @doc Register an active device session
@@ -227,7 +227,7 @@ notification(Method, Elems, Env, AID, DID) ->
     case exodm_db_yang:find_rpc(Yang, FullMethod) of
 	{error, not_found} ->
 	    error(method_not_found);
-	{ok, {_, _, {notification,_,_,SubSpec} = Notification}} ->
+	{ok, {_, _, {notification,_,_,SubSpec}}} ->
 	    ?debug("SubSpec = ~p~n", [lists:sublist(SubSpec,1,2)]),
 	    Params = data_to_json(SubSpec, Env, Elems),
 	    JSON = {struct, [{"jsonrpc", "2.0"},
@@ -388,7 +388,7 @@ get_default_module(AID, DID) ->
     end.
 
 
-validate_request(Method, Module, {struct, InputArgs},
+validate_request(Method, _Module, {struct, InputArgs},
 		 {rpc, _, Method, Spec}) ->
     case lists:keyfind(input, 1, Spec) of
 	{input, _, _, Elems} ->
@@ -455,7 +455,7 @@ request_timeout(TimerID, TimerQ, Db, Tab, Key, Obj) ->
 	    ?debug("Protocol = ~p; Mod = ~p~n", [Protocol, Mod]),
 	    Mod:request_timeout(Obj);
 	false ->
-	    ok
+	    {error, no_protocol}
     end.
 
 
@@ -551,7 +551,7 @@ data_to_json(Elems, Env, Data) ->
     case find_leaf(<<"rpc-status-string">>, Elems) of
 	false ->
 	    yang_json:data_to_json(Elems, Env, Data);
-	Leaf ->
+	_Leaf ->
 	    case keyfind(<<"rpc-status-string">>, Data) of
 		false ->
 		    case keyfind(<<"rpc-status">>, Data) of
@@ -583,7 +583,7 @@ enum_descr({leaf, _, _, I}, V) ->
     end.
 
 %% Assume rpc-status can be either the numeric value or the description.
-enum_descr_([{enum,_,V,I}|T], V) ->
+enum_descr_([{enum,_,V,I}|_], V) ->
     case lists:keyfind(description,1,I) of
 	{_, _, Descr, _} -> Descr;
 	false -> V
