@@ -157,9 +157,8 @@ spawn_dispatcher(Q, Db, From, Reply, #st{tab = Tab, pids = Pids, queues = Qs,
 
 run_dispatcher(JobsQ, Db, Tab, Q, From, Reply) ->
     try
-	jobs:ask(JobsQ),
 	timer:sleep(500),
-	dispatch(Db, Tab, Q, From, Reply)
+	dispatch(Db, Tab, Q, JobsQ, From, Reply)
     catch
 	Type:Exception ->
 	    ?error("Dispatch thread exception: ~p:~p~n~p~n",
@@ -168,12 +167,12 @@ run_dispatcher(JobsQ, Db, Tab, Q, From, Reply) ->
 
 
 
-dispatch(Db, Tab, Q, From, Reply) ->
+dispatch(Db, Tab, Q, JobsQ, From, Reply) ->
     ?debug("dispatch(~p, ~p)~n", [Tab, Q]),
     try
 	case exodm_rpc_handler:device_sessions(Q) of
 	    [_|_] = Sessions ->
-		pop_and_dispatch(From, Reply, Db, Tab, Q, Sessions);
+		pop_and_dispatch(From, Reply, Db, Tab, Q, JobsQ, Sessions);
 	    [] ->
 		done(From, Reply)
 	end
@@ -183,17 +182,17 @@ dispatch(Db, Tab, Q, From, Reply) ->
 		   [?MODULE,Reason, erlang:get_stacktrace()])
     end.
 
-pop_and_dispatch(_, false, Db, Tab, Q, Sessions) ->
+pop_and_dispatch(_, false, Db, Tab, Q, JobsQ, Sessions) ->
     kvdb:transaction(
       Db,
       fun(Db1) ->
-	      until_done(Db1, Tab, Q, Sessions)
+	      until_done(Db1, Tab, Q, JobsQ, Sessions)
 	   end);
-pop_and_dispatch(From, Reply, Db, Tab, Q, Sessions) ->
+pop_and_dispatch(From, Reply, Db, Tab, Q, JobsQ, Sessions) ->
     case kvdb:in_transaction(
 	   Db,
 	   fun(Db1) ->
-		   pop_and_dispatch_(From, Reply, Db1, Tab, Q, Sessions)
+		   pop_and_dispatch_(From, Reply, Db1, Tab, Q, JobsQ, Sessions)
 	   end) of
 	done ->
 	    done;
@@ -201,14 +200,14 @@ pop_and_dispatch(From, Reply, Db, Tab, Q, Sessions) ->
 	    kvdb:transaction(
 	      kvdb_conf,
 	      fun(Db1) ->
-		      until_done(Db1, Tab, Q, Sessions)
+		      until_done(Db1, Tab, Q, JobsQ, Sessions)
 	      end)
     end.
 
-until_done(Db, Tab, Q, Sessions) ->
-    case pop_and_dispatch_(undefined, false, Db, Tab, Q, Sessions) of
+until_done(Db, Tab, Q, JobsQ, Sessions) ->
+    case pop_and_dispatch_(undefined, false, Db, Tab, Q, JobsQ, Sessions) of
 	done -> done;
-	next -> until_done(Db, Tab, Q, Sessions)
+	next -> until_done(Db, Tab, Q, JobsQ, Sessions)
     end.
 
 done({Pid, _}, true) ->
@@ -222,9 +221,10 @@ done(_, _) ->
 %% store, and need to ack to the transaction master that we're done. Note that
 %% *we* delete the object if successful, so the master may be committing an
 %% empty set (which is ok).
-pop_and_dispatch_(From, Reply, Db, Tab, Q, Sessions) ->
+pop_and_dispatch_(From, Reply, Db, Tab, Q, JobsQ, Sessions) ->
     ?debug("pop_and_dispatch_(~p, ~p, ~p, ~p, ~p)~n",
 	   [Db, Tab, Q, Sessions, From]),
+    jobs:ask(JobsQ),
     case kvdb:pop(Db, Tab, Q) of
 	done ->
 	    done(From, Reply);
