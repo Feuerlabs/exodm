@@ -224,7 +224,12 @@ done(_, _) ->
 pop_and_dispatch_(From, Reply, Db, Tab, Q, JobsQ, Sessions) ->
     ?debug("pop_and_dispatch_(~p, ~p, ~p, ~p, ~p)~n",
 	   [Db, Tab, Q, Sessions, From]),
-    jobs:ask(JobsQ),
+    jobs:run(
+      JobsQ, fun() ->
+		     pop_and_dispatch_run_(From, Reply, Db, Tab, Q, Sessions)
+	     end).
+
+pop_and_dispatch_run_(From, Reply, Db, Tab, Q, Sessions) ->
     case kvdb:pop(Db, Tab, Q) of
 	done ->
 	    done(From, Reply);
@@ -238,8 +243,8 @@ pop_and_dispatch_(From, Reply, Db, Tab, Q, JobsQ, Sessions) ->
 		    Mod = exodm_rpc_protocol:module(Protocol),
 		    ?debug("Calling ~p:dispatch(~p, ~p, ~p, ~p)~n",
 			   [Mod, Env, AID, DID, Pid]),
-		     case Mod:dispatch(Tab, Req, Env, AID,
-				       exodm_db:decode_id(DID), Pid) of
+		    case Mod:dispatch(Tab, Req, Env, AID,
+				      exodm_db:decode_id(DID), Pid) of
 			ok ->
 			    done(From, Reply),
 			    next;
@@ -253,6 +258,7 @@ pop_and_dispatch_(From, Reply, Db, Tab, Q, JobsQ, Sessions) ->
 		    done(From, Reply)
 	    end
     end.
+
 
 set_user(Env, Db) ->
     {_, UID} = lists:keyfind(user, 1, Env),
