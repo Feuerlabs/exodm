@@ -241,7 +241,7 @@ notification(Method, Elems, Env, AID, DID) ->
 	    Params = data_to_json(InputSpec, Env, Elems),
 	    JSON = {struct, [{"jsonrpc", "2.0"},
 			     {"id", make_id(Env, AID)},
-			     {"params", Params}]},
+			     {"params", {struct, Params}}]},
 	    ?debug("JSON = ~p~n", [JSON]),
 	    post_json(URLEnv ++ Env, JSON)
     end.
