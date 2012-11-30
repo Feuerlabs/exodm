@@ -8,6 +8,18 @@
 
 -define(EXO(M), (M==<<"exodm">> orelse M==<<"exosense">>)).
 
+-define(catch_result(Expr),
+	result_code(try Expr
+		    catch
+			error:'permission-denied' = E -> E;
+			error:'validation-failed' = E -> E;
+			error:'object-exists'     = E -> E;
+			error:'device-not-found'  = E -> E;
+			error:'object-not-found'  = E -> E;
+			error:'object-not-empty'  = E -> E
+		    end)).
+
+
 result_code(ok) ->
     [{result, <<"ok">>}];
 
@@ -22,6 +34,9 @@ result_code('object-exists') ->
 
 result_code('object-not-found') ->
     [{result, <<"object-not-found">>}];
+
+result_code('object-not-empty') ->
+    [{result, <<"object-not-empty">>}];
 
 result_code('device-not-found') ->
     [{result, <<"device-not-found">>}].
@@ -66,7 +81,7 @@ json_rpc_({call, M, <<"update-config-set">>,
     end;
 
 json_rpc_({call, M, <<"delete-config-set">>,
-	   [{'name', C}]} = _RPC, _Env) when ?EXO(M) ->
+	   [{'name', C, _}]} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(delete-config-set) name:~p~n", [?MODULE, C]),
     AID = exodm_db_session:get_aid(),
     case exodm_db_config:delete_config_set(AID, C) of
@@ -135,7 +150,7 @@ json_rpc_({call, _, <<"update-device">>,
     {ok, result_code(ok)};
 
 
-json_rpc_({call, exodm, <<"deprovision-devices">>,
+json_rpc_({call, _, <<"deprovision-devices">>,
 	   [{'dev-id', DevIdList, _}]}, _Env) ->
     ?debug("~p:json_rpc(deprovision-devices) dev-id:~p~n",
            [ ?MODULE, DevIdList ]),
@@ -238,6 +253,73 @@ json_rpc_({call, M, <<"provision-device">>,
       end),
     {ok, result_code(ok)};
 
+json_rpc_({call, M, <<"list-devices">>,
+	   [{n, N, _}, {previous, Prev, _}] = _Cfg} = _RPC, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(delete-devices) config: ~p~n",
+	   [?MODULE, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    Res =
+	exodm_db:in_transaction(
+	  fun(_) ->
+		  exodm_db:list_next(exodm_db_device:table(AID), N, Prev,
+				     fun(Key) ->
+					     [DID|_] =
+						 kvdb_conf:split_key(Key),
+					     exodm_db_device:lookup(
+					       AID, DID)
+				     end)
+	  end),
+    ?debug("devices = ~p~n", [Res]),
+    {ok, [{'devices',
+	   {array, [ {struct, D} || D <- Res ]}
+	  }]};
+
+
+json_rpc_({call, M, <<"create-device-type">>,
+	   [{'name', Name, _}|Opts] = _Cfg}, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(create-device-type, ~p) config: ~p~n",
+	   [?MODULE, Name, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    ok = exodm_db_device_type:new(AID, Name, yang_json:remove_yang_info(Opts)),
+    {ok, result_code(ok)};
+
+json_rpc_({call, M, <<"update-device-type">>,
+	   [{'name', Name, _}|Opts] = _Cfg}, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(update-device-type, ~p) config: ~p~n",
+	   [?MODULE, Name, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    {ok, ?catch_result(
+	    ok = exodm_db_device_type:update(
+		   AID, Name, yang_json:remove_yang_info(Opts)))};
+
+json_rpc_({call, M, <<"delete-device-type">>,
+	   [{'name', Name, _}]}, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(delete-device-type) name: ~p~n", [?MODULE, Name]),
+    AID = exodm_db_session:get_aid(),
+    {ok, ?catch_result(
+	    ok = exodm_db_device_type:delete(AID, Name))};
+
+json_rpc_({call, M, <<"list-device-types">>,
+	   [{'n', N, _},
+	    {'previous', Prev, _}]} = _RPC, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(~p)~n", [_RPC]),
+    AID = exodm_db_session:get_aid(),
+    Res =
+	exodm_db:in_transaction(
+	  fun(_) ->
+		  exodm_db:list_next(exodm_db_device_type:table(AID), N, Prev,
+				     fun(Key) ->
+					     [Name|_] =
+						 kvdb_conf:split_key(Key),
+					     exodm_db_device_type:lookup(
+					       AID, Name)
+				     end)
+	  end),
+    ?debug("device types = ~p~n", [Res]),
+    {ok, [{'device-types',
+	   {array, [ {struct, DT} || DT <- Res]}
+	  }]};
+
 json_rpc_({call, M, <<"create-device-group">>,
 	   [{'name', GName, _},
 	    {'notification-url', URL, _}] = _Cfg} = _RPC, _Env) when ?EXO(M) ->
@@ -290,6 +372,29 @@ json_rpc_({call, M, <<"list-device-groups">>,
 		      {name, Nm},
 		      {'notification-url', U}]} ||
 		       [{id,G},{name,Nm},{url,U}|_] <- Res]}}]};
+
+json_rpc_({call, M, <<"list-device-type-members">>,
+	   [{'name', T, _}, {'n', N, _}, {'previous', Prev, _}] = Params},
+	  _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(list-device-type-members) args = ~p~n",
+	   [?MODULE,Params]),
+    AID = exodm_db_session:get_aid(),
+    Res =
+	exodm_db:in_transaction(
+	  fun(_) ->
+		  FullNext = kvdb_conf:join_key(
+			       [exodm_db:account_id_key(AID),
+				T, <<"members">>, Prev]),
+		  exodm_db:list_next(exodm_db_device_type:table(AID),
+				     N, FullNext,
+				     fun(Key) ->
+					     lists:last(
+					       kvdb_conf:split_key(Key))
+				     end)
+	  end),
+    ?debug("device type members (~p) = ~p~n", [T, Res]),
+    {ok, [{'device-type-members', {array, Res}}]};
+
 
 
 json_rpc_({call, M, <<"list-config-sets">>,

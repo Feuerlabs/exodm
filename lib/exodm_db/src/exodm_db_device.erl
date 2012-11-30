@@ -68,7 +68,7 @@ new_(AID0, ID0, Options) ->
 %%    DID = exodm_db_system:new_did(),
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(ID0),
-    exodm_db:all_required([protocol, 'device-type'], Options),
+    exodm_db:all_required(['device-type'], Options),
     Tab = table(AID),
     insert_(Tab, AID, DID, Options).
 
@@ -81,10 +81,10 @@ insert_(Tab, AID, DID, Options) ->
     insert_groups(AID, Tab, DID, proplists:get_value(groups, Options, [])),
     insert_device_type(
       Tab, AID, DID, proplists:get_value('device-type', Options)),
-    insert_protocol(Tab, DID, proplists:get_value(protocol, Options)),
+    %% insert_protocol(Tab, DID, proplists:get_value(protocol, Options)),
     _ = [insert_attr(Tab, DID, K,to_binary(V)) ||
 	    {K,V} <- Options,
-	    not lists:member(K, ['device-id','gid',
+	    not lists:member(K, ['device-id','gid', 'device-type',
 				 'server-key', 'device-key',
 				 'protocol', 'groups'])],
     ok.
@@ -113,11 +113,12 @@ delete_device(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
+    remove_devtype(Tab, AID, DID),
     kvdb_conf:delete_tree(Tab, DID),
     ConfigSets = list_config_sets(AID, DID),
     exodm_db_config:device_is_deleted(AID, DID, ConfigSets),
     Groups = lookup_groups(AID, DID),
-    exodm_db_group:device_is_deleted(AID, DID, [G || {group,{_,G}} <- Groups]).
+    exodm_db_group:device_is_deleted(AID, DID, Groups).
 
 insert_keys(Tab,DID, Options) ->
     Lkup = fun(A,B) -> case proplists:get_value(A, Options) of
@@ -203,30 +204,41 @@ insert_device_type(_Tab, _AID, _DID, undefined) ->
     ok;
 insert_device_type(Tab, AID, DID, DevType) ->
     case exodm_db_device_type:exist(AID, DevType) of
-	undefined ->
+	false ->
 	    error(unknown_device_type, [DevType]);
 	_ ->
-	    insert(Tab, DID, device_type, to_binary(DevType))
+	    exodm_db_device_type:add_device(AID, DevType, DID),
+	    insert(Tab, DID, 'device-type', to_binary(DevType))
     end.
 
 delete(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
-    Tab = table(AID),
+    %% Tab = table(AID),
     exodm_db:in_transaction(
-      fun(_) ->
-	      case exist(AID, DID) of
-		  true ->
-		      Groups = lookup_groups(AID, DID),
-		      kvdb_conf:delete_all(Tab, DID),
-		      lists:foreach(
-			fun({group,{_, GID}}) ->
-				exodm_db_group:remove_device(AID, GID, DID)
-			end, Groups);
-		  false ->
-		      ok
-	      end
-      end).
+      fun(_) -> delete_device(AID, DID) end).
+    %% 	      case exist(AID, DID) of
+    %% 		  true ->
+    %% 		      remove_devtype(Tab, AID, DID),
+    %% 		      Groups = lookup_groups(AID, DID),
+    %% 		      kvdb_conf:delete_all(Tab, DID),
+    %% 		      lists:foreach(
+    %% 			fun(GID) when is_binary(GID) ->
+    %% 				exodm_db_group:remove_device(AID, GID, DID)
+    %% 			end, Groups);
+    %% 		  false ->
+    %% 		      ok
+    %% 	      end
+    %%   end).
+
+remove_devtype(Tab, AID, DID) ->
+    case kvdb_conf:read(Tab, kvdb_conf:join_key(DID, <<"device-type">>)) of
+	{ok, {_, _, T}} ->
+	    exodm_db_device_type:remove_device(AID, T, DID);
+	{error, not_found} ->
+	    %% Can this happen?
+	    ok
+    end.
 
 add_config_set(AID, DID, CfgName) ->
     exodm_db:in_transaction(fun(_) -> add_config_set_(AID, DID, CfgName) end).
@@ -280,11 +292,23 @@ protocol(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
-    case read(Tab, DID, protocol) of
+    case read(Tab, DID, 'device-type') of
 	[] ->
-	    error(no_protocol_defined, [AID, DID]);
-	[{_, P}] ->
-	    P
+	    %% BW compatibility; remove soon
+	    case read(Tab, DID, protocol) of
+		[] ->
+		    error(no_protocol_defined, [AID, DID]);
+		[{_, P}] ->
+		    P
+	    end;
+	[{_, T}] ->
+	    case kvdb_conf:read(
+		   exodm_db_device_type:table(AID),
+		   kvdb_conf:join_key(T, <<"protocol">>)) of
+		{ok, {_, _, P}} -> P;
+		{error, not_found} ->
+		    error(no_protocol_defined, [AID, DID])
+	    end
     end.
 
 
@@ -298,7 +322,7 @@ lookup_(Tab,Key) ->
     case kvdb_conf:read(Tab, kvdb_conf:join_key(Key, <<"did">>)) of
 	{ok, {_, _, _}} ->
 	    [{'dev-id', exodm_db:decode_id(Key)} |
-	     read(Tab,Key,protocol)  ++
+	     read(Tab,Key,'device-type')  ++
 		 lookup_attrs(Tab, Key)];
 	{error, _} ->
 	    []
@@ -377,25 +401,31 @@ lookup_groups(AID, DID0) ->
 lookup_group_notifications(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
-    lists:flatmap(
-      fun(GID) ->
-	      case exodm_db_group:lookup(AID, GID, url) of
-		  [{_, URL}] ->
-		      [URL];
-		  [] ->
-		      []
-	      end
-      end, lookup_groups(AID, DID)).
-    %% lists:foldl(
-    %%   fun({group,{_I,GID0}},Acc) ->
-    %% 	      GID = exodm_db:group_id_key(GID0),
-    %% 	      case exodm_db_group:lookup(AID, GID, url) of
-    %% 		  [{_, URL}] ->
-    %% 		      [URL | Acc];
-    %% 		  [] ->
-    %% 		      Acc
-    %% 	      end
-    %%   end,[],lookup_groups(AID, DID)).
+    DevTypeURL = device_type_url(AID, DID),
+    DevTypeURL ++
+	lists:flatmap(
+	  fun(GID) ->
+		  case exodm_db_group:lookup(AID, GID, url) of
+		      [{_, URL}] ->
+			  [URL];
+		      [] ->
+			  []
+		  end
+	  end, lookup_groups(AID, DID)).
+
+device_type_url(AID, DID) ->
+    case kvdb_conf:read(
+	   table(AID), kvdb_conf:join_key(DID, <<"device-type">>)) of
+	{ok, {_, _, T}} ->
+	    case kvdb_conf:read(exodm_db_device_type:table(AID),
+				kvdb_conf:join_key(T, <<"notification-url">>)) of
+		{ok, {_, _, <<>>}} -> [];
+		{ok, {_, _, U}}    -> [U];
+		{error, not_found} -> []
+	    end;
+	_ ->
+	    []
+    end.
 
 %% find last known position or {0,0,0} if not found
 lookup_position(AID, DID0) ->

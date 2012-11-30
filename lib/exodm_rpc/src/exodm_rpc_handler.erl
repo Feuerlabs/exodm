@@ -466,19 +466,21 @@ attempt_dispatch(_, _, _, _) ->
     ok.
 
 
-error_response({Error, Data}) ->
+error_response({Error, Data} = E) ->
+    ?debug("error_response(~p)~n", [E]),
     {Code, Str} =
 	case lists:keyfind(
 	       Error, 1, [{invalid_params, -32602, "invalid params"},
-			  {method_not_found, -32601,
-			   "method not found"}]) of
+			  {method_not_found, -32601, "method not found"}]) of
 	    {_, C, S} -> {C, S};
 	    false     -> {-32603, "internal error"}
 	end,
     {error, {struct, [{"code", Code},
 		      {"message", Str},
-		      {"data", pp_data(Data)}]}}.
+		      {"data", pp_data(Error)}]}}.
 
+pp_data(A) when is_atom(A) ->
+    atom_to_binary(A, latin1);
 pp_data(Data) when is_binary(Data) -> Data;
 pp_data({wrong_type, [Key, Val, {type,_,Type,_}]}) ->
     lists:flatten(io_lib:fwrite("Wrong type: Attr=~s; Value=~p; Expected=~s",

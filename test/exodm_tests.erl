@@ -68,10 +68,22 @@ exodm_test_() ->
 		      fun(Cfg1) -> stop_http_client(Cfg1) end,
 		      fun(Cfg1) ->
 			      [
+			       ?my_t(json_create_device_type(Cfg1)),
+			       ?my_t(json_update_device_type(Cfg1)),
+			       ?my_t(json_list_device_types(Cfg1)),
+			       ?my_t(json_delete_device_type(Cfg1)),
+			       ?my_t(json_delete_nonempty_device_type(Cfg1)),
 			       ?my_t(json_provision_device(Cfg1)),
+			       ?my_t(json_list_devices(Cfg1)),
+			       ?my_t(json_list_devices2(Cfg1)),
+			       ?my_t(json_list_device_type_members(Cfg1)),
 			       ?my_t(json_lookup_device(Cfg1)),
+			       ?my_t(json_deprovision_device(Cfg1)),
+			       ?my_t(json_lookup_device2(Cfg1)),
 			       ?my_t(json_lookup_bad_device(Cfg1)),
 			       ?my_t(json_create_config_set(Cfg1)),
+			       ?my_t(json_create_config_set3(Cfg1)),
+			       ?my_t(json_delete_config_set3(Cfg1)),
 			       ?my_t(json_update_config_set(Cfg1)),
 			       ?my_t(json_list_config_sets(Cfg1)),
 			       ?my_t(json_create_device_group(Cfg1)),
@@ -145,7 +157,8 @@ populate(Cfg) ->
 	       [{'protocol', <<"exodm_bert">>}]]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID1 = <<"x00000001">>,
-	       [{'protocol', <<"exodm_bert">>},
+	       [
+		%% {'protocol', <<"exodm_bert">>},
 		{'device-type', <<"type1">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
@@ -154,7 +167,8 @@ populate(Cfg) ->
 	       ]]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID2 = <<"x00000002">>,
-	       [{'protocol', <<"exodm_bert">>},
+	       [
+		%% {'protocol', <<"exodm_bert">>},
 		{'device-type', <<"type1">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
@@ -163,7 +177,8 @@ populate(Cfg) ->
 	       ]]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID3 = <<"x00000003">>,
-	       [{'protocol', <<"exodm_bert">>},
+	       [
+		%% {'protocol', <<"exodm_bert">>},
 		{'device-type', <<"type1">>},
 		{'device-key',<<2,0,0,0,0,0,0,0>>},
 		{'server-key',<<1,0,0,0,0,0,0,0>>},
@@ -422,7 +437,7 @@ set_access(Cfg) ->
     set_access([{redirect, [{{test,echo,1},
 			     {?MODULE,test_echo,1}}]}], Cfg).
 
-set_access(Filter, Cfg) ->
+set_access(Filter, _Cfg) ->
     {ok, {Host, Port}} = application:get_env(exoport, exodm_address),
     {ok, Sn} = bert_rpc_exec:get_session(
 		 Host, Port, [tcp], [{auto_connect,false}], 10000),
@@ -499,11 +514,88 @@ stop_http_client(_Cfg) ->
 json_server() ->
     {8000, "ulf", "wiger", "/exodm/rpc"}.
 
-json_provision_device(Cfg) ->
+json_create_device_type(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:create-device-type", 1,
+				{struct, [
+					  {"name", "devtype_1"},
+					  {"protocol", "exodm_bert"},
+					  {"notification-url",
+					   "http://localhost/devtype1"}
+					 ]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct, [{"result",0}]}},
+	      {"id", 1},
+	      {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
+json_update_device_type(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:update-device-type", 1,
+				{struct, [
+					  {"name", "devtype_1"},
+					  {"notification-url", ?URL1}
+					 ]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct, [{"result",0}]}},
+	      {"id", 1},
+	      {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
+
+json_list_device_types(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:list-device-types", 1,
+				{struct, [
+					  {"n", 3},
+					  {"previous", ""}
+					 ]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    URL1S = binary_to_list(?URL1),
+    {struct, [{"result", {struct, [{"device-types",
+				    {array,
+				     [
+				      {struct, [{"name", "devtype_1"},
+						{"protocol", "exodm_bert"},
+						{"notification-url", URL1S}
+					       ]},
+				      {struct, [{"name", "type1"},
+						{"protocol", "exodm_bert"},
+						{"notification-url",_}
+					       ]}
+				     ]}}
+				  ]}},
+	      {"id", 1},
+	      {"jsonrpc", "2.0"}
+	     ]} = Reply,
+    ok.
+
+json_delete_device_type(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:delete-device-type", 1,
+				{struct,[{"name", "devtype_1"}]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct,[{"result",0}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+json_delete_nonempty_device_type(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:delete-device-type", 1,
+				{struct,[{"name", "type1"}]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct,[{"result",6}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+
+json_provision_device(_Cfg) ->
     {ok, Reply} = post_json_rpc(json_server(),
 				"exodm:provision-device", 1,
 				{struct,[{"dev-id", "y00000001"},
-					 {"protocol", "exodm_bert"},
+					 %% {"protocol", "exodm_bert"},
 					 {"device-type", "type1"},
 					 {"server-key", 3},
 					 {"device-key", 4}]}),
@@ -513,8 +605,55 @@ json_provision_device(Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
-json_lookup_device(Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+json_list_devices(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:list-devices", 1,
+				{struct, [{"n", 3},
+					  {"previous", ""}]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct, [{"devices",
+				    {array, [{struct,[{"dev-id","x00000001"}|_]},
+					     {struct,[{"dev-id","x00000002"}|_]},
+					     {struct,[{"dev-id","x00000003"}|_]}
+					     ]}
+				   }]}},
+	      {"id", 1},
+	      {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
+json_list_devices2(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:list-devices", 1,
+				{struct, [{"n", 1},
+					  {"previous", "x00000003"}]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct, [{"devices",
+				    {array, [{struct,[{"dev-id","y00000001"}|_]}
+					     ]}
+				   }]}},
+	      {"id", 1},
+	      {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
+json_list_device_type_members(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:list-device-type-members", 1,
+				{struct, [{"name", "type1"},
+					  {"n", 2},
+					  {"previous", ""}]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result",
+	       {struct, [
+			 {"device-type-members",
+			  {array, ["x00000001",
+				   "x00000002"]}}
+			]}},
+	      {"id", 1},
+	      {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
+json_lookup_device(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
 				"exodm:lookup-device", "1",
 				{struct,[{"dev-id", "y00000001"}]}),
     io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
@@ -523,15 +662,40 @@ json_lookup_device(Cfg) ->
 	       {struct,[{"result", 0},
 			{"devices",
 			 {array, [{struct, [{"dev-id", "y00000001"},
-					    {"device-type", "type1"},
-					    {"protocol", "exodm_bert"}]}]}}
+					    {"device-type", "type1"}
+					    %% {"protocol", "exodm_bert"}
+					   ]}]}}
 		       ]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
+json_deprovision_device(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:deprovision-devices", 1,
+				{struct,[{"dev-id",
+					  {array, ["y00000001"]}}]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct,[{"result",0}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
 
-json_lookup_bad_device(Cfg) ->
+json_lookup_device2(_Cfg) ->
+    {ok, Reply} = post_json_rpc(json_server(),
+				"exodm:lookup-device", "1",
+				{struct,[{"dev-id", "y00000001"}]}),
+    io:fwrite(user, "~p: lookup-device (deleted) -> ~p~n", [?LINE, Reply]),
+    %% lookup-device doesn't return the server- and device-key attributes
+    {struct, [{"result",
+	       {struct,[ {"result", 5},
+			 {"devices", {array, []}} ]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+
+json_lookup_bad_device(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:lookup-device", "1",
 				{struct,[{"dev-id", "---------"}]}),
@@ -548,7 +712,10 @@ json_lookup_bad_device(Cfg) ->
 json_create_config_set(Cfg) ->
     json_create_config_set_(Cfg, "test_cfg_1").
 
-json_create_config_set_(Cfg, Name) ->
+json_create_config_set3(Cfg) ->
+    json_create_config_set_(Cfg, "test_cfg_3").
+
+json_create_config_set_(_Cfg, Name) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:create-config-set", "1",
 				{struct,[{"name", Name},
@@ -578,7 +745,7 @@ json_update_config_set(Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
-json_list_config_sets(Cfg) ->
+json_list_config_sets(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:list-config-sets", "1",
 				{struct,[{"n",3},
@@ -596,7 +763,7 @@ json_list_config_sets(Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
-json_add_config_set_members(Cfg) ->
+json_add_config_set_members(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:add-config-set-members", "1",
 				{struct,[{"name", {array, ["test_cfg_2"]}},
@@ -609,7 +776,7 @@ json_add_config_set_members(Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
-json_list_config_set_members(Cfg) ->
+json_list_config_set_members(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:list-config-set-members", "1",
 				{struct, [{"name", "test_cfg_2"},
@@ -624,10 +791,10 @@ json_list_config_set_members(Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
-json_delete_config_set(Cfg) ->
+json_delete_config_set3(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:delete-config-set", "1",
-				{struct,[{"name","test_cfg_2"}]}),
+				{struct,[{"name","test_cfg_3"}]}),
     io:fwrite(user, "~p: delete-config-set -> ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct,[{"result",0}]}},
 	      {"id",_},
@@ -636,7 +803,7 @@ json_delete_config_set(Cfg) ->
 
 
 
-json_create_device_group(Cfg) ->
+json_create_device_group(_Cfg) ->
     Name = "test_grp_1",
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:create-device-group", "1",
@@ -649,7 +816,7 @@ json_create_device_group(Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
-json_list_device_groups(Cfg) ->
+json_list_device_groups(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:list-device-groups", "1",
 				{struct, [{"n", 2},
@@ -667,7 +834,7 @@ json_list_device_groups(Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
-json_delete_device_group(Cfg) ->
+json_delete_device_group(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:delete-device-group", "1",
 				{struct, [{"gid","3"}]}),
@@ -678,7 +845,7 @@ json_delete_device_group(Cfg) ->
 	       {"jsonrpc", "2.0"}]} = Reply,
     ok.
 
-json_list_device_groups2(Cfg) ->
+json_list_device_groups2(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:list-device-groups", "1",
 				{struct, [{"n", 1},

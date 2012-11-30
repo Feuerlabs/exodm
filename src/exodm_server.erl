@@ -63,7 +63,7 @@ reload_(#st{plugins = Ps} = St) ->
       fun({A,{V,D}}) ->
 	      true = setup:patch_app(A, V, [D]),
 	      ReloadRes = setup:reload_app(A, V, [D]),
-	      ?debug("reload_app(~p, ~p, ~p) -> ~p~n", [A,V,[D]]),
+	      ?debug("reload_app(~p, ~p, ~p) -> ~p~n", [A,V,[D], ReloadRes]),
 	      maybe_start(A)
       end, AllPlugins),
     {{ok, AppNames}, St#st{plugins = Ps}}.
