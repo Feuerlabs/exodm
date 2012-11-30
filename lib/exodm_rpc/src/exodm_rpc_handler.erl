@@ -135,7 +135,8 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 			    Response = error_response(Reason),
 			    {false, Response}
 		    end;
-		error -> false
+		error ->
+		    {false, error_response({method_not_found, Method})}
 	    end;
 	error ->
 	    %% Check if this is a general RPC, supported by one of the system
@@ -344,15 +345,21 @@ annotate_specs(Specs) ->
 find_method_spec(Method, AID, DevID) ->
     ?debug("find_method_spec(~p, ~p)~n", [Method, DevID]),
     DID = exodm_db:encode_id(DevID),
-    YangSpecs = exodm_db_device:yang_modules(AID, DID),
-    ?debug("yang specs mapped to device (~p/~p): ~p~n", [AID, DID, YangSpecs]),
-    Protocol = exodm_db_device:protocol(AID, DID),
-    case binary:split(to_binary(Method), <<":">>) of
-	[MethodBin] ->
-	    Mod = get_default_module(AID, DID),
-	    find_method_spec_(Mod, YangSpecs, MethodBin, Protocol);
-	[Mod, MethodBin] ->
-	    find_method_spec_(Mod, YangSpecs, MethodBin, Protocol)
+    case exodm_db_device:yang_modules(AID, DID) of
+	[] ->
+	    ?debug("no yang specs mapped to device (~p/~p)~n", [AID, DID]),
+	    error;
+	YangSpecs ->
+	    ?debug("yang specs mapped to device (~p/~p): ~p~n",
+		   [AID, DID, YangSpecs]),
+	    Protocol = exodm_db_device:protocol(AID, DID),
+	    case binary:split(to_binary(Method), <<":">>) of
+		[MethodBin] ->
+		    Mod = get_default_module(AID, DID),
+		    find_method_spec_(Mod, YangSpecs, MethodBin, Protocol);
+		[Mod, MethodBin] ->
+		    find_method_spec_(Mod, YangSpecs, MethodBin, Protocol)
+	    end
     end.
 
 find_method_spec_(Module, Specs, Method, Protocol) ->

@@ -681,24 +681,34 @@ transform_tab(done, _, _, _) ->
 
 
 transform_tree(#conf_tree{tree = T} = CT, _, _) ->
-    T1 = lists:map(
-	   fun({<<"__did">>, [], DID}) ->
-		   {<<"did">>, [], DID};
-	      ({K, _, _} = X) ->
-		   case lists:member(K, [<<"config_set">>, <<"device-key">>,
-					 <<"server-key">>, <<"did">>,
-					 <<"protocol">>]) of
-		       true ->
-			   X;
-		       false ->
-			   {a,X}
-		   end;
-	      ({<<"config_set">>, L} = X) when is_list(L) ->
-		   X;
-	      ({<<"groups">>, L} = X) when is_list(L) ->
-		   X
+    T1 = lists:flatmap(
+	   fun({<<"protocol">>, [], _}) ->
+		   [];
+	      (X) ->
+		   [X]
 	   end, T),
-    Attrs = [C || {a, C} <- T1],
-    CT#conf_tree{tree = lists:sort([{<<"a">>,Attrs}|
-				    [X || X <- T1,
-					  element(1,X) =/= a]])}.
+    CT#conf_tree{tree = lists:sort([{<<"device-type">>,[],<<"ck3">>}|T1])}.
+
+
+%% transform_tree(#conf_tree{tree = T} = CT, _, _) ->
+%%     T1 = lists:map(
+%% 	   fun({<<"__did">>, [], DID}) ->
+%% 		   {<<"did">>, [], DID};
+%% 	      ({K, _, _} = X) ->
+%% 		   case lists:member(K, [<<"config_set">>, <<"device-key">>,
+%% 					 <<"server-key">>, <<"did">>,
+%% 					 <<"protocol">>]) of
+%% 		       true ->
+%% 			   X;
+%% 		       false ->
+%% 			   {a,X}
+%% 		   end;
+%% 	      ({<<"config_set">>, L} = X) when is_list(L) ->
+%% 		   X;
+%% 	      ({<<"groups">>, L} = X) when is_list(L) ->
+%% 		   X
+%% 	   end, T),
+%%     Attrs = [C || {a, C} <- T1],
+%%     CT#conf_tree{tree = lists:sort([{<<"a">>,Attrs}|
+%% 				    [X || X <- T1,
+%% 					  element(1,X) =/= a]])}.
