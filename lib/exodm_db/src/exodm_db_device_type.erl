@@ -39,11 +39,9 @@ new(AID0, Name0, Options) ->
     {_, Protocol0} = lists:keyfind(protocol, 1, Options),
     Protocol = to_binary(Protocol0),
     valid_protocol(Protocol),
-    URL = proplists:get_value('notification-url', Options, <<>>),
     Tree = #conf_tree{root = Name,
 		      tree = [{<<"name">>, [], exodm_db:decode_id(Name)},
-			      {<<"protocol">>, [], Protocol},
-			      {<<"notification-url">>, [], to_binary(URL)}]},
+			      {<<"protocol">>, [], Protocol}]},
     exodm_db:in_transaction(
       fun(_) ->
 	      case exist_(AID, Name) of
@@ -63,8 +61,7 @@ lookup(AID0, Name0) ->
 	      case read(Tab, Name, <<"name">>) of
 		  [] -> [];
 		  [N] ->
-		      [N | read(Tab, Name, <<"notification-url">>) ++
-			   read(Tab, Name, <<"protocol">>)]
+		      [N | read(Tab, Name, <<"protocol">>)]
 	      end
       end).
 
@@ -82,9 +79,7 @@ update(AID0, Name0, Options) ->
     Name = exodm_db:encode_id(Name0),
     Tab = table_(AID),
     Values = lists:map(
-	       fun({'notification-url',U}) ->
-		       {<<"notification-url">>, [], to_binary(U)};
-		  ({'protocol', P0}) ->
+	       fun({'protocol', P0}) ->
 		       P = to_binary(P0),
 		       valid_protocol(P),
 		       {<<"protocol">>, [], P}

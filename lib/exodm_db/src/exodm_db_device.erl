@@ -401,31 +401,15 @@ lookup_groups(AID, DID0) ->
 lookup_group_notifications(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
-    DevTypeURL = device_type_url(AID, DID),
-    DevTypeURL ++
-	lists:flatmap(
-	  fun(GID) ->
-		  case exodm_db_group:lookup(AID, GID, url) of
-		      [{_, URL}] ->
-			  [URL];
-		      [] ->
-			  []
-		  end
-	  end, lookup_groups(AID, DID)).
-
-device_type_url(AID, DID) ->
-    case kvdb_conf:read(
-	   table(AID), kvdb_conf:join_key(DID, <<"device-type">>)) of
-	{ok, {_, _, T}} ->
-	    case kvdb_conf:read(exodm_db_device_type:table(AID),
-				kvdb_conf:join_key(T, <<"notification-url">>)) of
-		{ok, {_, _, <<>>}} -> [];
-		{ok, {_, _, U}}    -> [U];
-		{error, not_found} -> []
-	    end;
-	_ ->
-	    []
-    end.
+    lists:flatmap(
+      fun(GID) ->
+	      case exodm_db_group:lookup(AID, GID, url) of
+		  [{_, URL}] ->
+		      [URL];
+		  [] ->
+		      []
+	      end
+      end, lookup_groups(AID, DID)).
 
 %% find last known position or {0,0,0} if not found
 lookup_position(AID, DID0) ->

@@ -519,9 +519,7 @@ json_create_device_type(_Cfg) ->
 				"exodm:create-device-type", 1,
 				{struct, [
 					  {"name", "devtype_1"},
-					  {"protocol", "exodm_bert"},
-					  {"notification-url",
-					   "http://localhost/devtype1"}
+					  {"protocol", "exodm_bert"}
 					 ]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"result",0}]}},
@@ -534,7 +532,7 @@ json_update_device_type(_Cfg) ->
 				"exodm:update-device-type", 1,
 				{struct, [
 					  {"name", "devtype_1"},
-					  {"notification-url", ?URL1}
+					  {"protocol", "ga_ck3"}
 					 ]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"result",0}]}},
@@ -556,12 +554,10 @@ json_list_device_types(_Cfg) ->
 				    {array,
 				     [
 				      {struct, [{"name", "devtype_1"},
-						{"protocol", "exodm_bert"},
-						{"notification-url", URL1S}
+						{"protocol", "ga_ck3"}
 					       ]},
 				      {struct, [{"name", "type1"},
-						{"protocol", "exodm_bert"},
-						{"notification-url",_}
+						{"protocol", "exodm_bert"}
 					       ]}
 				     ]}}
 				  ]}},
