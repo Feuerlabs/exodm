@@ -10,7 +10,7 @@
 -export([init/1]).
 -export([new/3, update/3, lookup/2, lookup_attr/3,
 	 delete/2, delete_devices/2,
-	 add_config_set/3, list_config_sets/2,
+	 add_config_set/3, remove_config_set/3, list_config_sets/2,
 	 yang_modules/2,
 	 protocol/2,
 	 exist/2]).
@@ -253,6 +253,23 @@ add_config_set_(AID0, DID0, CfgName) ->
 		   CfgName, <<>>);
 	false ->
 	    error({unknown_device, [AID, DID]})
+    end.
+
+remove_config_set(AID, DID, CfgName) ->
+    exodm_db:in_transaction(fun(_) ->
+				    remove_config_set_(AID, DID, CfgName)
+			    end).
+
+remove_config_set_(AID0, DID0, CfgName) ->
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(DID0),
+    Tab = table(AID),
+    case exist(AID, DID) of
+	true ->
+	    kvdb_conf:delete(Tab, kvdb_conf:join_key(
+				    [DID, <<"config_set">>, CfgName]));
+	false->
+	    ok
     end.
 
 

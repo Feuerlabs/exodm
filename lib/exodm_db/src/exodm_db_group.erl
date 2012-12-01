@@ -13,6 +13,8 @@
 	 lookup/2, lookup/3,
 	 exist/2,
 	 delete/2,
+	 add_members_to_groups/3,
+	 remove_members_from_groups/3,
 	 add_device/3,
 	 remove_device/3,
 	 device_is_deleted/3,
@@ -155,6 +157,31 @@ list_groups(AID, Limit, Prev0) when is_integer(Limit), Limit > 0 ->
 			       exodm_db_group:lookup(AID, Grp)
 		       end).
 
+add_members_to_groups(AID0, GIDs, DIDs) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      lists:foreach(
+		fun(GID) ->
+			lists:foreach(
+			  fun(DID) ->
+				  add_device(AID, GID, DID)
+			  end, DIDs)
+		end, GIDs)
+      end).
+
+remove_members_from_groups(AID0, GIDs, DIDs) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      lists:foreach(
+		fun(GID) ->
+			lists:foreach(
+			  fun(DID) ->
+				  remove_device(AID, GID, DID)
+			  end, DIDs)
+		end, GIDs)
+      end).
 
 add_device(AID0, GID0, DID) ->
     {Tab, GID} = tab_and_gid(AID0, GID0),

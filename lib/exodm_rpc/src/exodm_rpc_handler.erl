@@ -13,6 +13,7 @@
 
 -include_lib("lager/include/log.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
+-include_lib("lhttpc/include/lhttpc.hrl").
 
 %% -type ext_id() :: binary().   %% External representation of AID+DID
 %% -type aid() :: binary().      %% Account ID
@@ -473,7 +474,7 @@ attempt_dispatch(_, _, _, _) ->
     ok.
 
 
-error_response({Error, Data} = E) ->
+error_response({Error, _Data} = E) ->
     ?debug("error_response(~p)~n", [E]),
     {Code, Str} =
 	case lists:keyfind(
@@ -665,6 +666,7 @@ post_json(Env, JSON) ->
 	    ?error("CRASH ~p; ~p~n", [Err, erlang:get_stacktrace()])
     end.
 
+
 %% Since we can end up with multiple URIs that are virtually identical, as we
 %% form the union of related device groups, we do our best to normalize the
 %% URIs (anything else we can do except ensure an ending slash?), and then
@@ -697,9 +699,11 @@ ensure_ending_slash(Bin) ->
 
 post_request(URL, Hdrs, Body) ->
     try
+	Host = get_host_part(URL),
+	Hdrs1 = lists:keystore("Host", 1, Hdrs, {"Host", Host}),
 	Res =
 	    lhttpc:request(
-	      binary_to_list(URL), "POST", Hdrs, Body, 1000),
+	      binary_to_list(URL), "POST", Hdrs1, Body, 1000),
 	?debug("post_request(~p, ...) ->~n  ~p~n", [URL, Res]),
 	Res
     catch
@@ -709,6 +713,13 @@ post_request(URL, Hdrs, Body) ->
 		   [URL, Hdrs, Body, Type, Reason, erlang:get_stacktrace()]),
 	    error
     end.
+
+get_host_part(URL0) ->
+    URL = if is_list(URL0) -> URL0;
+	     is_binary(URL0) -> binary_to_list(URL0)
+	  end,
+    #lhttpc_url{host = Host} = lhttpc_lib:parse_url(URL),
+    Host.
 
 to_atom(L) when is_list(L) ->
     list_to_atom(L);

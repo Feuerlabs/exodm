@@ -17,7 +17,9 @@
     get_url/2,                     %% (AID, Name)
     delete_config_set/2,           %% (AID, Name)
     create_yang_module/4,          %% (AID, <<"user">>|<<"system">>, File, Yang)
+    add_members_to_config_sets/3,
     add_config_set_members/3,      %% (AID, CfgDataName, [DeviceID])
+    remove_members_from_config_sets/3,
     delete_config_set_members/3,   %% (AID, Name, DIDs)
     device_is_deleted/3,           %% (AID, DID, ConfigSets)
     list_config_set_members/1,     %% (Name) -> (AID, Name)
@@ -284,6 +286,16 @@ create_yang_module(AID, Repository0, File, Yang0) ->
 	    error(unauthorized)
     end.
 
+add_members_to_config_sets(AID0, Names, DIDs) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      lists:foreach(
+		fun(Name) ->
+			add_config_set_members(AID, Name, DIDs)
+		end, Names)
+      end).
+
 add_config_set_members(AID0, Name0, DIDs) ->
     AID = exodm_db:account_id_key(AID0),
     Tab = table(AID),
@@ -308,6 +320,16 @@ add_config_set_members(AID0, Name0, DIDs) ->
 		  false ->
 		      error({unknown_config_set, Name})
 	      end
+      end).
+
+remove_members_from_config_sets(AID0, Names, DIDs) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      lists:foreach(
+		fun(Name) ->
+			delete_config_set_members(AID, Name, DIDs)
+		end, Names)
       end).
 
 delete_config_set_members(AID0, Name0, DIDs) ->

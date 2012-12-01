@@ -174,22 +174,33 @@ json_rpc_({call, M, <<"add-config-set-members">>,
 	    {error, E}
     end;
 
-json_rpc_({call, M, <<"add-device-group-members">>,
-	   [{'device-groups', Groups, _},
-	    {'dev-id', DIDs, _}]} = _RPC, _Env) when ?EXO(M) ->
-    ?debug("~p:json_rpc(add-device-group-members) dev-id:~p groups:~p~n",
-           [ ?MODULE, DIDs, Groups ]),
+json_rpc_({call, M, <<"add-config-set-members">>,
+	   [{'name', CfgDataList, _},
+	    {'dev-id', DevIdList, _}]} = _RPC, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(add-config-set-members) config-sets:~p devices:~p~n",
+           [ ?MODULE, CfgDataList, DevIdList ]),
     AID = exodm_db_session:get_aid(),
+    {ok, ?catch_result(
+	    exodm_db_config:add_members_to_config_sets(
+	      AID, CfgDataList, DevIdList))};
+    %% try [ exodm_db_config:add_config_set_members(
+    %% 	    AID, CfgD, DevIdList)
+    %%       || CfgD <- CfgDataList] of
+    %%     _Res -> {ok, result_code(ok)}
+    %% catch error:E ->
+    %% 	    ?debug("RPC = ~p; ERROR = ~p~n",
+    %% 		   [_RPC, {E, erlang:get_stacktrace()}]),
+    %% 	    {error, E}
+    %% end;
 
-    try [ exodm_db_device:add_groups(
-	    AID, DID, Groups)
-	  || DID <- DIDs] of
-	_Res -> {ok, result_code(ok)}
-    catch error:E ->
-	    ?debug("RPC = ~p; ERROR = ~p~n",
-		   [_RPC, {E, erlang:get_stacktrace()}]),
-	    {error, E}
-    end;
+json_rpc_({call, M, <<"remove-config-set-members">>,
+	   [{'name', Names, _},
+	    {'dev-id', DIDs, _}]} = _RPC, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(remove-config-set-members) dev-id:~p names:~p~n",
+           [ ?MODULE, DIDs, Names ]),
+    AID = exodm_db_session:get_aid(),
+    {ok, ?catch_result(exodm_db_config:remove_members_from_config_sets(
+			 AID, Names, DIDs))};
 
 json_rpc_({call, M, <<"remove-device-group-members">>,
 	   [{'device-groups', Groups, _},
@@ -343,6 +354,23 @@ json_rpc_({call, M, <<"update-device-group">>,
 	    {ok, result_code('object-not-found')}
     end;
 
+json_rpc_({call, M, <<"add-device-group-members">>,
+	   [{'device-groups', GIDs, _},
+	    {'dev-id', DIDs, _}] = _Cfg}, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(add-device-group-members) config: ~p~n",
+	   [?MODULE, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    {ok, ?catch_result(exodm_db_group:add_members_to_groups(AID, GIDs, DIDs))};
+
+json_rpc_({call, M, <<"remove-device-group-members">>,
+	   [{'device-groups', GIDs, _},
+	    {'dev-id', DIDs, _}] = _Cfg}, _Env) when ?EXO(M) ->
+    ?debug("~p:json_rpc(remove-device-group-members) config: ~p~n",
+	   [?MODULE, _Cfg]),
+    AID = exodm_db_session:get_aid(),
+    {ok, ?catch_result(
+	    exodm_db_group:remove_members_from_groups(AID, GIDs, DIDs))};
+
 json_rpc_({call, M, <<"delete-device-group">>,
 	   [{'gid', GID, _}] = _Cfg} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(delete-device-group) config: ~p~n",
@@ -383,8 +411,7 @@ json_rpc_({call, M, <<"list-device-type-members">>,
 	exodm_db:in_transaction(
 	  fun(_) ->
 		  FullNext = kvdb_conf:join_key(
-			       [exodm_db:account_id_key(AID),
-				T, <<"members">>, Prev]),
+			       [T, <<"devices">>, Prev]),
 		  exodm_db:list_next(exodm_db_device_type:table(AID),
 				     N, FullNext,
 				     fun(Key) ->
@@ -432,8 +459,7 @@ json_rpc_({call, M, <<"list-config-set-members">>,
     Res =
 	exodm_db:in_transaction(
 	  fun(_) ->
-		  FullNext = kvdb_conf:join_key([exodm_db:account_id_key(AID),
-						 C, <<"members">>, Prev]),
+		  FullNext = kvdb_conf:join_key([C, <<"members">>, Prev]),
 		  exodm_db:list_next(exodm_db_config:table(AID), N, FullNext,
 				     fun(Key) ->
 					     lists:last(kvdb_conf:split_key(Key))
