@@ -123,9 +123,8 @@ group_id_key(ID) ->
 group_id_num(Id) when is_integer(Id) ->
     Id;
 group_id_num(<<I:32>>) -> I;
-group_id_num(L) when is_list(L) -> list_to_integer(L);
 group_id_num(<<$g, I/binary>>) ->
-    list_to_integer(binary_to_list(I)).
+    list_to_integer(binary_to_list(I), 16).
 
 group_id_value(GID) ->
     <<(group_id_num(GID)):32>>.
@@ -137,9 +136,8 @@ role_id_key(ID) ->
 role_id_num(Id) when is_integer(Id) ->
     Id;
 role_id_num(<<I:32>>) -> I;
-role_id_num(L) when is_list(L) -> list_to_integer(L);
 role_id_num(<<$r, I/binary>>) ->
-    list_to_integer(binary_to_list(I)).
+    list_to_integer(binary_to_list(I), 16).
 
 role_id_value(RID) ->
     <<(role_id_num(RID)):32>>.
