@@ -15,6 +15,10 @@
 -include_lib("yaws/include/yaws_api.hrl").
 -include_lib("lhttpc/include/lhttpc.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% -type ext_id() :: binary().   %% External representation of AID+DID
 %% -type aid() :: binary().      %% Account ID
 %% -type did() :: binary().      %% Device ID
@@ -242,6 +246,7 @@ notification(Method, Elems, Env, AID, DID) ->
 	    ?debug("Northbound RPC = ~p~n", [RPC]),
 	    Params = data_to_json(InputSpec, Env, Elems),
 	    JSON = {struct, [{"jsonrpc", "2.0"},
+			     {"method", FullMethod},
 			     {"id", make_id(Env, AID)},
 			     {"params", {struct, Params}}]},
 	    ?debug("JSON = ~p~n", [JSON]),
@@ -672,19 +677,46 @@ post_json(Env, JSON) ->
 %% URIs (anything else we can do except ensure an ending slash?), and then
 %% remove duplicates.
 remove_duplicate_urls(URLs) ->
-    lists:usort([normalize_url(U) || U <- URLs]).
+    remove_duplicate_urls_([normalize_url(U) || U <- URLs]).
+    %% lists:usort([normalize_url(U) || U <- URLs]).
+
+remove_duplicate_urls_([{Un,_EndingSlash,U} = First|URLs]) ->
+    case [Match || {Un1,_,_} = Match <- URLs,
+		   Un1 == Un] of
+	[] ->
+	    [U|remove_duplicate_urls_(URLs)];
+	[_|_] = Matches ->
+	    [pick_url([First|Matches])|remove_duplicate_urls_(URLs -- Matches)]
+    end;
+remove_duplicate_urls_([]) ->
+    [].
+
+pick_url([{_, true, U}|_]) -> U;
+pick_url([{_, _, U}|URLs]) -> pick_url(URLs, U).
+
+pick_url([{_, true, U}|_], _) -> U;
+pick_url([_|URLs], U) -> pick_url(URLs, U);
+pick_url([], U) -> U.
+
 
 normalize_url(U) ->
     case re:split(U, <<"([@\\?])">>, [{return, binary}]) of
 	[Simple] ->
-	    ensure_ending_slash(Simple);
+	    {HadSlash, Norm} = ensure_ending_slash(Simple),
+	    {Norm, HadSlash, U};
 	[Auth, <<"@">>, Path, <<"?">> | Rest] ->
-	    iolist_to_binary(
-	      [Auth, <<"@">>, ensure_ending_slash(Path), <<"?">> | Rest]);
+	    {HadSlash, PathNorm} = ensure_ending_slash(Path),
+	    Norm = iolist_to_binary(
+		     [Auth, <<"@">>, PathNorm, <<"?">> | Rest]),
+	    {Norm, HadSlash, U};
 	[Auth, <<"@">>, Path] ->
-	    iolist_to_binary([Auth, <<"@">>, ensure_ending_slash(Path)]);
+	    {HadSlash, PathNorm} = ensure_ending_slash(Path),
+	    Norm = iolist_to_binary([Auth, <<"@">>, PathNorm]),
+	    {Norm, HadSlash, U};
 	[Path, <<"?">> | Rest] ->
-	    iolist_to_binary([ensure_ending_slash(Path), <<"?">> | Rest])
+	    {HadSlash, PathNorm} = ensure_ending_slash(Path),
+	    Norm = iolist_to_binary([PathNorm, <<"?">> | Rest]),
+	    {Norm, HadSlash, U}
     end.
 
 ensure_ending_slash(Bin) ->
@@ -692,9 +724,9 @@ ensure_ending_slash(Bin) ->
     Sz_1 = Sz - 1,
     case Bin of
 	<<_P:Sz_1/binary, "/">> ->
-	    Bin;
+	    {true, Bin};
 	_ ->
-	    <<Bin/binary, "/">>
+	    {false, <<Bin/binary, "/">>}
     end.
 
 post_request(URL, Hdrs, Body) ->
@@ -739,3 +771,56 @@ split_method(Mod, M) ->
 	[P,Ms] ->
 	    {P, list_to_atom(Ms)}
     end.
+
+
+%% EUnit tests
+
+-ifdef(TEST).
+-define(_t(E), {timeout,60000,
+                [?_test(try E catch error:_R_ ->
+                                      error({_R_, erlang:get_stacktrace()})
+                              end)]}).
+%% ?dbg(E): executes test case, printing the result on success, and a
+%% thorough error report on failure.
+-define(dbg(E),
+        (fun() ->
+                 try (E) of
+                     __V ->
+                         ?debugFmt(<<"~s = ~P">>, [(??E), __V, 15]),
+                         __V
+                 catch
+                     error:__Err ->
+                         io:fwrite(user,
+                                   "FAIL: test = ~s~n"
+                                   "Error = ~p~n"
+                                   "Trace = ~p~n", [(??E), __Err,
+                                                    erlang:get_stacktrace()]),
+                         error(__Err)
+                 end
+          end)()).
+-define(my_t(E), ?_test(?dbg(E))).
+all_test_() ->
+    [?my_t(test_dupl_url())].
+
+test_dupl_url() ->
+    URLs1 = [<<"http://foo:bar@a.b.c">>,
+	     <<"http://a.b.c">>,
+	     <<"http://a.b.c/x/y">>,
+	     <<"http://a.b.c/x/y?x=1">>,
+	     <<"http://a.b.c?x=1">>],
+    URLs2 = [<<"http://foo:bar@a.b.c/">>,
+	     <<"http://a.b.c/">>,
+	     <<"http://a.b.c/x/y/">>,
+	     <<"http://a.b.c/x/y/?x=1">>,
+	     <<"http://a.b.c/?x=1">>],
+    URLs1 = remove_duplicate_urls(URLs1 ++ URLs1 ++ URLs1),
+    URLs2 = remove_duplicate_urls(URLs1 ++ URLs2),
+    URLs2 = remove_duplicate_urls(URLs2 ++ URLs1),
+    URLs2 = remove_duplicate_urls(URLs1 ++ URLs2 ++ URLs2),
+    URLs2 = remove_duplicate_urls(URLs2 ++ URLs1 ++ URLs1),
+    URLs2Rev = lists:reverse(URLs2),
+    URLs2Rev = remove_duplicate_urls(lists:reverse(URLs1 ++ URLs2)),
+    URLs2Rev = remove_duplicate_urls(lists:reverse(URLs2 ++ URLs1)),
+    ok.
+
+-endif.
