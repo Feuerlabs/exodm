@@ -14,6 +14,7 @@
 -export([group_id_key/1, group_id_num/1, group_id_value/1]).
 -export([role_id_key/1, role_id_num/1, role_id_value/1]).
 -export([account_id_key/1, account_id_num/1, account_id_value/1]).
+-export([float_to_bin/1, bin_to_float/1]).
 -export([list_key/2]).
 -export([table/2]).
 
@@ -572,6 +573,11 @@ decode_id_(<<C, Rest/binary>>) ->
 decode_id_(<<>>) ->
     <<>>.
 
+bin_to_float(<<F/float>>) ->
+    F.
+
+float_to_bin(F) when is_float(F) ->
+    <<F/float>>.
 
 
 %% id_char(C) ->

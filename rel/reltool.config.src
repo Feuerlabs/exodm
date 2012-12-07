@@ -32,5 +32,5 @@
            {copy, "sys.config", "releases/\{\{rel_vsn\}\}/sys.config"},
            {copy, "files/exodm.cmd", "bin/exodm.cmd"},
            {copy, "files/start_erl.cmd", "bin/start_erl.cmd"},
-           {copy, "files/vm.args", "releases/\{\{rel_vsn\}\}/vm.args"}
+           {copy, "vm.args", "releases/\{\{rel_vsn\}\}/vm.args"}
           ]}.

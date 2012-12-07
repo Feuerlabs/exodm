@@ -350,12 +350,17 @@ lookup_attrs(Tab, Key) ->
 	    Tab, fun(K, Acc) ->
 			 case kvdb_conf:read(Tab, K) of
 			     {ok, {_, _, V}} ->
-				 [{lists:last(kvdb_conf:split_key(K)), V}|Acc];
+				 [convert_attr(
+				    {lists:last(kvdb_conf:split_key(K)), V})
+				  | Acc];
 			     _ ->
 				 Acc
 			 end
 		 end, [], kvdb_conf:join_key(Key, <<"a">>)),
     lists:reverse(Res).
+
+convert_attr({K,V}) ->
+    {K, decode_value(K, V)}.
 
 %% ++
 %% 	read(Tab,Key, msisdn) ++
@@ -433,15 +438,15 @@ lookup_position(AID, DID0) ->
     Tab = table(AID),
     DID = exodm_db:encode_id(DID0),
     {
-      case read_uint32(Tab,DID,latitude) of
-	  [] -> 0;
-	  [{latitude,Lat}] -> Lat
+      case read(Tab,DID,latitude) of
+	  [] -> 0.0;
+	  [{latitude,Lat}] -> exodm_db:bin_to_float(Lat)
       end,
-      case read_uint32(Tab,DID,longitude) of
-	  [] -> 0;
-	  [{longitude,Lon}] -> Lon
+      case read(Tab,DID,longitude) of
+	  [] -> 0.0;
+	  [{longitude,Lon}] -> exodm_db:bin_to_float(Lon)
       end,
-      case read_uint32(Tab,DID,timestamp) of
+      case read(Tab,DID,timestamp) of
 	  [] -> 0;
 	  [{timestamp,Ts}] -> Ts
       end
@@ -525,8 +530,25 @@ insert(Tab, Key, Item, Value) ->
     exodm_db:write(Tab, Key1, Value).
 
 insert_attr(Tab, Key, Item, Value) ->
+    ItemB = to_binary(Item),
     Key1 = exodm_db:join_key([Key, <<"a">>, to_binary(Item)]),
-    exodm_db:write(Tab, Key1, Value).
+    exodm_db:write(Tab, Key1, encode_value(ItemB, Value)).
+
+encode_value(<<"latitude">>, L) when is_number(L) ->
+    exodm_db:float_to_bin(L);
+encode_value(<<"longitude">>, L) when is_number(L) ->
+    exodm_db:float_to_bin(L);
+encode_value(_, V) ->
+    V.
+
+decode_value(<<"latitude">>, Bin) ->
+    exodm_db:bin_to_float(Bin);
+decode_value(<<"longitude">>, Bin) ->
+    exodm_db:bin_to_float(Bin);
+decode_value(_, Bin) ->
+    Bin.
+
+
 
 insert_groups(AID, Tab, DID, Groups) ->
 %%     insert_groups(AID, Tab, 1, DID, Groups).
