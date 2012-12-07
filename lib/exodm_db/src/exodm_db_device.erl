@@ -82,7 +82,7 @@ insert_(Tab, AID, DID, Options) ->
     insert_device_type(
       Tab, AID, DID, proplists:get_value('device-type', Options)),
     %% insert_protocol(Tab, DID, proplists:get_value(protocol, Options)),
-    _ = [insert_attr(Tab, DID, K,to_binary(V)) ||
+    _ = [insert_attr(Tab, DID, K, V) ||
 	    {K,V} <- Options,
 	    not lists:member(K, ['device-id','gid', 'device-type',
 				 'server-key', 'device-key',
@@ -539,7 +539,7 @@ encode_value(<<"latitude">>, L) when is_number(L) ->
 encode_value(<<"longitude">>, L) when is_number(L) ->
     exodm_db:float_to_bin(L);
 encode_value(_, V) ->
-    V.
+    to_binary(V).
 
 decode_value(<<"latitude">>, Bin) ->
     exodm_db:bin_to_float(Bin);
