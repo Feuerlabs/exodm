@@ -186,12 +186,14 @@ remove_members_from_groups(AID0, GIDs, DIDs) ->
 add_device(AID0, GID0, DID) ->
     {Tab, GID} = tab_and_gid(AID0, GID0),
     Key = exodm_db:join_key([GID, <<"devices">>, DID]),
-    kvdb_conf:write(Tab, {Key, [], <<>>}).
+    kvdb_conf:write(Tab, {Key, [], <<>>}),
+    exodm_db_device:do_add_group(AID0, DID, GID).
 
 remove_device(AID0, GID0, DID) ->
     {Tab, GID} = tab_and_gid(AID0, GID0),
     Key = exodm_db:join_key([GID, <<"devices">>, DID]),
-    kvdb_conf:delete(Tab, Key).
+    kvdb_conf:delete(Tab, Key),
+    exodm_db_device:do_remove_group(AID0, GID, DID).
 
 device_is_deleted(AID0, DID0, GIDs) ->
     AID = exodm_db:account_id_key(AID0),

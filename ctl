@@ -49,7 +49,7 @@ echo "EXODM_DIR=$EXODM_DIR"
 USE_DIR=$RUNNER_SCRIPT_DIR
 
 if [ -z "$ERL_SETUP_LIBS" ]; then
-    EXODM="ERL_SETUP_LIBS=\"$RUNNER_SCRIPT_DIR/rel/plugins\" $EXODM"
+    EXODM="ERL_SETUP_LIBS=\"$EXODM_DIR/rel/plugins\" $EXODM"
 fi
 
 while [ $# -gt 0 ]; do
@@ -62,10 +62,11 @@ while [ $# -gt 0 ]; do
             CMD="$EXODM $1"
             shift
             ;;
+        convert)
+            CMD="$EXODM console_boot exodm_setup -- -setup mode convert"
         *)
             echo $"Usage: $0 [-l | -local] {start|attach|stop|convert}"
             exit 1
-
     esac
 done
 

@@ -20,6 +20,7 @@
 -export([enc_ext_key/2, dec_ext_key/1]).
 -export([lookup_position/2, lookup_keys/2]).
 -export([add_groups/3, lookup_groups/2, remove_groups/3]).
+-export([do_add_group/3, do_remove_group/3]).
 -export([lookup_group_notifications/2]).
 -export([table/1]).
 -export([client_auth_config/2]).
@@ -432,7 +433,17 @@ lookup_group_notifications(AID0, DID0) ->
 		  [] ->
 		      []
 	      end
-      end, lookup_groups(AID, DID)).
+      end, lookup_groups(AID, DID)) ++
+	lists:flatmap(
+	  fun(CS) ->
+		  CSTab = exodm_db_config:table(AID),
+		  case kvdb_conf:read(CSTab, kvdb_conf:join_key(CS,<<"url">>)) of
+		      {ok, {_, _, URL}} ->
+			  [URL];
+		      _ ->
+			  []
+		  end
+	  end, list_config_sets(AID, DID)).
 
 %% find last known position or {0,0,0} if not found
 lookup_position(AID, DID0) ->
@@ -601,6 +612,23 @@ add_groups_(Tab, AID, DID, Groups) ->
 	      kvdb_conf:write(Tab, {Key, [], <<>>}),
 	      exodm_db_group:add_device(AID, GID, DID)
       end, Groups).
+
+do_add_group(AID0, DID0, GID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(DID0),
+    GID = exodm_db:group_id_key(GID0),
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      case exist(AID, DID) of
+		  true ->
+		      kvdb_conf:write(Tab, {kvdb_conf:join_key(
+					      [DID,<<"groups">>,GID]),
+					    [], <<>>});
+		  false ->
+		      error(unknown_device)
+	      end
+      end).
       %% 	      {Existing, Last} =
       %% 		  kvdb_conf:fold_list(
       %% 		    Tab, fun(I, Kl, {Acc,_}) ->
@@ -640,6 +668,23 @@ remove_groups_(Tab, AID, DID, Groups) ->
 	      kvdb_conf:delete(Tab, Key),
 	      exodm_db_group:remove_device(AID, GID, DID)
       end, Groups).
+
+do_remove_group(AID0, DID0, GID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(DID0),
+    GID = exodm_db:group_id_key(GID0),
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      case exist(AID, DID) of
+		  true ->
+		      kvdb_conf:delete(Tab, kvdb_conf:join_key(
+					      [DID,<<"groups">>,GID]));
+		  false ->
+		      error
+	      end
+      end).
+
     %% 	      Found =
     %% 		  kvdb_conf:fold_list(
     %% 		    Tab, fun(I, Kl, Acc) ->
@@ -715,10 +760,10 @@ transform_tab(T, FromVsn, ToVsn) ->
 transform_tab({ok, Key}, T, From, To) ->
     [Top|_] = kvdb_conf:split_key(Key),
     #conf_tree{} = CT = kvdb_conf:read_tree(T, Top),
-    kvdb_conf:delete_tree(T, Top),
     case transform_tree(CT, From, To) of
 	skip -> ok;
 	#conf_tree{} = NewCT ->
+	    kvdb_conf:delete_tree(T, Top),
 	    kvdb_conf:write_tree(T, Top, NewCT)
     end,
     transform_tab(kvdb_conf:next_at_level(T, Top), T, From, To);
