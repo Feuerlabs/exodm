@@ -53,6 +53,12 @@
 	 update_counter/3,
 	 select/1, select/2, select/3]).
 
+-export([prepare_transform/0,
+	 transform_db/0,
+	 finish_transform/0]).
+-export([get_db_version/0,
+	 get_system_version/0]).
+
 -import(lists, [reverse/1]).
 %%
 %% fixme: bitmap version is actually not that fast as I tought
@@ -747,3 +753,87 @@ ix_list(K, V, Key, Base) ->
 	_ ->
 	    []
     end.
+
+
+prepare_transform() ->
+    io:fwrite("exodm_db:prepare_transform()~n", []),
+    backup_before_transform(),
+    application:start(gproc, permanent),
+    application:start(kvdb, permanent),
+    application:start(exodm_db, permanent),
+    try _ = get_db_version(_Update = true)
+    catch
+	error:_ ->
+	    %% no known db version
+	    io:fwrite("Cannot determine current db version!~n"
+		      "Try setting -exodm_db db_version V~n"
+		      "Aborting...~n", []),
+	    error(no_db_version)
+    end.
+
+backup_before_transform() ->
+    DoBackup = case application:get_env(exodm_db, backup_before_transform) of
+		   {ok, B} when is_boolean(B) -> B;
+		   _ -> false
+	       end,
+    io:fwrite("DoBackup = ~p~n", [DoBackup]),
+    if DoBackup ->
+	    Db = setup:data_dir(),
+	    {MS,S,US} = os:timestamp(),
+	    TarFname = "db_backup-"
+		++ integer_to_list(MS) ++ "-"
+		++ integer_to_list(S)  ++ "-"
+		++ integer_to_list(US) ++ ".tgz",
+	    make_backup(TarFname, Db);
+       true ->
+	    ok
+    end.
+
+make_backup(TarFname, Dir) ->
+    {ok, PrevCWD} = file:get_cwd(),
+    ok = file:set_cwd(filename:dirname(filename:absname(Dir))),
+    Res = os:cmd("tar czf " ++ TarFname ++ " " ++ filename:basename(Dir)),
+    file:set_cwd(PrevCWD),
+    io:fwrite("Database backed up to ~s~n~s~n", [TarFname, Res]).
+
+transform_db() ->
+    io:fwrite("exodm_db:transform_db()~n", []),
+    ok.
+
+finish_transform() ->
+    io:fwrite("exodm_db:finish_transform()~n", []),
+    [{_, CurRelVsn,_,_}|_] = release_handler:which_releases(),
+    kvdb_conf:write(data, {<<"db_version">>,[],to_binary(CurRelVsn)}),
+    ok.
+
+get_db_version() ->
+    get_db_version(false).
+
+get_db_version(Update) when is_boolean(Update) ->
+    Return = fun(V) when Update ->
+		     kvdb_conf:write(data, {<<"db_version">>,[],V}),
+		     V;
+		(V) ->
+		     V
+	     end,
+    case os:getenv("EXODM_DB_VSN") of
+	false ->
+	    case kvdb_conf:read(data, <<"db_version">>) of
+		{ok, {_, _, V}} ->
+		    V;
+		{error, not_found} ->
+		    case application:get_env(exodm_db, prev_db_vsn) of
+			{ok, V} ->
+			    Return(to_binary(V));
+			_ ->
+			    %% no known db version
+			    error(no_db_version)
+		    end
+	    end;
+	V ->
+	    Return(to_binary(V))
+    end.
+
+get_system_version() ->
+    [{_, CurRelVsn,_,_}|_] = release_handler:which_releases(),
+    to_binary(CurRelVsn).

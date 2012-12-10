@@ -45,6 +45,9 @@ post_generate(Config, File) ->
     MakeNodeTgt = filename:join(TargetDir, "make_node"),
     {ok,_} = file:copy("../make_node", MakeNodeTgt),
     set_x_bit(MakeNodeTgt),
+    CtlTarget = filename:join(TargetDir, "ctl"),
+    {ok,_} = file:copy("../ctl", CtlTarget),
+    set_x_bit(CtlTarget),
     {ok,_} = file:copy(File, filename:join(TargetDir, filename:basename(File))),
     make_erts_link(TargetDir),
     ok.

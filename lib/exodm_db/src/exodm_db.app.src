@@ -1,4 +1,4 @@
-%% -*- erlang-indent-level: 4; indent-tabs-mode: nil -*-
+%% -*- mode: erlang; erlang-indent-level: 4; indent-tabs-mode: nil -*-
 {application, exodm_db,
  [
   {description, ""},
@@ -10,5 +10,14 @@
 		  kvdb
                  ]},
   {mod, {exodm_db_app, []}},
-  {env, []}
+  {env, [
+         {'$setup_hooks',
+          [{convert, [
+                      {100, {exodm_db, prepare_transform, []}},
+                      {200, {exodm_db, transform_db, []}},
+                      {210, {exodm_db_device, transform, []}},
+                      {300, {exodm_db, finish_transform, []}}
+                     ]}
+          ]}
+        ]}
  ]}.

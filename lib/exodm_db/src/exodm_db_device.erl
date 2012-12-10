@@ -24,6 +24,7 @@
 -export([table/1]).
 -export([client_auth_config/2]).
 
+-export([transform/0]).
 -export([code_change/2]).
 
 -include_lib("lager/include/log.hrl").
@@ -681,8 +682,11 @@ read_uint32(Tab, Key,Item) ->
 	[] -> []
     end.
 
+transform() ->
+    code_change(exodm_db:get_db_version(), exodm_db:get_system_version()).
 
 code_change(FromVsn, ToVsn) ->
+    io:fwrite("code_change(~p, ~p)~n", [FromVsn, ToVsn]),
     Tabs = kvdb:list_tables(kvdb_conf),
     %% exodm_db:in_transaction(
     %%   fun(_) ->
@@ -712,21 +716,52 @@ transform_tab({ok, Key}, T, From, To) ->
     [Top|_] = kvdb_conf:split_key(Key),
     #conf_tree{} = CT = kvdb_conf:read_tree(T, Top),
     kvdb_conf:delete_tree(T, Top),
-    kvdb_conf:write_tree(T, Top, transform_tree(CT, From, To)),
+    case transform_tree(CT, From, To) of
+	skip -> ok;
+	#conf_tree{} = NewCT ->
+	    kvdb_conf:write_tree(T, Top, NewCT)
+    end,
     transform_tab(kvdb_conf:next_at_level(T, Top), T, From, To);
 transform_tab(done, _, _, _) ->
     ok.
 
 
-
 transform_tree(#conf_tree{tree = T} = CT, _, _) ->
-    T1 = lists:flatmap(
-	   fun({<<"protocol">>, [], _}) ->
-		   [];
-	      (X) ->
-		   [X]
-	   end, T),
-    CT#conf_tree{tree = lists:sort([{<<"device-type">>,[],<<"ck3">>}|T1])}.
+    io:fwrite("ConfTree = ~p~n", [CT]),
+    NewCT =
+	case lists:keyfind(<<"a">>, 1, T) of
+	    {<<"a">>, L} ->
+		L1 = lists:map(
+		       fun({<<"latitude">> = K, As, <<Lat:32>>}) ->
+			       Latf = lat_int_to_float(Lat),
+			       {K, As, exodm_db:float_to_bin(Latf)};
+			  ({<<"longitude">> = K, As, <<Long:32>>}) ->
+			       Lonf = lon_int_to_float(Long),
+			       {K, As, exodm_db:float_to_bin(Lonf)};
+			  (Obj) ->
+			       Obj
+		       end, L),
+		CT#conf_tree{tree = lists:keyreplace(
+				      <<"a">>, 1, T, {<<"a">>, L1})};
+	    false ->
+		skip
+	end,
+    io:fwrite("NewCT = ~p~n", [NewCT]),
+    NewCT.
+
+
+lat_int_to_float(Lat) -> Lat / 100000.0 - 90.
+lon_int_to_float(Lon) -> Lon / 100000.0 - 180.
+
+
+%% transform_tree(#conf_tree{tree = T} = CT, _, _) ->
+%%     T1 = lists:flatmap(
+%% 	   fun({<<"protocol">>, [], _}) ->
+%% 		   [];
+%% 	      (X) ->
+%% 		   [X]
+%% 	   end, T),
+%%     CT#conf_tree{tree = lists:sort([{<<"device-type">>,[],<<"ck3">>}|T1])}.
 
 
 %% transform_tree(#conf_tree{tree = T} = CT, _, _) ->

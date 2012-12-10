@@ -83,7 +83,18 @@ setup:
 ifdef n
 	(cd nodes/$(n); ERL_SETUP_LIBS=$(ESL) \
 	../../rel/$(RELNAME)/bin/$(RELNAME) \
-	console_boot $(RELNAME)_setup -- -setup is_first false)
+	console_boot $(RELNAME)_setup -- -setup mode setup)
+else
+	echo "no node given (e.g. n=foo make setup)"
+	$(error, no node given)
+	exit 2
+endif
+
+convert:
+ifdef n
+	(cd nodes/$(n); ERL_SETUP_LIBS=$(ESL) \
+	../../rel/$(RELNAME)/bin/$(RELNAME) \
+	console_boot $(RELNAME)_setup -- -setup mode convert)
 else
 	echo "no node given (e.g. n=foo make setup)"
 	$(error, no node given)
