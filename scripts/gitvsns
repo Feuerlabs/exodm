@@ -1,0 +1,56 @@
+#!/usr/bin/env escript
+
+-mode(compile).
+
+main([]) ->
+    {ok, Fs} = file:list_dir("."),
+    {ok, Cwd} = file:get_cwd(),
+    [git_vsn(F, Cwd) || F <- Fs];
+main([H]) when H=="-help"; H=="-h" ->
+    usage();
+main(["-config", Cfg]) ->
+    {ok, Cwd} = file:get_cwd(),
+    case file:consult(Cfg) of
+	{ok, Terms} ->
+	    case lists:keyfind(deps, 1, Terms) of
+		{_, Deps} ->
+		    Apps = [{App,Tag} || {App,_,{git,_,Tag}} <- Deps],
+		    lists:foreach(
+		      fun({A,Tag}) ->
+			      io:fwrite("[~w: ~s expected]~n", [A,Tag]),
+			      git_vsn(atom_to_list(A), Cwd)
+		      end, Apps);
+		false ->
+		    io:fwrite("Cannot find deps in ~s~n", [Cfg]),
+		    halt(1)
+	    end;
+	Error ->
+	    io:fwrite("Error parsing ~p:~n~w~n", [Cfg, Error]),
+	    halt(1)
+    end.
+
+usage() ->
+    io:fwrite(
+escript:script_name() ++ " [-config PathToRebarConfig]
+
+This utility checks each subdirectory of the current working dir, and
+lists the git version of the git repository (assuming it is in fact a
+git repos).
+
+Options:
+
+-config PathToRebarConfig reads a given rebar.config, and lists the
+  corresponding git versions for each dependent app - both the version
+  expected by the rebar.config and the version derived from the git repository.
+"), halt().
+
+git_vsn(D, Cwd) ->
+    case file:set_cwd(D) of
+	ok ->
+            Res = os:cmd("git describe --always --tags "
+                         "`git log -n 1 --pretty=format:%h .`"),
+	    io:fwrite("~s: ~s~n", [D, Res]),
+	    file:set_cwd(Cwd);
+	_ ->
+	    ignore
+    end.
