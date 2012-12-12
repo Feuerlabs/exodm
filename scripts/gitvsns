@@ -14,10 +14,11 @@ main(["-config", Cfg]) ->
 	{ok, Terms} ->
 	    case lists:keyfind(deps, 1, Terms) of
 		{_, Deps} ->
-		    Apps = [{App,Tag} || {App,_,{git,_,Tag}} <- Deps],
+		    Apps = find_deps(Deps),
 		    lists:foreach(
-		      fun({A,Tag}) ->
-			      io:fwrite("[~w: ~s expected]~n", [A,Tag]),
+		      fun({A,AppVsn,Tag}) ->
+			      io:fwrite("[~w: ~s / ~s expected]~n",
+					[A,AppVsn,Tag]),
 			      git_vsn(atom_to_list(A), Cwd)
 		      end, Apps);
 		false ->
@@ -28,6 +29,32 @@ main(["-config", Cfg]) ->
 	    io:fwrite("Error parsing ~p:~n~w~n", [Cfg, Error]),
 	    halt(1)
     end.
+
+%% stolen & modified from rebar_deps.erl
+find_deps([App | Rest]) when is_atom(App) ->
+    [{App, ".*", undefined}|find_deps(Rest)];
+find_deps([{App, VsnRegex} | Rest]) when is_atom(App) ->
+    [{App, VsnRegex, undefined}|find_deps(Rest)];
+find_deps([{App, VsnRegex, Source} | Rest]) ->
+    [{App, VsnRegex, get_vsn(Source)}|find_deps(Rest)];
+find_deps([{App, VsnRegex, Source, Opts} | Rest]) when is_list(Opts) ->
+    [{App, VsnRegex, get_vsn(Source)}|find_deps(Rest)];
+find_deps([_|Rest]) ->
+    find_deps(Rest);
+find_deps([]) ->
+    [].
+
+get_vsn({hg, _Url, Rev}) -> Rev;
+get_vsn({git, _Url}) -> "HEAD";
+get_vsn({git, _Url, ""}) -> "HEAD";
+get_vsn({git, _Url, Rev}) -> Rev;
+get_vsn({bzr, _Url, Rev}) -> Rev;
+get_vsn({svn, _Url, Rev}) -> Rev;
+get_vsn({rsync, _Url}) -> "latest";
+get_vsn({fossil, _Url}) -> "latest";
+get_vsn({fossil, _Url, latest}) -> "latest";
+get_vsn({fossil, _Url, Rev}) -> Rev;
+get_vsn(_) -> "unknown".
 
 usage() ->
     io:fwrite(
@@ -49,8 +76,22 @@ git_vsn(D, Cwd) ->
 	ok ->
             Res = os:cmd("git describe --always --tags "
                          "`git log -n 1 --pretty=format:%h .`"),
-	    io:fwrite("~s: ~s~n", [D, Res]),
+	    io:fwrite("~s: ~s / ~s~n", [D, try_app_vsn(), Res]),
 	    file:set_cwd(Cwd);
 	_ ->
 	    ignore
+    end.
+
+try_app_vsn() ->
+    %% we are in the app directory
+    case filelib:wildcard("ebin/*.app") of
+	[AppF] ->
+	    case file:consult(AppF) of
+		{ok, [{application, _, Attrs}]} ->
+		    proplists:get_value(vsn, Attrs, "?");
+		_ ->
+		    "?"
+	    end;
+	_ ->
+	    "?"
     end.
