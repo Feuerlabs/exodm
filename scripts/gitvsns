@@ -17,7 +17,7 @@ main(["-config", Cfg]) ->
 		    Apps = find_deps(Deps),
 		    lists:foreach(
 		      fun({A,AppVsn,Tag}) ->
-			      io:fwrite("[~w: ~s / ~s expected]~n",
+			      io:fwrite("[~w - expected: ~s / ~s]~n",
 					[A,AppVsn,Tag]),
 			      git_vsn(atom_to_list(A), Cwd)
 		      end, Apps);
