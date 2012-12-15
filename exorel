@@ -20,6 +20,7 @@ main([F|Args0] = _A) ->
 	versions -> versions(Args, Env);
 	current  -> current(Args, Env);
 	last_build -> last_build(Args, Env);
+	root -> io:fwrite("root: ~p~n", [root_dir(Env)]); % for debugging
 	_ -> help()
     catch
 	_:_ ->
@@ -299,11 +300,11 @@ get_root_from_exodm_env() ->
 derive_root_dir(D) ->
     case filelib:is_dir(_X = filename:join([D, "rel", "lib"])) of
 	true ->
-	    %% io:fwrite("found \"rel\" and \"lib\"~n", []),
-	    D;
+	    fulldir(D);
 	false ->
-	    case is_exodm_dev_repos(D) of
-		true -> D;
+	    case find_exodm_dev_repos(D) of
+		{true, D1} ->
+		    D1;
 		false ->
 		    {ok, Fs} = file:list_dir(D),
 		    case ["releases", "bin", "erts", "ctl", "exorel"] -- Fs of
@@ -320,6 +321,15 @@ derive_root_dir(D) ->
 	    end
     end.
 
+find_exodm_dev_repos([]) -> false;
+find_exodm_dev_repos(D) ->
+    case is_exodm_dev_repos(D) of
+	true ->
+	    {true, fulldir(D)};
+	false ->
+	    find_exodm_dev_repos(filename:dirname(D))
+    end.
+    
 is_exodm_dev_repos(D) ->
     case filename:basename(D) of
 	"exodm" ->
@@ -385,3 +395,16 @@ abort(Fmt, Args) ->
 cwd() ->
     filename:dirname(filename:absname(".")).
 
+fulldir(D) ->
+    case filename:pathtype(D) of
+	relative ->
+	    {ok,CWD} = file:get_cwd(),
+	    try
+		ok = file:set_cwd(D),
+		cwd()
+	    after
+		file:set_cwd(CWD)
+	    end;
+	_ ->
+	    filename:absname(D)
+    end.
