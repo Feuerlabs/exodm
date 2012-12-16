@@ -139,10 +139,10 @@ else
 endif
 
 test:
-	rebar skip_deps=true eunit
+	$(REBAR) skip_deps=true eunit
 
 retest:
-	EXODM_SKIP_MAKE=true rebar skip_deps=true eunit
+	EXODM_SKIP_MAKE=true $(REBAR) skip_deps=true eunit
 
 # `make test_console` steps into the EUnit directory for the test system
 # and starts exodm in 'console' mode. This is useful after a `make test`,
