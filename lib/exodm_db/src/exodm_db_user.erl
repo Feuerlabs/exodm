@@ -8,8 +8,10 @@
 
 -module(exodm_db_user).
 
--export([init/0]).
+-export([init/0,
+	 table/0]).
 -export([new/3, update/2, lookup/1, lookup_attr/2,
+	 list_users/2,    %% (N, Prev)
 	 list_user_keys/0, fold_users/2,
 	 add_access/3,
 	 list_access/1, exist/1]).
@@ -36,8 +38,11 @@
 init() ->
     exodm_db:in_transaction(
       fun(_) ->
-	      exodm_db:add_table(<<"user">>, [alias, aid])
+	      exodm_db:add_table(table(), [alias, aid])
       end).
+
+table() ->
+    <<"user">>.
 
 new(AID, UName, Options) ->
     exodm_db:in_transaction(
@@ -56,6 +61,7 @@ new_(AID0, UName, Options) ->
 	false ->
 	    insert(Key,name, Name),
 	    insert(Key,'__aid',   exodm_db:account_id_value(AID)),
+	    exodm_db_account:add_user(AID, Key),
 	    insert(Key,fullname,      binary_opt(fullname,Options)),
 	    insert(Key,phone,         binary_opt(phone,Options)),
 	    insert(Key,email,         binary_opt(email,Options)),
@@ -211,6 +217,16 @@ exist_(Tab, Key) ->
 	[] -> false;
 	[_] -> true
     end.
+
+list_users(N, Prev) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(table(),
+				 N, exodm_db:to_binary(Prev),
+				 fun(Key) ->
+					 lookup(Key)
+				 end)
+      end).
 
 
 list_user_keys() ->

@@ -375,18 +375,29 @@ start_rpc_client(Cfg) ->
     ?assertMatch({true,Auth}, {is_list(Auth), Auth}),
     Apps = [exo, bert, gproc, kvdb, exoport],
     ?debugVal(Apps),
-    [{A,ok} = {A, application:load(A)} || A <- Apps],
+    [{A,ok} = {A, ensure_loaded(A)} || A <- Apps],
     [[application:set_env(A, K, V) || {K,V} <- L] ||
 	{A, L} <- [{exoport, [{exodm_address, {"localhost", 9900}},
 			      {bert_port, 9990}]} | Auth]],
     [{A,ok} = {A, application:start(A)} || A <- Apps],
     [{client_auth, Auth} | Cfg].
 
+ensure_loaded(A) ->
+    case application:load(A) of
+	ok -> ok;
+	{error, {already_loaded, A}} ->
+	    ok;
+	Other -> Other
+    end.
+
 stop_rpc_client(_Cfg) ->
     Apps = [exoport, kvdb, bert, gproc, exo],
     [{A,ok} = {A, application:stop(A)} || A <- Apps],
-    [{A,ok} = {A, application:unload(A)} || A <- Apps],
+    [unload_app(A) || A <- Apps],
     ok.
+
+unload_app(A) ->
+    application:unload(A).
 
 %%% ==================================== Client BERT RPC Tests
 
@@ -1099,7 +1110,7 @@ store_os_pid(Cfg) ->
     io:fwrite(user, "store_os_pid(); Pid = ~p~n", [Pid]),
     {dir, D} = lists:keyfind(dir, 1, Cfg),
     ok = file:write_file(
-	   File = filename:join(D, "curpid.data"), list_to_binary(D)),
+	   File = filename:join(D, "curpid.data"), list_to_binary(Pid)),
     io:fwrite(user, "wrote ~p to file ~p~n", [Pid, File]).
 
 

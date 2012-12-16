@@ -10,6 +10,9 @@
 -export([new/1, update/2, lookup/1, lookup_by_name/1, exist/1]).
 -export([create_role/3]).
 -export([register_protocol/2, is_protocol_registered/2]).
+-export([list_accounts/2,
+	 list_users/3,
+	 list_admins/3]).
 -export([list_account_keys/0]).
 -export([fold_accounts/2]).
 -export([list_users/1, list_users/2]).
@@ -21,9 +24,19 @@
 -export([key/1,
 	 table/0]).
 -export([init/0]).
+
+%% callbacks
+-export([add_user/2,
+	 remove_user/2]).
+
 -import(exodm_db, [binary_opt/2, to_binary/1]).
 
 -define(TAB, <<"acct">>).
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-include("../test/feuerlabs_eunit.hrl").
+-endif.
 
 init() ->
     exodm_db:in_transaction(
@@ -81,6 +94,50 @@ new_(Options) ->
     %% 		  end, proplists:get_all_values(alias, Options)),
     %% add_user(AID, AdminUName, _RID = 1),  % must come after adding the user
     {ok, AIDVal}.
+
+add_user(AID0, UID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    UID = exodm_db:encode_id(UID0),
+    kvdb_conf:write(
+      table(), {kvdb_conf:join_key([AID,<<"users">>,UID]), [], <<>>}).
+
+remove_user(AID0, UID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    UID = exodm_db:encode_id(UID0),
+    Tab = table(),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      AdminParent = kvdb_conf:join_key(AID, <<"admins">>),
+	      case only_child(Tab, AdminParent, UID) of
+		  true -> error(last_admin);
+		  false ->
+		      kvdb_conf:delete(
+			Tab, kvdb_conf:join_key([AID, <<"users">>, UID])),
+		      kvdb_conf:delete(
+			Tab, kvdb_conf:join_key([AID, <<"admins">>, UID]))
+	      end
+      end).
+
+only_child(Tab, Parent, UID) ->
+    case kvdb_conf:first_child(Tab, Parent) of
+	{ok, Key} ->
+	    case lists:reverse(kvdb_conf:split_key(Key)) of
+		[UID|_] ->
+		    case kvdb_conf:next_child(Tab, Key) of
+			done ->
+			    true;
+			{ok, _} ->
+			    false
+		    end;
+		_ ->
+		    false
+	    end;
+	done ->
+	    %% Shouldn't happen, but strictly speaking, UID is not the only
+	    %% child.
+	    false
+    end.
+
 
 initial_admin() ->
     [{descr, "initial admin"},
@@ -289,6 +346,43 @@ exist_(Key) ->
 	[_] -> true
     end.
 
+list_accounts(N, Prev) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(table(),
+				 N, exodm_db:to_binary(Prev),
+				 fun(Key) ->
+					 lookup(Key)
+				 end)
+      end).
+
+list_users(AID0, N, Prev) ->
+    AID = exodm_db:account_id_key(AID0),
+    FullPrev = kvdb_conf:join_key([AID, <<"users">>, exodm_db:to_binary(Prev)]),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(
+		table(),
+		N, FullPrev,
+		fun(Key) ->
+			lists:last(kvdb_conf:split_key(Key))
+		end)
+      end).
+
+list_admins(AID0, N, Prev) ->
+    AID = exodm_db:account_id_key(AID0),
+    FullPrev = kvdb_conf:join_key([AID, <<"admins">>, exodm_db:to_binary(Prev)]),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(table(),
+				 N, FullPrev,
+				 fun(Key) ->
+					 lists:last(kvdb_conf:split_key(Key))
+				 end)
+      end).
+
+
+
 list_account_keys() ->
     lists:reverse(fold_accounts(fun(AID, Acc) ->
 					[AID|Acc]
@@ -393,3 +487,45 @@ incr_request_id(AID0) ->
 incr_transaction_id(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     kvdb_conf:update_counter(?TAB, exodm_db:join_key(AID, <<"__last_tid">>), 1).
+
+
+%%% EUnit
+-ifdef(TEST).
+
+acct_test_() ->
+    {setup,
+     fun() ->
+	     ?debugVal(application:start(gproc)),
+	     ?debugVal(application:start(crypto)),
+	     ?debugVal(application:start(bcrypt)),
+	     ?debugVal(application:start(kvdb)),
+	     ?debugVal(kvdb_conf:open(undefined, [{backend, ets}])),
+	     ?debugVal(exodm_db:init())
+     end,
+     fun(_) ->
+	     application:stop(kvdb),   application:unload(kvdb),
+	     application:stop(gproc),  application:unload(gproc),
+	     application:stop(bcrypt), application:unload(bcrypt),
+	     application:stop(crypto), application:unload(crypto)
+
+     end,
+     [
+      ?_test(?dbg(test_new()))
+     ]}.
+
+test_new() ->
+    {ok, AID} = new([{name, <<"test1">>},
+		     {admin, [{uname, <<"u1">>},
+			      {alias, <<"u">>},
+			      {fullname, <<"Mr U">>},
+			      {password, <<"pwd">>}]}]),
+    AllTabs = kvdb:list_tables(kvdb_conf),
+    lists:all(fun(T) ->
+		      lists:member(T, AllTabs)
+	      end, [exodm_db_device:table(AID),
+		    exodm_db_group:table(AID),
+		    exodm_db_config:table(AID),
+		    exodm_db_device_type:table(AID)]),
+    ok.
+
+-endif.
