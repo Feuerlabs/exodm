@@ -272,13 +272,7 @@ json_rpc_({call, M, <<"list-devices">>,
     Res =
 	exodm_db:in_transaction(
 	  fun(_) ->
-		  exodm_db:list_next(exodm_db_device:table(AID), N, Prev,
-				     fun(Key) ->
-					     [DID|_] =
-						 kvdb_conf:split_key(Key),
-					     exodm_db_device:lookup(
-					       AID, DID)
-				     end)
+		  exodm_db_device:list_next(AID, N, Prev)
 	  end),
     ?debug("devices = ~p~n", [Res]),
     {ok, [{'devices',

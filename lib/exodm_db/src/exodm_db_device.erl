@@ -8,7 +8,7 @@
 -module(exodm_db_device).
 
 -export([init/1]).
--export([new/3, update/3, lookup/2, lookup_attr/3,
+-export([new/3, update/3, lookup/2, lookup_attr/3, list_next/3,
 	 delete/2, delete_devices/2,
 	 add_config_set/3, remove_config_set/3, list_config_sets/2,
 	 yang_modules/2,
@@ -330,6 +330,12 @@ protocol(AID0, DID0) ->
 	    end
     end.
 
+list_next(AID, N, Prev) ->
+    exodm_db:list_next(table(AID), N, Prev,
+		       fun(Key) ->
+			       [DID|_] = kvdb_conf:split_key(Key),
+			       lookup(AID, DID)
+		       end).
 
 lookup(AID, DID) ->
     exodm_db:in_transaction(

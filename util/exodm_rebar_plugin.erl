@@ -3,6 +3,7 @@
 -export(['post_create-node'/2,
 	 post_generate/2]).
 
+
 'post_create-node'(Config, _File) when element(1,Config)==config ->
     %% Rebar really should export some accessor functions
     %% for the config record

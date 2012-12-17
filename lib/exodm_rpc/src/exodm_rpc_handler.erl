@@ -4,6 +4,7 @@
 -export([handler_session/1]).
 -export([notification/5, notification/6,    % don't use notification/6!
 	 queue_message/5]).
+-export([int_json_rpc/1]).
 
 -export([device_sessions/1, device_sessions/2]).
 -export([add_device_session/2, add_device_session/3]).
@@ -71,7 +72,7 @@ handler_session(Arg) ->
 		  ?debug("handler_session(~p)~n", [Arg]),
 		  Peer = peername(Arg#arg.clisock),
 		  {ok,{IP,_}} = Peer,
-		  Arg2=Arg#arg{state = [{ip, IP}]},
+		  Arg2=Arg#arg{state = [{ip, IP}, {client,json_rpc}]},
 		  yaws_rpc:handler_session(Arg2, {?MODULE, web_rpc})
 	      catch
 		  error:E ->
@@ -86,11 +87,34 @@ peername({ssl, S})            -> ssl:peername(S);
 peername({sslsocket,_,_} = S) -> ssl:peername(S);
 peername(S)                   -> inet:peername(S).
 
+int_json_rpc(Req) ->
+    try kvdb_conf:in_transaction(
+	  fun(Db) ->
+		  case web_rpc_(Db, [{client, erlang_json}], Req) of
+		      {true, {response, Resp}} ->
+			  {true, Resp};
+		      Other -> Other
+		  end
+	  end)
+    catch
+	error:E ->
+	    ?error("*** ERROR! ~p:int_json_rpc(~p)~n"
+		   "  E = ~p~n"
+		   "  Trace = ~p~n",
+		   [?MODULE, Req, E, erlang:get_stacktrace()]),
+	    {false, error_response({internal_error,
+				    lists:flatten(io_lib:format("~p", [E]))})};
+	throw:{error_response, Err, Data} ->
+	    {false, error_response({Err, Data})}
+    end.
 
 web_rpc(St, Req, Session) ->
     try kvdb_conf:in_transaction(
 	  fun(Db) ->
-		  web_rpc_(Db, St, Req, Session)
+		  case web_rpc_(Db, St, Req) of
+		      {true, Response} -> {true, 0, Session, Response};
+		      Other -> Other
+		  end
 	  end)
     catch
 	error:E ->
@@ -104,12 +128,12 @@ web_rpc(St, Req, Session) ->
 	    {false, error_response({Err, Data})}
     end.
 
-web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
+web_rpc_(Db, InitEnv, {call, Method, Request}) ->
     ?debug("web_rpc: Method = ~p; Request = ~p~n", [Method, Request]),
     AID = exodm_db_session:get_aid(),
     UID = exodm_db_session:get_user(),
     Env0 = [{aid, AID},
-	    {user, UID}],
+	    {user, UID}|InitEnv],
     case json_get_device_id(Request) of
 	{ok, DID} ->
 	    check_if_device_exists(AID, DID),
@@ -127,14 +151,12 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 			   ShortMeth, Module, Request, Spec) of
 			{ok, Attrs, Meta} ->
 			    RPC = {call, Module, ShortMeth, Attrs},
-			%% {verified, {request, Attrs, _} = RPC} ->
 			    ?debug("request verified: ~p~n", [RPC]),
 			    Env2 = get_tid(Attrs, [{yang_meta, Meta}|Env1], AID),
 			    queue_message(
 			      Db, AID, to_device, Env2, RPC),
 			    Response = accept_response(Attrs ++ Env2, Spec),
-			    {true, 0, Session, {response, Response}};
-			%% {not_verified, Reason} ->
+			    {true, {response, Response}};
 			{error, Reason} ->
 			    ?debug("request NOT verified: ~p~n", [Reason]),
 			    Response = error_response(Reason),
@@ -156,13 +178,11 @@ web_rpc_(Db, [{ip, _IP}], {call, Method, Request}, Session) ->
 			++ [{'notification-url', URL} || URL =/= <<>>] ++ Env0,
 		    case validate_request(
 			   ShortMeth, Module, Request, Spec) of
-			%% {verified, RPC} ->
 			{ok, Attrs, Meta} ->
 			    Env2 = get_tid(Attrs, [{yang_meta, Meta}|Env1], AID),
 			    RPC1 = {call, Module, ShortMeth, Attrs},
 			    ?debug("request verified: ~p~n", [RPC1]),
-			    handle_exodm_rpc(Protocol, Env2, RPC1, Session, Spec);
-			%% {not_verified, Reason} ->
+			    handle_exodm_rpc(Protocol, Env2, RPC1, Spec);
 			{error, Reason} ->
 			    ?debug("request NOT verified: ~p~n", [Reason]),
 			    Response = error_response(Reason),
@@ -183,16 +203,16 @@ check_if_device_exists(AID, DID) ->
 		   ["Device ", DID, "doesn't exist"]})
     end.
 
-handle_exodm_rpc(Protocol, Env, RPC, Session, Spec) ->
+handle_exodm_rpc(Protocol, Env, RPC, Spec) ->
     Mod = exodm_rpc_protocol:module(Protocol),
-    ?debug("handle_exodm_rpc(~p, ~p, ~p, ~p); Mod = ~p~n",
-	   [Protocol, Env, RPC, Session, Mod]),
+    ?debug("handle_exodm_rpc(~p, ~p, ~p); Mod = ~p~n",
+	   [Protocol, Env, RPC, Mod]),
     try Mod:json_rpc(RPC, Env) of
 	{ok, Result} = _OK when is_list(Result) ->
 	    ?debug("~p:json_rpc(...) -> ~p~n", [?MODULE, _OK]),
 	    Resp = success_response(Result, Env, RPC, Spec),
 	    ?debug("Resp = ~p~n", [Resp]),
-	    {true, 0, Session, {response, Resp}};
+	    {true, {response, Resp}};
 	{error, Err} = _Error ->
 	    ?debug("~p:json_rpc(...) -> ~p~n", [?MODULE, _Error]),
 	    {false, error_response(convert_error(Err, RPC))};
