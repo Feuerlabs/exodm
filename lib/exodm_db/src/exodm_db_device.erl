@@ -556,6 +556,8 @@ encode_value(<<"latitude">>, L) when is_number(L) ->
     exodm_db:float_to_bin(L);
 encode_value(<<"longitude">>, L) when is_number(L) ->
     exodm_db:float_to_bin(L);
+encode_value(<<"session-timeout">>, T) ->
+    list_to_binary(integer_to_list(T));
 encode_value(_, V) ->
     to_binary(V).
 
@@ -563,6 +565,8 @@ decode_value(<<"latitude">>, Bin) ->
     exodm_db:bin_to_float(Bin);
 decode_value(<<"longitude">>, Bin) ->
     exodm_db:bin_to_float(Bin);
+decode_value(<<"session-timeout">>, Bin) ->
+    list_to_integer(binary_to_list(Bin));
 decode_value(_, Bin) ->
     Bin.
 
@@ -620,6 +624,7 @@ add_groups_(Tab, AID, DID, Groups) ->
       end, Groups).
 
 do_add_group(AID0, DID0, GID0) ->
+    ?debug("~p:do_add_group(AID=~p, DID=~p, GID=~p)~n", [?MODULE,AID0,DID0,GID0]),
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     GID = exodm_db:group_id_key(GID0),
@@ -716,7 +721,16 @@ gid_value(GID) ->
     <<(exodm_db:group_id_num(GID)):32>>.
 
 read(Tab, Key, Item) ->
-    read_(Tab, Item, exodm_db:join_key([Key, to_binary(Item)])).
+    read_(Tab, Item, exodm_db:join_key(attr_key(Key, to_binary(Item)))).
+
+attr_key(Key, <<"did">>        ) -> [Key, <<"did">>];
+attr_key(Key, <<"device-id">>  ) -> [Key, <<"did">>];
+attr_key(Key, <<"device-type">>) -> [Key, <<"device-type">>];
+attr_key(Key, <<"server-key">> ) -> [Key, <<"server-key">>];
+attr_key(Key, <<"device-key">> ) -> [Key, <<"device-key">>];
+attr_key(Key, <<"protocol">>   ) -> [Key, <<"protocol">>];
+attr_key(Key, A) -> [Key, <<"a">>, A].
+
 
 %% read(Tab, Key, Sub, Item) ->
 %%     read_(Tab, Item, exodm_db:join_key([Key, Sub, to_binary(Item)])).

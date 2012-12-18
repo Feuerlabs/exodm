@@ -185,6 +185,7 @@ remove_members_from_groups(AID0, GIDs, DIDs) ->
       end).
 
 add_device(AID0, GID0, DID) ->
+    ?debug("~p:add_device(~p, ~p, ~p)~n", [?MODULE, AID0, GID0, DID]),
     {Tab, GID} = tab_and_gid(AID0, GID0),
     Key = exodm_db:join_key([GID, <<"devices">>, DID]),
     kvdb_conf:write(Tab, {Key, [], <<>>}),
