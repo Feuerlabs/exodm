@@ -630,7 +630,8 @@ json_lookup_device(_Cfg) ->
 	       {struct,[{"result", 0},
 			{"devices",
 			 {array, [{struct, [{"dev-id", "y00000001"},
-					    {"device-type", "type1"}
+					    {"device-type", "type1"},
+					    {"session-timeout", 0}
 					    %% {"protocol", "exodm_bert"}
 					   ]}]}}
 		       ]}},
