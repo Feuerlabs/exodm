@@ -9,6 +9,7 @@
 
 -export([new/1, update/2, lookup/1, lookup_by_name/1, exist/1]).
 -export([create_role/3]).
+-export([create_exodm_account/0]).
 -export([register_protocol/2, is_protocol_registered/2]).
 -export([list_accounts/2,
 	 list_users/3,
@@ -48,6 +49,36 @@ table() ->
     ?TAB.
 
 %%
+%% Setup exodm account if needed
+%% called from exodm_db:init - after other init!
+%%
+create_exodm_account() ->
+    exodm_db:in_transaction(
+      fun(Db) ->
+	      case lookup_by_name(<<"exodm">>) of
+		  [] ->
+		      create_exodm_account_(Db);
+		  [_] ->
+		      ok
+	      end
+      end).
+
+create_exodm_account_(_Db) ->
+    exodm_db_session:set_trusted_proc(),
+    R=
+	new(
+	  [
+	   {name, <<"exodm">>},
+	   {root, true},
+	   {admin, [
+		   {uname, <<"exodm-admin">>},
+		   {fullname, <<"Administrator">>},
+		   {password, atom_to_binary(erlang:get_cookie(),latin1)}
+		   ]}]),
+    exodm_db_session:unset_trusted_proc(),
+    R.
+    
+%%
 %% /<aid>/name  = <AccountName>
 %% /<aid>/admin = <UID>
 %%
@@ -67,6 +98,10 @@ new_(Options) ->
 		   {_, Os} when is_list(Os) ->
 		       Os
 	       end,
+    Root = case exodm_db_session:is_trusted_proc() of
+	       true -> proplists:get_bool(root, Options);
+	       false -> false
+	   end,
     AID = exodm_db_system:new_aid(),
     Key = exodm_db:escape_key(AID),
     exodm_db_group:init(AID),
@@ -81,7 +116,7 @@ new_(Options) ->
 	       end,
     insert(Key, name, AcctName),
     exodm_db_user:new(AID, AdminUName, UserOpts),
-    {ok, _RID} = t_create_role_(AID, AdminUName, initial_admin()),
+    {ok, _RID} = t_create_role_(AID, AdminUName, initial_admin(Root)),
     UNameKey = to_binary(AdminUName),
     insert(exodm_db:join_key(Key, <<"admins">>), UNameKey, AdminUName),
     exodm_db_yang:init(AID),
@@ -139,7 +174,10 @@ only_child(Tab, Parent, UID) ->
     end.
 
 
-initial_admin() ->
+initial_admin(true) ->
+    [{descr, "initial root user"},
+     {access, {<<"all">>, <<"root">>}}];
+initial_admin(false) ->
     [{descr, "initial admin"},
      {access, {<<"all">>, <<"admin">>}}].
 
@@ -230,11 +268,17 @@ group_exists(AID, GID) ->
 	    true
     end.
 
-valid_access(A) ->
-    case lists:member(A, [<<"none">>, <<"admin">>, <<"config">>, <<"exec">>]) of
+valid_access(<<"none">>) -> true;
+valid_access(<<"config">>) -> true;
+valid_access(<<"exec">>) -> true;
+valid_access(<<"admin">>) -> true;
+valid_access(<<"root">>) ->
+    case exodm_db_session:is_trusted_proc() of
 	true -> true;
-	false -> error({invalid_access, A})
-    end.
+	false -> error({invalid_access, <<"roor">>})
+    end;
+valid_access(A) ->
+    error({invalid_access, A}).
 
 %% add_user(AID0, UName, RID) ->
 %%     AID = check_access(AID0),
@@ -469,7 +513,7 @@ check_access(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     UName = exodm_db_session:get_user(),
     case UName of
-	superuser -> AID;
+	root -> AID;
 	_ ->
 	    case exodm_db:read(
 		   ?TAB,exodm_db:join_key([AID, <<"admins">>,

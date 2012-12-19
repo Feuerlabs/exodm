@@ -355,7 +355,7 @@ is_exodm_method(Method, AID) ->
 std_specs() ->
     %% FIXME: "exodm" should be retired and replaced by "exosense"
     %% (by name, mainly; the two specs shall be merged into one)
-    [<<"exodm">>, <<"exosense">>].
+    [<<"exodm">>, <<"exosense">>, <<"exodm_admin">>].
 
 json_get_device_id({struct, L}) ->
     case lists:keyfind("device-id", 1, L) of

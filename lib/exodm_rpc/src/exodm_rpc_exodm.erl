@@ -481,6 +481,20 @@ json_rpc_({call, M, <<"list-device-group-members">>,
     ?debug("device group members = ~p~n", [Res]),
     {ok, [{'device-group-members', {array, Res}}]};
 
+%% Authenticated by builting user exodm! only allowed using SSL?
+%% create-account
+json_rpc_({call, <<"exodm_admin">>, <<"create-account">>,
+	   [{'name', Name, _}|Opts] = _Cfg}, _Env) ->
+    ?debug("~p:json_rpc(create-account, ~p) config: ~p~n",
+	   [?MODULE, Name, _Cfg]),
+    %% CHECK that we are a super user !
+    %% exodm_db_account([{name,Name}])
+    {ok, result_code(ok)};
+
+%% update-account
+%% delete-account
+%% list-accounts
+
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p ~n", [ ?MODULE, RPC ]),
     {ok, result_code('validation-failed')}.

@@ -198,7 +198,7 @@ remove_device(AID0, GID0, DID) ->
 
 device_is_deleted(AID0, DID0, GIDs) ->
     AID = exodm_db:account_id_key(AID0),
-    Tab = table(AID),
+    %% Tab = table(AID),
     DID = exodm_db:encode_id(DID0),
     exodm_db:in_transaction(
       fun(_) ->

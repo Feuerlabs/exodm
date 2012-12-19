@@ -44,16 +44,8 @@ run_rfzone() ->
     exodm_db:in_transaction(fun(_) -> run_rfzone_() end).
 
 run_rfzone_() ->
-    {ok, AID} = exodm_db_account:new(
-		  [{name, <<"seazone">>},
-		   {admin, [
-			    {uname, <<"seazone">>},
-			    {fullname, <<"Seazone">>},
-			    {password, <<"seazone">>}
-			   ]}]),
-    {ok, GID} = exodm_db_group:new(
-		  AID, [{name, <<"seazone">>},
-			{url, "http://localhost:8080/exodm/callback"}]),
+    {ok, AID} = create_account(seazone),
+    {ok, GID} = create_group(seazone, AID),
     store_rfzone_yang(),
     exodm_db_device:new(AID,
 			<<"x00000001">>,
@@ -64,6 +56,16 @@ run_rfzone_() ->
 			 {groups, [GID]},
 			 {yang, <<"rfzone.yang">>}
 			]).
+
+
+run_iodev() ->
+    exodm_db:in_transaction(fun(Db) -> run_iodev_(Db) end).
+
+run_iodev_(Db) ->
+    {ok, AID} = create_account(fl),
+    {ok, _GID} = create_group(fl, AID),
+    store_exoio_yang(Db).
+
 
 run_ga() ->
     exodm_db:in_transaction(fun(Db) -> run_ga_(Db) end),
@@ -80,12 +82,40 @@ create_account(ga) ->
 			     {uname, <<"ga">>},
 			     {fullname, <<"Getaround">>},
 			     {password, <<"wewontechcrunch2011">>}
+			    ]}]);
+create_account(fl) ->
+    {ok, _AID} = exodm_db_account:new(
+		   [
+		    {name, <<"feuerlabs">>},
+		    {admin, [
+			     {uname, <<"fl">>},
+			     {fullname, <<"FeuerLabs Inc">>},
+			     {password, <<"1234">>}
+			    ]}]);
+create_account(seazone) ->
+    {ok, _AID} = exodm_db_account:new(
+		   [
+		    {name, <<"seazone">>},
+		    {admin, [
+			     {uname, <<"seazone">>},
+			     {fullname, <<"Seazone AB">>},
+			     {password, <<"seazone">>}
 			    ]}]).
 
 create_group(ga, AID) ->
     {ok, _GID} = exodm_db_group:new(
 		   AID, [{name, <<"gagroup">>},
-			 {url, "https://ga:wewontechcrunch2011@localhost:8080/exodm/callback"}]).
+			 {url, "https://ga:wewontechcrunch2011@localhost:8080/exodm/callback"}]);
+create_group(fl, AID) ->
+    {ok, _GID} = exodm_db_group:new(
+		   AID, [{name, <<"flgroup">>},
+			 {url, "https://localhost:8080/exodm/callback"}]);
+create_group(seazone,AID) ->
+    {ok, _GID} = exodm_db_group:new(
+		   AID, [{name, <<"seazone">>},
+			 {url, "http://localhost:8080/exodm/callback"}]).
+
+
 
 create_device(AID, GID, 4711) ->
     exodm_db_device:new(AID,
@@ -176,34 +206,13 @@ store_rfzone_yang() ->
 		  filename:join(code:priv_dir(rfzone), "rfzone.yang")),
     exodm_db_yang:write("rfzone.yang", Bin).
 
-run_ga_old() ->
-    exodm_db:in_transaction(fun(_) -> run_ga_old_() end).
 
-run_ga_old_() ->
-    exodm_db_group:new(?GA_CUSTOMER_ID, 1,
-		       [{name, "default"},{url,  ""}]),
-    exodm_db_group:new(?GA_CUSTOMER_ID, 2,
-		       [{name, "group1"},
-			{url, "http://localhost:8080/ck3/test_callback"}]),
-    exodm_db_user:new(?GA_CUSTOMER_ID, <<"ga">>,
-		      [{name,"ga"},
-		       {'__password', <<"ga">>},
-		       {fullname, "Get Around"},
-		       {access, {1,?GA_CUSTOMER_ID,1,rw}},
-		       {access, {2,?GA_CUSTOMER_ID,2,rw}}
-		      ]),
-    lists:foreach(
-      fun(DID) ->
-	      exodm_db_device:new(?GA_CUSTOMER_ID, DID,
-				  [{'device-key',<<2,0,0,0,0,0,0,0>>},
-				   {'server-key',<<1,0,0,0,0,0,0,0>>},
-				   {msisdn,"0701"++integer_to_list(DID)},
-				   {group, {1,2}}
-				  ]),
-	      exodm_ck3_config:new(?GA_CUSTOMER_ID, DID, candidate, []),
-	      exodm_ck3_config:new(?GA_CUSTOMER_ID, DID, running, [])
-      end, lists:seq(100, 123)).
-
+store_exoio_yang(Db) ->
+    exodm_db_session:set_auth_as_user(<<"fl">>, Db),
+    {ok, Bin} = file:read_file(
+		  filename:join([code:lib_dir(exoiodev),"yang","exoio.yang"])),
+    exodm_db_yang:write("exoio.yang", Bin).
+    
 run_tony() ->
     exodm_db:in_transaction(fun(_) -> run_tony_() end).
 

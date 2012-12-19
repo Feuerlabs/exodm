@@ -10,7 +10,7 @@
 
 -export([set_auth_as_user/1, set_auth_as_user/2, set_auth_as_user/3,
          set_auth_as_device/1,
-         set_trusted_proc/0,
+         set_trusted_proc/0,unset_trusted_proc/0,
          is_trusted_proc/0]).
 
 -export([start_link/0,
@@ -196,7 +196,7 @@ if_active_({UName,_,_} = X, Ret) ->
     end;
 if_active_(_, _) ->
     case is_trusted_proc() of
-        true -> superuser;
+        true -> root;  %% still necessary ?
         false ->
             erlang:error(unauthorized)
     end.
