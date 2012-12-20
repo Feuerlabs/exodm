@@ -128,7 +128,7 @@ web_rpc(St, Req, Session) ->
 	    {false, error_response({Err, Data})}
     end.
 
-web_rpc_(Db, InitEnv, {call, Method, Request}) ->
+web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
     ?debug("web_rpc: Method = ~p; Request = ~p~n", [Method, Request]),
     AID = exodm_db_session:get_aid(),
     UID = exodm_db_session:get_user(),
@@ -136,6 +136,10 @@ web_rpc_(Db, InitEnv, {call, Method, Request}) ->
 	    {user, UID}|InitEnv],
     case json_get_device_id(Request) of
 	{ok, DID} ->
+	    %% We assume if it doesn't have a device-id argument, it can't be
+	    %% a device-specific RPC. However, the presence of device-id doesn't
+	    %% guarantee that it is, so we check for a device-specific method
+	    %% first; if that fails, we check system rpcs.
 	    check_if_device_exists(AID, DID),
 	    ?debug("found device-id: ~p~n", [DID]),
 	    case find_method_spec(Method, AID, DID) of
@@ -163,36 +167,40 @@ web_rpc_(Db, InitEnv, {call, Method, Request}) ->
 			    {false, Response}
 		    end;
 		error ->
-		    {false, error_response({method_not_found, Method})}
+		    web_rpc_system_(Db, AID, Env0, RPC0)
 	    end;
 	error ->
-	    %% Check if this is a general RPC, supported by one of the system
-	    %% specs. Otherwise, it's an error.
-	    ?debug("no device-id~n", []),
-	    case is_exodm_method(Method, AID) of
-		{ok, Yang, Module, ShortMeth, Protocol, URL, Spec} ->
-		    ?debug("ExoDM method: ~p; Module = ~p; ShortM = ~p~n",
-			   [Method, Module, ShortMeth]),
-		    Env1 = [{yang, Yang},
-			    {protocol, Protocol}]
-			++ [{'notification-url', URL} || URL =/= <<>>] ++ Env0,
-		    case validate_request(
-			   ShortMeth, Module, Request, Spec) of
-			{ok, Attrs, Meta} ->
-			    Env2 = get_tid(Attrs, [{yang_meta, Meta}|Env1], AID),
-			    RPC1 = {call, Module, ShortMeth, Attrs},
-			    ?debug("request verified: ~p~n", [RPC1]),
-			    handle_exodm_rpc(Protocol, Env2, RPC1, Spec);
-			{error, Reason} ->
-			    ?debug("request NOT verified: ~p~n", [Reason]),
-			    Response = error_response(Reason),
-			    {false, Response}
-		    end;
-		error ->
-		    ?debug("is_exodm_method(~p, ~p) -> error~n", [Method,AID]),
-		    {false, error_response({method_not_found, Method})}
-	    end
+	    web_rpc_system_(Db, AID, Env0, RPC0)
     end.
+
+web_rpc_system_(Db, AID, Env0, {call, Method, Request}) ->
+    %% Check if this is a general RPC, supported by one of the system
+    %% specs. Otherwise, it's an error.
+    ?debug("no device-id~n", []),
+    case is_exodm_method(Method, AID) of
+	{ok, Yang, Module, ShortMeth, Protocol, URL, Spec} ->
+	    ?debug("ExoDM method: ~p; Module = ~p; ShortM = ~p~n",
+		   [Method, Module, ShortMeth]),
+	    Env1 = [{yang, Yang},
+		    {protocol, Protocol}]
+		++ [{'notification-url', URL} || URL =/= <<>>] ++ Env0,
+	    case validate_request(
+		   ShortMeth, Module, Request, Spec) of
+		{ok, Attrs, Meta} ->
+		    Env2 = get_tid(Attrs, [{yang_meta, Meta}|Env1], AID),
+		    RPC1 = {call, Module, ShortMeth, Attrs},
+		    ?debug("request verified: ~p~n", [RPC1]),
+		    handle_exodm_rpc(Protocol, Env2, RPC1, Spec);
+		{error, Reason} ->
+		    ?debug("request NOT verified: ~p~n", [Reason]),
+		    Response = error_response(Reason),
+		    {false, Response}
+	    end;
+	error ->
+	    ?debug("is_exodm_method(~p, ~p) -> error~n", [Method,AID]),
+	    {false, error_response({method_not_found, Method})}
+    end.
+
 
 check_if_device_exists(AID, DID) ->
     case exodm_db_device:exist(AID, DID) of
