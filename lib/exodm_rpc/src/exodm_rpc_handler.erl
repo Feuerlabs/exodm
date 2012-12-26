@@ -369,10 +369,16 @@ std_specs() ->
 
 json_get_device_id({struct, L}) ->
     case lists:keyfind("device-id", 1, L) of
+	{_, {array, _}} ->
+	    %% exodm RPC addressing multiple devices
+	    error;
 	{_, ID} ->
 	    {ok, list_to_binary(ID)};
 	false ->
 	    case lists:keyfind("dev-id", 1, L) of
+		{_, {array, _}} ->
+		    %% exodm RPC addressing multiple devices
+		    error;
 		{_, ID} ->
 		    {ok, list_to_binary(ID)};
 		false ->
