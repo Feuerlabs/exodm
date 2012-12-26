@@ -253,8 +253,9 @@ json_rpc_({call, M, <<"push-config-set">>,
 	      end
       end);
 
-json_rpc_({call, M, <<"provision-device">>,
-	   [{'device-id', DID, _}|Opts] = _Cfg} = _RPC, _Env) when ?EXO(M) ->
+json_rpc_({call, _M, <<"provision-device">>,
+	   [{DevId, DID, _}|Opts] = _Cfg} = _RPC, _Env)
+  when DevId=='dev-id'; DevId=='device-id' ->
     ?debug("~p:json_rpc(provision-device) attributes:~p ~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
