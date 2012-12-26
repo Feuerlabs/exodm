@@ -140,7 +140,9 @@ web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
 	    %% a device-specific RPC. However, the presence of device-id doesn't
 	    %% guarantee that it is, so we check for a device-specific method
 	    %% first; if that fails, we check system rpcs.
-	    check_if_device_exists(AID, DID),
+	    %%
+	    %% Let's try not checking whether device exists.
+	    %% check_if_device_exists(AID, DID),
 	    ?debug("found device-id: ~p~n", [DID]),
 	    case find_method_spec(Method, AID, DID) of
 		{ok, Yang, Module, ShortMeth, Protocol, URL, Spec} ->
