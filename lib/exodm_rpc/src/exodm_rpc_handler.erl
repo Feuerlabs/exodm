@@ -370,7 +370,12 @@ json_get_device_id({struct, L}) ->
 	{_, ID} ->
 	    {ok, list_to_binary(ID)};
 	false ->
-	    error
+	    case lists:keyfind("dev-id", 1, L) of
+		{_, ID} ->
+		    {ok, list_to_binary(ID)};
+		false ->
+		    error
+	    end
     end.
 
 annotate_specs(Specs) ->
