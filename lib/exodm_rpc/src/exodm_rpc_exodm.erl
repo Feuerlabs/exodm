@@ -253,8 +253,9 @@ json_rpc_({call, M, <<"push-config-set">>,
 	      end
       end);
 
-json_rpc_({call, M, <<"provision-device">>,
-	   [{'device-id', DID, _}|Opts] = _Cfg} = _RPC, _Env) when ?EXO(M) ->
+json_rpc_({call, _M, <<"provision-device">>,
+	   [{DevId, DID, _}|Opts] = _Cfg} = _RPC, _Env)
+  when DevId=='dev-id'; DevId=='device-id' ->
     ?debug("~p:json_rpc(provision-device) attributes:~p ~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
@@ -377,14 +378,33 @@ json_rpc_({call, M, <<"delete-device-group">>,
     end;
 
 json_rpc_({call, M, <<"list-device-groups">>,
-	   [{n, N, _}, {previous, Prev, _}] = _Cfg} = _RPC, _Env) when ?EXO(M) ->
+	   [{n, N, _},
+	    {previous, Prev0, _}|Tail] = _Cfg} = _RPC, _Env) when ?EXO(M) ->
     ?debug("~p:json_rpc(delete-device-group) config: ~p~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
+    Prev = erlang:max(exodm_db:group_id_key(Prev0), <<"__last_gid">>),
+    {Tab,FullPrev,F} =
+	case Tail of
+	    [{'device-id', DID, _}] ->
+		{exodm_db_device:table(AID),
+		 kvdb_conf:join_key([DID, <<"groups">>, Prev]),
+		 fun(Key) ->
+			 Grp = lists:last(kvdb_conf:split_key(Key)),
+			 exodm_db_group:lookup(AID, Grp)
+		 end};
+	    [] ->
+		{exodm_db_group:table(AID),
+		 Prev,
+		 fun(Key) ->
+			 [Grp] = kvdb_conf:split_key(Key),
+			 exodm_db_group:lookup(AID, Grp)
+		 end}
+	end,
     Res =
 	exodm_db:in_transaction(
 	  fun(_) ->
-		  exodm_db_group:list_groups(AID, N, Prev)
+		  exodm_db:list_next(Tab, N, FullPrev, F)
 	  end),
     ?debug("groups = ~p~n", [Res]),
     {ok, [{'device-groups',
@@ -419,7 +439,8 @@ json_rpc_({call, M, <<"list-device-type-members">>,
 
 
 json_rpc_({call, M, <<"list-config-sets">>,
-	   [{n, N, _}, {previous, Prev, _}] = _Cfg} = _RPC, _Env) when ?EXO(M) ->
+	   [{n, N, _}, {previous, Prev, _}|Tail] = _Cfg} = _RPC, _Env)
+  when ?EXO(M) ->
     ?debug("~p:json_rpc(list-config-sets) args: ~p~n",
 	   [?MODULE, _Cfg]),
     AID = exodm_db_session:get_aid(),
@@ -428,13 +449,29 @@ json_rpc_({call, M, <<"list-config-sets">>,
 	  fun(_) ->
 		  %% FullNext = kvdb_conf:join_key(exodm_db:account_id_key(AID),
 		  %% 				Prev),
-		  exodm_db:list_next(exodm_db_config:table(AID), N, Prev,
-				     fun(Key) ->
-					     [CfgSet|_] =
-						 kvdb_conf:split_key(Key),
-					     exodm_db_config:read_config_set(
-					       AID, CfgSet)
-				     end)
+		  {Tab, FullPrev, F} =
+		      case Tail of
+			  [{'device-id', DID, _}] ->
+			      {exodm_db_device:table(AID),
+			       kvdb_conf:join_key(
+				 [DID, <<"config_set">>, Prev]),
+			       fun(Key) ->
+				       CfgSet = lists:last(
+						  kvdb_conf:split_key(Key)),
+				       exodm_db_config:read_config_set(
+					 AID, CfgSet)
+			       end};
+			  [] ->
+			      {exodm_db_config:table(AID),
+			       Prev,
+			       fun(Key) ->
+				       [CfgSet|_] =
+					   kvdb_conf:split_key(Key),
+				       exodm_db_config:read_config_set(
+					 AID, CfgSet)
+			       end}
+		      end,
+		  exodm_db:list_next(Tab, N, FullPrev, F)
 	  end),
     ?debug("config sets = ~p~n", [Res]),
     {ok, [{'config-sets',

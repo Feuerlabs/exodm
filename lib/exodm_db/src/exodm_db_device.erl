@@ -78,7 +78,7 @@ new_(AID0, ID0, Options) ->
 %% at update, but presence verified in new_/3 above. Thus, below, they are
 %% written if found.
 insert_(Tab, AID, DID, Options) ->
-    insert(Tab,DID, 'did',  exodm_db:decode_id(DID)),
+    insert(Tab,DID, 'device-id',  exodm_db:decode_id(DID)),
     insert_keys(Tab, DID, Options),
     insert_groups(AID, Tab, DID, proplists:get_value(groups, Options, [])),
     insert_device_type(
@@ -344,7 +344,7 @@ lookup(AID, DID) ->
       end).
 
 lookup_(Tab,Key) ->
-    case kvdb_conf:read(Tab, kvdb_conf:join_key(Key, <<"did">>)) of
+    case kvdb_conf:read(Tab, kvdb_conf:join_key(Key, <<"device-id">>)) of
 	{ok, {_, _, _}} ->
 	    [{'dev-id', exodm_db:decode_id(Key)} |
 	     read(Tab,Key,'device-type')  ++
@@ -364,8 +364,13 @@ lookup_attrs(Tab, Key) ->
 			     _ ->
 				 Acc
 			 end
-		 end, [], kvdb_conf:join_key(Key, <<"a">>)),
-    lists:reverse(Res).
+		 end, [], Key),
+    remove_keys(lists:reverse(Res)).
+
+remove_keys(L) ->
+    [Obj || {K,_} = Obj <- L,
+	    K =/= <<"device-key">>,
+	    K =/= <<"server-key">>].
 
 convert_attr({K,V}) ->
     {K, decode_value(K, V)}.
@@ -472,6 +477,18 @@ lookup_position(AID, DID0) ->
 
 dec_ext_key(<<$a, Ia:8/binary, "=", Ix/binary>>) ->
     {<<"a", Ia/binary>>, <<"=", Ix/binary>>};
+dec_ext_key(<<Sep, ID/binary>>) ->
+    case split(Sep, ID) of
+	[AcctName, DID] ->
+	    case exodm_db_account:lookup_by_name(AcctName) of
+		[] ->
+		    error;
+		[AID] ->
+		    {AID, exodm_db:encode_id(DID)}
+	    end;
+	_ ->
+	    error
+    end;
 dec_ext_key(Key) ->
     try
 	AID = exodm_db_session:get_aid(),
@@ -480,6 +497,16 @@ dec_ext_key(Key) ->
 	error:_ ->
 	    error
     end.
+
+split(Sep, Bin) ->
+    split(Sep, Bin, <<>>).
+
+split(C, <<C, Rest/binary>>, Acc) ->
+    [Acc, Rest];
+split(C, <<H, T/binary>>, Acc) ->
+    split(C, T, <<Acc/binary, H>>);
+split(_, <<>>, _) ->
+    [].
 
 
 enc_ext_key(<<$a,_/binary>> = AID, <<$=, _/binary>> = DID) ->
@@ -528,7 +555,7 @@ lookup_keys(AID, DID0) ->
       end}.
 
 exist(AID, DID) ->
-    case read(table(AID), exodm_db:encode_id(DID), did) of
+    case read(table(AID), exodm_db:encode_id(DID), 'device-id') of
 	[] -> false;
 	[_] -> true
     end.
@@ -549,7 +576,7 @@ insert(Tab, Key, Item, Value) ->
 
 insert_attr(Tab, Key, Item, Value) ->
     ItemB = to_binary(Item),
-    Key1 = exodm_db:join_key([Key, <<"a">>, to_binary(Item)]),
+    Key1 = exodm_db:join_key(Key, to_binary(Item)),
     exodm_db:write(Tab, Key1, encode_value(ItemB, Value)).
 
 encode_value(<<"latitude">>, L) when is_number(L) ->
@@ -723,13 +750,14 @@ gid_value(GID) ->
 read(Tab, Key, Item) ->
     read_(Tab, Item, exodm_db:join_key(attr_key(Key, to_binary(Item)))).
 
-attr_key(Key, <<"did">>        ) -> [Key, <<"did">>];
-attr_key(Key, <<"device-id">>  ) -> [Key, <<"did">>];
+attr_key(Key, <<"did">>        ) -> [Key, <<"device-id">>];
+attr_key(Key, <<"dev-id">>     ) -> [Key, <<"device-id">>];
+attr_key(Key, <<"device-id">>  ) -> [Key, <<"device-id">>];
 attr_key(Key, <<"device-type">>) -> [Key, <<"device-type">>];
 attr_key(Key, <<"server-key">> ) -> [Key, <<"server-key">>];
 attr_key(Key, <<"device-key">> ) -> [Key, <<"device-key">>];
 attr_key(Key, <<"protocol">>   ) -> [Key, <<"protocol">>];
-attr_key(Key, A) -> [Key, <<"a">>, A].
+attr_key(Key, A) -> [Key, A].
 
 
 %% read(Tab, Key, Sub, Item) ->
@@ -790,29 +818,49 @@ transform_tab({ok, Key}, T, From, To) ->
 transform_tab(done, _, _, _) ->
     ok.
 
-
 transform_tree(#conf_tree{tree = T} = CT, _, _) ->
     io:fwrite("ConfTree = ~p~n", [CT]),
     NewCT =
 	case lists:keyfind(<<"a">>, 1, T) of
 	    {<<"a">>, L} ->
-		L1 = lists:map(
-		       fun({<<"latitude">> = K, As, <<Lat:32>>}) ->
-			       Latf = lat_int_to_float(Lat),
-			       {K, As, exodm_db:float_to_bin(Latf)};
-			  ({<<"longitude">> = K, As, <<Long:32>>}) ->
-			       Lonf = lon_int_to_float(Long),
-			       {K, As, exodm_db:float_to_bin(Lonf)};
-			  (Obj) ->
-			       Obj
-		       end, L),
-		CT#conf_tree{tree = lists:keyreplace(
-				      <<"a">>, 1, T, {<<"a">>, L1})};
+		rename_did(
+		  CT#conf_tree{tree = lists:keysort(
+					1, lists:keydelete(<<"a">>, 1, T) ++ L)});
 	    false ->
-		skip
+		rename_did(CT)
 	end,
     io:fwrite("NewCT = ~p~n", [NewCT]),
     NewCT.
+
+rename_did(#conf_tree{tree = T} = CT) ->
+    NewT = lists:map(
+	     fun({<<"did">>, As, V}) ->
+		     {<<"device-id">>, As, V};
+		(X) -> X
+	     end, T),
+    CT#conf_tree{tree = NewT}.
+%% transform_tree(#conf_tree{tree = T} = CT, _, _) ->
+%%     io:fwrite("ConfTree = ~p~n", [CT]),
+%%     NewCT =
+%% 	case lists:keyfind(<<"a">>, 1, T) of
+%% 	    {<<"a">>, L} ->
+%% 		L1 = lists:map(
+%% 		       fun({<<"latitude">> = K, As, <<Lat:32>>}) ->
+%% 			       Latf = lat_int_to_float(Lat),
+%% 			       {K, As, exodm_db:float_to_bin(Latf)};
+%% 			  ({<<"longitude">> = K, As, <<Long:32>>}) ->
+%% 			       Lonf = lon_int_to_float(Long),
+%% 			       {K, As, exodm_db:float_to_bin(Lonf)};
+%% 			  (Obj) ->
+%% 			       Obj
+%% 		       end, L),
+%% 		CT#conf_tree{tree = lists:keyreplace(
+%% 				      <<"a">>, 1, T, {<<"a">>, L1})};
+%% 	    false ->
+%% 		skip
+%% 	end,
+%%     io:fwrite("NewCT = ~p~n", [NewCT]),
+%%     NewCT.
 
 
 lat_int_to_float(Lat) -> Lat / 100000.0 - 90.

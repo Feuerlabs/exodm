@@ -84,8 +84,10 @@ exodm_test_() ->
 			       ?my_t(json_delete_config_set3(Cfg1)),
 			       ?my_t(json_update_config_set(Cfg1)),
 			       ?my_t(json_list_config_sets(Cfg1)),
+			       ?my_t(json_list_config_sets_dev(Cfg1)),
 			       ?my_t(json_create_device_group(Cfg1)),
 			       ?my_t(json_list_device_groups(Cfg1)),
+			       ?my_t(json_list_device_groups_dev(Cfg1)),
 			       ?my_t(json_add_device_group_members(Cfg1)),
 			       ?my_t(json_list_device_group_members(Cfg1)),
 			       ?my_t(json_remove_device_group_members(Cfg1)),
@@ -732,6 +734,25 @@ json_list_config_sets(_Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
+json_list_config_sets_dev(_Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:list-config-sets", "1",
+				{struct,[{"n",3},
+					 {"previous",""},
+					 {"device-id", "x00000001"}
+					]}),
+    io:fwrite(user, "~p: list-config-sets -> ~p~n", [?LINE, Reply]),
+    {struct, [{"result",
+	       {struct,[{"config-sets",
+			 {array, [{struct, [{"name", "test1"} | _]},
+				  {struct, [{"name", "test2"} | _]}
+				  ]}
+			}]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+
 json_add_config_set_members(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:add-config-set-members", "1",
@@ -839,6 +860,30 @@ json_list_device_groups(_Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
+json_list_device_groups_dev(_Cfg) ->
+    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+				"exodm:list-device-groups", "1",
+				{struct, [{"n", 3},
+					  {"previous", 0},
+					  {"device-id", "x00000002"}
+					 ]}),
+    io:fwrite(user, "~p: list-device-groups -> ~p~n", [?LINE, Reply]),
+    {struct, [{"result",
+	       {struct,[{"device-groups",
+			 {array, [{struct, [{"gid",1},
+					    {"name", "feuerlabs"},
+					    {"notification-url",_}]},
+				  {struct, [{"gid",2},
+					    {"name", "travelping"},
+					    {"notification-url",_}]}
+				 ]}}
+			]}},
+	      {"id",_},
+	      {"jsonrpc","2.0"}]} = Reply,
+    ok.
+
+
+
 json_add_device_group_members(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:add-device-group-members", "1",
@@ -851,6 +896,7 @@ json_add_device_group_members(_Cfg) ->
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
+
 
 json_list_device_group_members(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
