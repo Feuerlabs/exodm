@@ -308,7 +308,7 @@ json_rpc_({call, M, <<"delete-device-type">>,
 json_rpc_({call, M, <<"list-device-types">>,
 	   [{'n', N, _},
 	    {'previous', Prev, _}]} = _RPC, _Env) when ?EXO(M) ->
-    ?debug("~p:json_rpc(~p)~n", [_RPC]),
+    ?debug("~p:json_rpc(~p)~n", [?MODULE, _RPC]),
     AID = exodm_db_session:get_aid(),
     Res =
 	exodm_db:in_transaction(
