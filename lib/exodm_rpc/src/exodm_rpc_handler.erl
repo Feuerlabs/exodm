@@ -248,7 +248,7 @@ notification(Method, Elems, Env, AID, DID) ->
     YangSpecs = exodm_db_device:yang_modules(AID, DID),
     URLEnv = case lists:keyfind(Yang, 2, YangSpecs) of
 		 {_, _, URL} when URL =/= <<>> ->
-		     [{'notification-url', URL}];
+		     [{'notification-url', URL}, {'request-url', URL}];
 		 _ ->
 		     []
 	     end,
@@ -270,7 +270,7 @@ notification(Method, Elems, Env, AID, DID) ->
 			     {"method", FullMethod},
 			     {"params", {struct, Params}}]},
 	    ?debug("JSON = ~p~n", [JSON]),
-	    post_json(URLEnv ++ Env, JSON);
+	    post_json(notification, URLEnv ++ Env, JSON);
 	{ok, {_, _, {rpc, _, _, SubSpec} = RPC}} ->
 	    {input, _, _, InputSpec} = lists:keyfind(input, 1, SubSpec),
 	    ?debug("Northbound RPC = ~p~n", [RPC]),
@@ -280,7 +280,8 @@ notification(Method, Elems, Env, AID, DID) ->
 			     {"id", make_id(Env, AID)},
 			     {"params", {struct, Params}}]},
 	    ?debug("JSON = ~p~n", [JSON]),
-	    post_json(URLEnv ++ Env, JSON)
+	    post_json(rpc, [{method, FullMethod},
+			    {spec, SubSpec} | URLEnv ++ Env], JSON)
     end.
 
 stop_timer(Env) ->
@@ -452,6 +453,7 @@ validate_request(Method, _Module, {struct, InputArgs},
 	false ->
 	    {error, {invalid_params, no_input_statement}}
     end.
+
 
 queue_message(Db, AID, Tab, Env, {call, _, _, Attrs} = Msg) ->
     queue_message_(Db, AID, Tab, Attrs, Env, Msg);
@@ -686,10 +688,17 @@ comp(_, _) ->
 
 
 
-post_json(Env, JSON) ->
+post_json(Type, Env, JSON) ->
     try
     {_, DID} = lists:keyfind('device-id', 1, Env),
     {_, AID} = lists:keyfind(aid, 1, Env),
+    post_json_(Type, Env, AID, DID, JSON)
+    catch
+	error:Err when Type == notification ->
+	    ?error("CRASH ~p; ~p~n", [Err, erlang:get_stacktrace()])
+    end.
+
+post_json_(notification, Env, AID, DID, JSON) ->
     case [U || {'notification-url', U} <- Env] ++
 	exodm_db_device:lookup_group_notifications(AID, DID) of
 	[] ->
@@ -697,21 +706,60 @@ post_json(Env, JSON) ->
 	    ok;
 	[_|_] = URLs ->
 	    ?debug("Group notifications (~p, ~p): ~p~n", [AID,DID,URLs]),
-	    Body = json2:encode(JSON),
-	    Hdrs = [
-		    {"Content-Length", integer_to_list(iolist_size(Body))},
-		    {"Content-Type", "application/json"},
-		    {"Host", "localhost"}
-		   ],
+	    {Body, Hdrs} = encode_request(JSON),
 	    [post_request(URL, Hdrs, Body) ||
 		URL <- remove_duplicate_urls(URLs)],
 	    ok
-    end
-    catch
-	error:Err ->
-	    ?error("CRASH ~p; ~p~n", [Err, erlang:get_stacktrace()])
+    end;
+post_json_(rpc, Env, AID, DID, JSON) ->
+    case lists:keyfind('request-url', 1, Env) of
+	{_, URL} ->
+	    ?debug("Upstream rpc; URL = ~p~n", [URL]),
+	    {Body, Hdrs} = encode_request(JSON),
+	    process_reply(post_request(URL, Hdrs, Body), Env);
+	false ->
+	    {error, no_request_url}
     end.
 
+process_reply({ok, {{200,_OK},_Hdrs,JSON}}, Env) ->
+    case json2:decode_string(binary_to_list(JSON)) of
+	{ok, {struct, Elems} = Reply} ->
+	    case lists:keyfind("result", 1, Elems) of
+		{_, Result} ->
+		    {_, Spec} = lists:keyfind(spec, 1, Env),
+		    case lists:keyfind(output, 1, Spec) of
+			{output, _, _, OutputSpec} ->
+			    ?debug("validate reply:~nResult = ~p~nSpec = ~p~n",
+				   [Result, OutputSpec]),
+			    case yang_json:validate_rpc_request(
+				   OutputSpec, struct_elems(Result)) of
+				{ok, ValidReturn, _} ->
+				    ValidReturn;
+				{error, Reason} ->
+				    error(Reason)
+			    end;
+			false ->
+			    %% No output defined - let's just return 'ok'
+			    ok
+		    end;
+		_ ->
+		    {error, {unexpected_reply, Reply}}
+	    end;
+	Other ->
+	    {error, {decode_reply, Other}}
+    end.
+
+struct_elems({struct, Elems}) -> Elems.
+
+
+encode_request(JSON) ->
+    Body = json2:encode(JSON),
+    Hdrs = [
+	    {"Content-Length", integer_to_list(iolist_size(Body))},
+	    {"Content-Type", "application/json"},
+	    {"Host", "localhost"}  % will probably be replaced before sending
+	   ],
+    {Body, Hdrs}.
 
 %% Since we can end up with multiple URIs that are virtually identical, as we
 %% form the union of related device groups, we do our best to normalize the

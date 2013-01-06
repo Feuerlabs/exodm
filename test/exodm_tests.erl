@@ -111,7 +111,8 @@ exodm_test_() ->
 			       		 ?my_t(client_ping(Cfg2)),
 			       		 ?my_t(test_notification(Cfg2)),
 			       		 ?my_t(device_json_rpc1(Cfg2)),
-			       		 ?my_t(push_config_set1(Cfg2))
+			       		 ?my_t(push_config_set1(Cfg2)),
+					 ?my_t(upstream_rpc(Cfg2))
 			       		]
 			       	end}
 			      ]
@@ -446,6 +447,34 @@ notification_(Cfg) ->
     [{8898, [Rep]}, {8899, [Rep]}] = Fetched,
     ok.
 
+prep_list_evens(Cfg) ->
+    ask_http_reset(
+      Cfg,
+      [{http_reply,
+	fun(Req) ->
+		{ok, {struct, ReqElems}} =
+		    json2:decode_string(binary_to_list(Req)),
+		{_, "test:list-even"} =
+		    lists:keyfind("method", 1, ReqElems),
+		%% we could perhaps handle "limit" dynamically...
+		{_, {struct,[{"limit",9}]}} =
+		    lists:keyfind("params", 1, ReqElems),
+		{_, ID} = lists:keyfind("id", 1, ReqElems),
+		io:fwrite(user, "Req = ~p~n", [Req]),
+		JSON = json2:encode(
+			 {struct, [{result,
+				    {struct,
+				     [{evens,
+				       {array,[2,4,6,8]}}]}},
+				   {id, ID},
+				   {"jsonrpc","2.0"}]}),
+		Len = list_to_binary(
+			integer_to_list(lists:flatlength(JSON))),
+		<<"HTTP/1.1 200 OK\r\n"
+		  "Content-Type: application/json\r\n"
+		  "Content-Length: ", Len/binary, "\r\n\r\n",
+		  (iolist_to_binary([JSON]))/binary>>
+	end}]).
 
 ask_http_reset(Cfg) ->
     ask_http_reset(Cfg, []).
@@ -1062,6 +1091,12 @@ push_config_set1(Cfg) ->
 			 {"final", true}]}}]} = N,
     ok.
 
+upstream_rpc(Cfg) ->
+    prep_list_evens(Cfg),
+    Reply = exoport:rpc(exodm_rpc, rpc, ["test", "list-even", [{limit,9}]]),
+    io:fwrite(user, "test:list-evens -> ~p~n", [Reply]),
+    {reply, [{evens,[2,4,6,8],_}], []} = Reply,
+    ok.
 
 push_config_set_meth(Args) ->
     push_config_set1 ! {self(), got_push_request, Args},
