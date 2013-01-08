@@ -48,4 +48,14 @@ module test {
       type string;
     }
   }
+
+  rpc list-even {
+    description "RPC that returns a list of even numbers between 0 and limit";
+    input {
+      leaf limit { type uint32; }
+    }
+    output {
+      leaf-list evens { type uint32; }
+    }
+  }
 }

@@ -18,6 +18,7 @@
 -export([to_json_/4]). % for testing
 -export([ping/0,
 	 notification/3,
+	 rpc/3,
 	 do/4]).
 -export([std_specs/0]).
 
@@ -31,6 +32,7 @@
 ping() ->
     pong.
 
+%% Notification from device to server
 notification(Module, Method, Elems) ->
     {did, DID} = exodm_db_session:get_user(),
     AID = exodm_db_session:get_aid(),
@@ -39,6 +41,16 @@ notification(Module, Method, Elems) ->
       Method, Elems, [{yang, Yang},
 		      {'device-id', DID},
 		      {aid, AID}], [], AID, DID).
+
+%% RPC from device to server
+rpc(Module, Method, Elems) ->
+    {did, DID} = exodm_db_session:get_user(),
+    AID = exodm_db_session:get_aid(),
+    Yang = <<(to_binary(Module))/binary, ".yang">>,
+    Env = [{yang, Yang},
+	   {'device-id', DID},
+	   {aid, exodm_db:account_id_key(AID)}],
+    exodm_rpc_handler:notification(Method, Elems, Env, AID, DID).
 
 queue_notification(Module, Type, Env0, Method, Elems) when
       Type == notify; Type == reverse_request ->
