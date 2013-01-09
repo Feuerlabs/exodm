@@ -5,9 +5,9 @@
 %%%     Theory of operations. Packages are stored in a tree structure
 %%%     organized by name version and architecture (in some levels)
 %%%
-%%%     /packages/<Package>/<Version>/<Architecture>/
-%%%     /<aid>/packages/<Package>/<Version>/<Architecture>/
-%%%     /<aid>/devices/<did>/packages/<Package>/<Version>/<Architecture>/
+%%%     /packages/$Package/$Version/$Architecture/
+%%%     /$aid/packages/$Package/$Version/$Architecture/
+%%%     /$aid/devices/$did/packages/$Package/$Version/$Architecture/
 %%%
 %%%           raw       -- the orginal packet
 %%%           control/  -- unpacked meta data

@@ -70,9 +70,12 @@ handler_session(Arg) ->
       fun() ->
 	      try
 		  ?debug("handler_session(~p)~n", [Arg]),
-		  Peer = peername(Arg#arg.clisock),
-		  {ok,{IP,_}} = Peer,
-		  Arg2=Arg#arg{state = [{ip, IP}, {client,json_rpc}]},
+		  {ok,{IP,_}} = sockname(Arg#arg.clisock),
+		  Env0 = [{client_ip_port,Arg#arg.client_ip_port},
+			  {ip,IP},
+			  {ssl,is_ssl(Arg#arg.clisock)},
+			  {client,json_rpc}],
+		  Arg2=Arg#arg{state = Env0 },
 		  yaws_rpc:handler_session(Arg2, {?MODULE, web_rpc})
 	      catch
 		  error:E ->
@@ -83,9 +86,13 @@ handler_session(Arg) ->
 	      end
       end).
 
-peername({ssl, S})            -> ssl:peername(S);
-peername({sslsocket,_,_} = S) -> ssl:peername(S);
-peername(S)                   -> inet:peername(S).
+is_ssl({ssl,_}) -> true;
+is_ssl({sslsocket,_}) -> true;
+is_ssl(_) -> false.
+
+sockname({ssl, S})            -> ssl:sockname(S);
+sockname({sslsocket,_,_} = S) -> ssl:sockname(S);
+sockname(S)                   -> inet:sockname(S).
 
 int_json_rpc(Req) ->
     try kvdb_conf:in_transaction(
@@ -366,7 +373,7 @@ is_exodm_method(Method, AID) ->
 std_specs() ->
     %% FIXME: "exodm" should be retired and replaced by "exosense"
     %% (by name, mainly; the two specs shall be merged into one)
-    [<<"exodm">>, <<"exosense">>].
+    [<<"exodm">>, <<"exosense">>, <<"exodm_admin">>].
 
 json_get_device_id({struct, L}) ->
     case lists:keyfind("device-id", 1, L) of

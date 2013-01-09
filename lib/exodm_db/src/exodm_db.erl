@@ -98,7 +98,9 @@ init() ->
     exodm_db_user:init(),
     exodm_db_system:init(),
     exodm_db_yang:init(),
-    init_timers().
+    init_timers(),
+    exodm_db_account:create_exodm_account().
+
 
 init_timers() ->
     kvdb_cron:create_crontab(kvdb_conf, <<"rpc_timers">>).

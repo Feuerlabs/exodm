@@ -46,6 +46,11 @@ init() ->
                              filename:join(YangDir, "exodm.yang")),
               _Res3 = write_system("exodm.yang", Bin3),
               ?debug("write_system(exodm.yang) -> ~p~n", [_Res3]),
+
+              {ok, Bin4} = file:read_file(
+                             filename:join(YangDir, "exodm_admin.yang")),
+              _Res4 = write_system("exodm_admin.yang", Bin4),
+              ?debug("write_system(exodm_admin.yang) -> ~p~n", [_Res4]),
               ok
       end).
 
@@ -339,7 +344,7 @@ file_key(AID, File) ->
     end.
 
 account_id_key(system) -> system;
-account_id_key(superuser) -> system;
+account_id_key(root)   -> system;
 account_id_key(ID) ->
     exodm_db:account_id_key(ID).
 
