@@ -93,6 +93,9 @@ json_rpc_({call, M, <<"create-yang-module">>,
 	    {name, N, _},
 	    {'yang-module', Y, _}]} = _RPC, _Env) when R =:= ?USER_REPOSITORY,
 						       ?EXO(M) ->
+    %% FIXME!! we should be sure that the user can not create 
+    %% exodm.yang | exosense.yang | exodm_admin.yang 
+    %% (this will disable) the user
     Res = exodm_db_yang:write(N, Y),
     case Res of
         ok ->
@@ -109,6 +112,122 @@ json_rpc_({call, M, <<"create-yang-module">>,
             {ok, result_code('validation-failed')}
     end;
 
+json_rpc_({call, M, <<"create-yang-module">>,
+	   [{repository, R, _},
+	    {name, N, _},
+	    {'yang-module', Y, _}]} = _RPC, Env) when R =:= ?SYSTEM_REPOSITORY,
+						      ?EXO(M) ->
+    case has_root_access(Env) of
+	true ->
+	    exodm_db_session:set_trusted_proc(),
+	    Res =
+		case exodm_db_yang:write_system(N, Y) of
+		    ok ->
+			{ok, result_code(ok)};
+		    {error, {Line, Fmt, Arg } } ->
+			?info("~p:json_rpc(create-yang-module): Error: Line: ~p: ~p\n",
+			      [?MODULE, Line, io_lib:fwrite(Fmt, Arg) ]),
+			{ok, result_code('validation-failed')};
+		    Err ->
+			?info("~p:json_rpc(create-yang-module): Error: ~p\n",
+			      [?MODULE, Err ]),
+			{ok, result_code('validation-failed')}
+		end,
+	    exodm_db_session:unset_trusted_proc(),
+	    Res;
+	false ->
+	    {ok,result_code('permission-denied')}
+    end;
+
+json_rpc_({call, M, <<"delete-yang-module">>,
+	   [{repository, R, _},
+	    {name, Name, _}]} = _RPC, _Env) when R =:= ?USER_REPOSITORY,
+					      ?EXO(M) ->
+    AID = exodm_db_session:get_aid(),
+    case exodm_db_yang:delete(AID, Name) of
+        ok ->
+            {ok, result_code(ok)};
+	_Error -> %%?? more error codes internal error?
+            {ok, result_code('object-not-found')}
+    end;
+json_rpc_({call, M, <<"delete-yang-module">>,
+	   [{repository, R, _},
+	    {name, Name, _}]} = _RPC, Env) when R =:= ?SYSTEM_REPOSITORY,
+					      ?EXO(M) ->
+    case has_root_access(Env) of
+	true ->
+	    exodm_db_session:set_trusted_proc(),
+	    Res = case exodm_db_yang:delete(system, Name) of
+		      ok ->
+			  {ok, result_code(ok)};
+		      _Error -> %%?? more error codes internal error?
+			  {ok, result_code('object-not-found')}
+		  end,
+	    exodm_db_session:unset_trusted_proc(),
+	    Res;
+	false ->
+	    {ok,result_code('permission-denied')}
+    end;
+
+
+json_rpc_({call, M, <<"list-yang-modules">>,
+	   [{repository, R, _},
+	    {n,N,_},
+	    {previous, Prev, _}]} = _RPC, _Env) when R =:= ?USER_REPOSITORY,
+						  ?EXO(M) ->
+    AID = exodm_db_session:get_aid(),
+    Res =
+	exodm_db:in_transaction(
+	  fun(_) ->
+		  exodm_db_yang:list_next(AID, N, Prev)
+	  end),
+    {ok, [{'yang-modules', {array, Res}}]};
+
+json_rpc_({call, M, <<"list-yang-modules">>,
+	   [{repository, R, _},
+	    {n, N, _},
+	    {previous, Prev, _}]} = _RPC, Env) when R =:= ?SYSTEM_REPOSITORY,
+						    ?EXO(M) ->
+    case has_root_access(Env) of
+	true ->
+	    exodm_db_session:set_trusted_proc(),
+	    Res =
+		exodm_db:in_transaction(
+		  fun(_) ->
+			  exodm_db_yang:list_next(system, N, Prev)
+		  end),
+	    exodm_db_session:unset_trusted_proc(),
+	    {ok, [{'yang-modules', {array, Res}}]};
+	false ->
+	    {ok,result_code('permission-denied')}
+    end;
+
+json_rpc_({call, M, <<"create-yang-module">>,
+	   [{repository, R, _},
+	    {name, N, _},
+	    {'yang-module', Y, _}]} = _RPC, Env) when R =:= ?SYSTEM_REPOSITORY,
+						      ?EXO(M) ->
+    case has_root_access(Env) of
+	true ->
+	    exodm_db_session:set_trusted_proc(),
+	    Res =
+		case exodm_db_yang:write_system(N, Y) of
+		    ok ->
+			{ok, result_code(ok)};
+		    {error, {Line, Fmt, Arg } } ->
+			?info("~p:json_rpc(create-yang-module): Error: Line: ~p: ~p\n",
+			      [?MODULE, Line, io_lib:fwrite(Fmt, Arg) ]),
+			{ok, result_code('validation-failed')};
+		    Err ->
+			?info("~p:json_rpc(create-yang-module): Error: ~p\n",
+			      [?MODULE, Err ]),
+			{ok, result_code('validation-failed')}
+		end,
+	    exodm_db_session:unset_trusted_proc(),
+	    Res;
+	false ->
+	    {ok,result_code('permission-denied')}
+    end;
 
 json_rpc_({call, _, <<"provision-device">>,
 	   [{'dev-id', I, _},

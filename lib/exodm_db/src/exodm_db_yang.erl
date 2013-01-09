@@ -23,6 +23,7 @@
 -export([init/0, init/1,
          write_system/2
         ]).
+-export([table/1, list_next/3]).
 
 -include_lib("lager/include/log.hrl").
 -define(DB, kvdb_conf).
@@ -65,6 +66,20 @@ add_table(Tab) ->
     kvdb:add_table(?DB, Tab, [{encoding, {raw,sext,term}},
                               {index, ix_attrs()}]).
 
+list_next(AID, N, Prev) ->
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(Tab,
+				 N, exodm_db:to_binary(Prev),
+				 fun(Key) ->
+                                         Key
+                                             %% lookup(Key)
+				 end)
+      end).
+
+table(AID) ->
+    tab_name(AID).
 
 tab_name(system) ->
     <<"system_yang">>;
@@ -192,21 +207,37 @@ check_access(write, system) ->
             error(unauthorized)
     end;
 check_access(_, AID) ->
-    case exodm_db:account_id_key(exodm_db_session:get_aid()) of
-        AID ->
-            ok;
-        Other ->
-            error({unauthorized, [AID, Other]})
+    %% hm the AID here is normally? the session AID anyway...
+    case exodm_db_session:get_aid() of
+        root -> ok;
+        SessAid ->
+            case exodm_db:account_id_key(SessAid) of
+                AID ->
+                    ok;
+                Other ->
+                    error({unauthorized, [AID, Other]})
+            end
     end.
 
-
+%% delete yang module
+%% the name should be something like
+%% foo.yang             translated to foo@.yang (no revision)
+%% foo@yyyy-mm-dd.yang
+%% foo@.yang
 delete(File) ->
     delete(get_aid(), File).
 
-delete(AID0, File) ->
-    {AID, Key, _} = file_key(AID0, File),
+delete(AID0, File0) ->
+    {AID, File1, _} = file_key(AID0, File0),
+    Base = filename:basename(File1, <<".yang">>),
+    Key = case binary:split(Base, <<"@">>) of
+              [Name] -> <<Name/binary, "@.yang">>;
+              _ -> <<Base/binary, ".yang">>
+          end,
+    check_access(write, AID),
     exodm_db:in_transaction(
       fun(_) ->
+              kvdb_conf:delete_tree(table(AID), Key),
               kvdb:delete(?DB, tab_name(AID), Key)
       end).
 
@@ -300,7 +331,7 @@ store(AID, File, {Tag, _, M, L} = Mod, RPCs, Src) when
       Tag==module; Tag==submodule ->
     Checksum = compute_checksum(Mod),
     io:fwrite("Specs with same checksum: ~p~n",
-	      [find(AID, '__checksum', Checksum)]),
+              [find(AID, '__checksum', Checksum)]),
     Revision = get_revision(L),
     {Tab, FName} = case to_binary(filename:basename(File)) of
                        <<"system.", Rest/binary>> ->
@@ -311,11 +342,15 @@ store(AID, File, {Tag, _, M, L} = Mod, RPCs, Src) when
                            {tab_name(AID), Other}
                    end,
     Key1 = set_revision(FName, Revision),
-    kvdb:put(?DB, Tab, {Key1, [{'__checksum', Checksum}], <<>>}),
+    kvdb:put(?DB, Tab, {kvdb_conf:escape_key(Key1),
+                        [{'__checksum', Checksum}], <<>>}),
     kvdb:put(?DB, Tab, {kvdb_conf:join_key(Key1, <<"src">>), [],
                         to_binary(Src)}),
+    %% ?debug("L = ~p\n", [L]),
+    Attrs = attrs(M, L),
+    %% ?debug("Attrs = ~p\n", [Attrs]),
     [kvdb:put(?DB, Tab, {kvdb_conf:join_key([Key1, <<"a">>, to_binary(A)]),
-                         [], A}) || {A, V} <- attrs(M, L)],
+                         [], V}) || {A, V} <- Attrs],
     lists:foreach(
       fun({Stmt,_,R,_} = RPC) when Stmt==rpc; Stmt==notification ->
               kvdb:put(?DB, Tab, {kvdb_conf:join_key(
@@ -464,4 +499,8 @@ to_binary(X) ->
     exodm_db:to_binary(X).
 
 get_aid() ->
-    exodm_db_session:get_aid().
+    case exodm_db_session:get_aid() of
+        root -> system;
+        Aid -> Aid
+    end.
+            
