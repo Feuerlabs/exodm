@@ -12,7 +12,13 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    exodm_sup:start_link().
+    case exodm_sup:start_link() of
+	{ok,_} = Ok ->
+	    gproc:reg({n,l,{service, exodm}}),
+	    Ok;
+	Other ->
+	    Other
+    end.
 
 stop(_State) ->
     ok.
