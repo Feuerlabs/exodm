@@ -165,8 +165,8 @@ populate(Cfg) ->
 	       [
 		%% {'protocol', <<"exodm_bert">>},
 		{'device-type', <<"type1">>},
-		{'device-key',<<2,0,0,0,0,0,0,0>>},
-		{'server-key',<<1,0,0,0,0,0,0,0>>},
+		{'device-key',1},
+		{'server-key',2},
 		{msisdn,"070100000001"},
 		{groups, [GID1, GID2]}
 	       ]]),
