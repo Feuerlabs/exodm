@@ -1,6 +1,7 @@
 -module(exodm).
 
 -export([ping/0,
+	 await_exodm/0,
 	 read_config_data/1,
 	 add_config_data_members/2,
 	 list_groups/0,
@@ -10,7 +11,35 @@
 
 -spec ping() -> pong.
 ping() ->
-    pong.
+    case await_exodm() of
+	ok ->
+	    pong;
+	error ->
+	    error
+    end.
+
+-spec await_exodm() -> ok | error.
+await_exodm() ->
+    await_exodm(15000).
+
+await_exodm(Timeout) when is_integer(Timeout), Timeout > 0 ->
+    TRef = erlang:start_timer(Timeout, self(), timeout),
+    await_exodm_(TRef).
+
+await_exodm_(TRef) ->
+    case init:get_status() of
+	{started, _} ->
+	    gproc:await({n,l,{service,exodm}}),
+	    erlang:cancel_timer(TRef),
+	    ok;
+	{starting, _} ->
+	    receive
+		{timeout, TRef, timeout} ->
+		    error
+	    after 500 ->
+		    await_exodm_(TRef)
+	    end
+    end.
 
 -spec read_config_data(binary()) -> kvdb_conf:config_set().
 
