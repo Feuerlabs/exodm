@@ -196,9 +196,10 @@ populate(Cfg) ->
     ok.
 
 list_users(Cfg) ->
-    [<<"magnus">>, <<"ulf">>] = ?rpc(exodm_db_user, list_user_keys, []),
+    [<<"exodm-admin">>, <<"magnus">>, <<"ulf">>] =
+	?rpc(exodm_db_user, list_user_keys, []),
     U = [{name,<<"ulf">>},
-	 {'__aid',2},
+	 {'__aid',3},
 	 {fullname,<<"Ulf Wiger">>},
 	 {phone,<<>>},
 	 {email,<<>>},
@@ -208,42 +209,44 @@ list_users(Cfg) ->
     ok.
 
 list_accounts(Cfg) ->
+    %% The exodm admin account is created automatically at bootstrap.
     [<<"a00000001">>,
-     <<"a00000002">>] = rpc(Cfg, exodm_db_account, list_account_keys, []),
-    [{id,<<"00000001">>},
-     {name, <<"feuer">>}] =
-	rpc(Cfg, exodm_db_account, lookup, [<<"a00000001">>]),
+     <<"a00000002">>,
+     <<"a00000003">>] = rpc(Cfg, exodm_db_account, list_account_keys, []),
     [{id,<<"00000002">>},
-     {name, <<"wiger">>}] =
+     {name, <<"feuer">>}] =
 	rpc(Cfg, exodm_db_account, lookup, [<<"a00000002">>]),
+    [{id,<<"00000003">>},
+     {name, <<"wiger">>}] =
+	rpc(Cfg, exodm_db_account, lookup, [<<"a00000003">>]),
     ok.
 
 list_groups(Cfg) ->
     [<<"g00000001">>,
      <<"g00000002">>] =
-	?rpc(exodm_db_account,list_groups, [2]),
+	?rpc(exodm_db_account,list_groups, [3]),
     ok.
 
 list_group_devices(Cfg) ->
+    AID = 3,
     [<<"x00000001">>,
      <<"x00000002">>,
      <<"x00000003">>] =
-	?rpc(exodm_db_group, list_devices, [2,1]), % AID=2, GID=1
+	?rpc(exodm_db_group, list_devices, [AID,1]), % AID=2, GID=1
     [<<"x00000001">>,
      <<"x00000002">>] =
-	?rpc(exodm_db_group, list_devices, [2,2]), % AID=2, GID=2
+	?rpc(exodm_db_group, list_devices, [AID,2]), % AID=2, GID=2
     [<<"x00000001">>] =
-	?rpc(exodm_db_group, list_devices, [2,2,1,<<>>]), % list 1, prev= <<>>
+	?rpc(exodm_db_group, list_devices, [AID,2,1,<<>>]), % list 1, prev= <<>>
     [<<"x00000002">>,
      <<"x00000003">>] =
-	?rpc(exodm_db_group, list_devices, [2,1,99,<<"x00000001">>]),
+	?rpc(exodm_db_group, list_devices, [AID,1,99,<<"x00000001">>]),
     ok.
 
 list_group_notifications(Cfg) ->
-    %% [<<"https://ulf:wiger@localhost:8000/exodm/test_callback2">>,
-    %%  <<"https://ulf:wiger@localhost:8000/exodm/test_callback">>] =
     [?URL1, ?URL2] =
-	?rpc(exodm_db_device,lookup_group_notifications, [2, <<"x00000001">>]),
+	?rpc(exodm_db_device,lookup_group_notifications,
+	     [_AID=3, <<"x00000001">>]),
     ok.
 
 
@@ -272,7 +275,7 @@ store_config(Cfg) ->
     R = <<"test1">>,
     {ok, R} =
 	rscript(Cfg, store_config_scr()),
-    T = ?rpc(exodm_db_config, read_config_set, [<<"a00000002">>,<<"test1">>]),
+    T = ?rpc(exodm_db_config, read_config_set, [<<"a00000003">>,<<"test1">>]),
     {T,T} = {T, [{name, <<"test1">>},
 		 {yang, <<"ckp-cfg.yang">>},
 		 {'notification-url',?URL1}]},
@@ -322,7 +325,7 @@ store_config2(Cfg) ->
     R = <<"test2">>,
     {ok, R} =
 	rscript(Cfg, store_config_scr2()),
-    T = ?rpc(exodm_db_config, read_config_set, [<<"a00000002">>,<<"test2">>]),
+    T = ?rpc(exodm_db_config, read_config_set, [<<"a00000003">>,<<"test2">>]),
     {T,T} = {T, [{name, <<"test2">>},
 		 {yang, <<"test.yang">>},
 		 {'notification-url', ?URL2}
@@ -348,7 +351,7 @@ store_config_scr2() ->
 add_config_set_member(Cfg) ->
     ok = rscript(Cfg, add_config_set_member_scr()),
     [<<"test1">>, <<"test2">>] =
-	?rpc(exodm_db_device, list_config_sets, [<<"a00000002">>,
+	?rpc(exodm_db_device, list_config_sets, [<<"a00000003">>,
 						 <<"x00000001">>]),
     ok.
 
@@ -372,7 +375,7 @@ add_config_set_member_scr() ->
 %%% ==================================== Client BERT RPC Setup
 
 start_rpc_client(Cfg) ->
-    Auth = ?rpc(exodm_db_device, client_auth_config, [<<"a00000002">>,
+    Auth = ?rpc(exodm_db_device, client_auth_config, [<<"a00000003">>,
 						      <<"x00000001">>]),
     ?debugVal(Auth),
     ?assertMatch({true,Auth}, {is_list(Auth), Auth}),
