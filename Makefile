@@ -31,7 +31,7 @@ generate:
 	./exorel current `./exorel last_build`
 
 dev:
-	./devsetup
+	./devsetup -target false
 
 devrun:
 ifdef n

@@ -4,20 +4,21 @@
 
 -mode(compile).
 
-main([]) ->
+main(Opts) ->
     try setup_gen:run([
 		       {name, "exodm"},
 		       {relconf, "rel/reltool.config"},
 		       {sys, "rel/sys.config"},
 		       {outdir, "./devel"},
 		       {install, true},
-		       {verbose, false},
+		       {verbose, true},
 		       {env, [
 			      {setup,
 			       [
 				{data_dir, "db"}
 			       ]}
 			     ]}
+		       | opts(Opts)
 		      ])
     catch
 	error:E ->
@@ -26,3 +27,11 @@ main([]) ->
 	    timer:sleep(500),
 	    halt(1)
     end.
+
+opts(["-target","false"]) ->
+    [{target, false}];
+opts(["-target", T]) ->
+    [{target, T}];
+opts([]) ->
+    [].
+

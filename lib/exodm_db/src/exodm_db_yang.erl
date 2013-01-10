@@ -410,8 +410,12 @@ try_read_file(AID, File, Opts) ->
             try_file(system, Rest, Opts);
         _ ->
             case try_file(AID, FBin, Opts) of
-                {error, not_found} ->
-                    try_file(system, FBin, Opts);
+                {error, not_found} = NotFound ->
+                    if AID == system ->
+                            NotFound;
+                       true ->
+                            try_file(system, FBin, Opts)
+                    end;
                 Other ->
                     Other
             end
@@ -442,7 +446,8 @@ try_file_(AID, File0, Opts) ->
                     {error, not_found}
             end;
         _ ->
-            case kvdb_conf:read(Tab, kvdb_conf:join_key(File, <<"src">>)) of
+            Key = kvdb_conf:join_key(File, <<"src">>),
+            case kvdb_conf:read(Tab, Key) of
                 {ok, Obj} ->
                     {ok, Tab, Obj};
                 {error, _} = Err1 ->
@@ -454,7 +459,7 @@ try_file_(AID, File0, Opts) ->
 latest_file_version(Tab, File) ->
     Base = filename:basename(File, <<".yang">>),
     Sz = byte_size(Base),
-    case kvdb:prev(?DB, Tab, <<Base/binary, "@:">>) of
+    case kvdb_conf:prev(Tab, <<Base/binary, "@:">>) of
         {ok, {FoundKey, _, _}} ->
             case kvdb_conf:split_key(FoundKey) of
                 [<<Base:Sz/binary, _/binary>> = FullName|_] ->
