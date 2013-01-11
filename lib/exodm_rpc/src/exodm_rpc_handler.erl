@@ -35,7 +35,10 @@ add_device_session(AID, DID, Protocol) ->
     add_device_session(ExtID, Protocol).
 
 add_device_session(ExtID, Protocol) ->
-    gproc:reg({p,l,{exodm_rpc, active_device, ExtID, Protocol}}).
+    %% Normalize ExtID first
+    {AID, DID} = exodm_db_device:dec_ext_key(ExtID),
+    Norm = exodm_db_device:enc_ext_key(AID, DID),
+    gproc:reg({p,l,{exodm_rpc, active_device, Norm, Protocol}}).
 
 %% @spec rm_device_session(aid(), did(), protocol()) -> true.
 %% @doc Removes the session registration
