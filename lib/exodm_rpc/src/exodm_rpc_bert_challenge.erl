@@ -39,8 +39,8 @@ authenticate(S, Role, Arg) ->
     end.
 
 normalize_ext_id(ID) ->
-    {AID, DID} = exodm_db_device:dec_ext_id(ID),
-    exodm_db_device:enc_ext_id(AID, DID).
+    {AID, DID} = exodm_db_device:dec_ext_key(ID),
+    exodm_db_device:enc_ext_key(AID, DID).
 
 outgoing(Data, St) ->
     bert_challenge:outgoing(Data, St).
