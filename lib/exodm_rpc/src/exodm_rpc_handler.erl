@@ -755,7 +755,11 @@ process_reply({ok, {{200,_OK},_Hdrs,JSON}}, Env) ->
 	    end;
 	Other ->
 	    {error, {decode_reply, Other}}
-    end.
+    end;
+process_reply(Other, Env) ->
+    ?debug("process_reply(~p, ~p) - unexpected!~n", [Other, Env]),
+    {error, {unexpected_reply, Other}}.
+
 
 struct_elems({struct, Elems}) -> Elems.
 
