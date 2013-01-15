@@ -16,6 +16,7 @@
 -export([account_id_key/1, account_id_num/1, account_id_value/1]).
 -export([float_to_bin/1, bin_to_float/1]).
 -export([int_to_bin/1, bin_to_int/1]).
+-export([uint_to_bin/1, bin_to_uint/1]).
 -export([list_key/2]).
 -export([table/2]).
 
@@ -582,17 +583,24 @@ decode_id_(<<C, Rest/binary>>) ->
 decode_id_(<<>>) ->
     <<>>.
 
-bin_to_float(<<F/float>>) ->
+bin_to_float(<<F:64/float>>) ->
     F.
 
 float_to_bin(F) when is_float(F) ->
-    <<F/float>>.
+    <<F:64/float>>.
 
-bin_to_int(<<I/integer>>) ->
+bin_to_int(<<I:32/big-integer>>) ->
     I.
 
 int_to_bin(I) when is_integer(I) ->
-    <<I/integer>>.
+    <<I:32/big-integer>>.
+
+bin_to_uint(<<I:32/big-unsigned-integer>>) ->
+    I.
+
+uint_to_bin(I) when is_integer(I), I>=0 ->
+    <<I:32/big-unsigned-integer>>.
+
 
 
 %% id_char(C) ->
