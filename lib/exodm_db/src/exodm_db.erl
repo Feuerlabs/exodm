@@ -15,6 +15,7 @@
 -export([role_id_key/1, role_id_num/1, role_id_value/1]).
 -export([account_id_key/1, account_id_num/1, account_id_value/1]).
 -export([float_to_bin/1, bin_to_float/1]).
+-export([int_to_bin/1, bin_to_int/1]).
 -export([list_key/2]).
 -export([table/2]).
 
@@ -586,6 +587,12 @@ bin_to_float(<<F/float>>) ->
 
 float_to_bin(F) when is_float(F) ->
     <<F/float>>.
+
+bin_to_int(<<I/integer>>) ->
+    I.
+
+int_to_bin(I) when is_integer(I) ->
+    <<I/integer>>.
 
 
 %% id_char(C) ->
