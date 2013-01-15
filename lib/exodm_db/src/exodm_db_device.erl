@@ -584,7 +584,7 @@ encode_value(<<"latitude">>, L) when is_number(L) ->
 encode_value(<<"longitude">>, L) when is_number(L) ->
     exodm_db:float_to_bin(L);
 encode_value(<<"timestamp">>, L) when is_number(L) ->
-    exodm_db:int_to_bin(L);
+    exodm_db:uint_to_bin(L);
 encode_value(<<"session-timeout">>, T) ->
     list_to_binary(integer_to_list(T));
 encode_value(_, V) ->
@@ -595,7 +595,7 @@ decode_value(<<"latitude">>, Bin) ->
 decode_value(<<"longitude">>, Bin) ->
     exodm_db:bin_to_float(Bin);
 decode_value(<<"timestamp">>, Bin) ->
-    exodm_db:bin_to_int(Bin);
+    exodm_db:bin_to_uint(Bin);
 decode_value(<<"session-timeout">>, Bin) ->
     list_to_integer(binary_to_list(Bin));
 decode_value(_, Bin) ->

@@ -116,7 +116,7 @@ new_(Options) ->
 		   Other -> Other
 	       end,
     insert(Key, name, AcctName),
-    exodm_db_user:new(AID, AdminUName, UserOpts),
+    {ok, AdminUName} = exodm_db_user:new(AID, AdminUName, UserOpts),
     {ok, _RID} = t_create_role_(AID, AdminUName, initial_admin(Root)),
     UNameKey = to_binary(AdminUName),
     insert(exodm_db:join_key(Key, <<"admins">>), UNameKey, AdminUName),
@@ -418,8 +418,7 @@ t_is_empty_specs_(AID) ->
 		done -> true;
 		_ -> false
 	    end;
-	_ -> false;
-	[_] -> false
+	_ -> false
     end.
 
 t_is_empty_users_(AID) ->
@@ -438,7 +437,10 @@ delete(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:in_transaction(
       fun(_Db) ->
+	      [Admin] = list_admins(AID, 2, <<"">>),
+	      exodm_db_user:delete(Admin),
 	      kvdb_conf:delete_tree(table(), AID)
+
       end).    
     
 %% list N number of account starting after Prev

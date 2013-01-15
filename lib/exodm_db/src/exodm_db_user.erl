@@ -14,7 +14,8 @@
 	 list_users/2,    %% (N, Prev)
 	 list_user_keys/0, fold_users/2,
 	 add_access/3,
-	 list_access/1, exist/1]).
+	 list_access/1, exist/1,
+	 delete/1]).
 -export([add_alias/2,
 	 lookup_by_alias/1]).
 -export([ix_alias/1]).
@@ -77,6 +78,24 @@ new_(AID0, UName, Options) ->
 	    %% 	      insert(?TAB, K, '__alias', to_binary(Al))
 	    %%   end, 1, proplists:get_all_values(alias, Options)),
 	    {ok, UName}
+    end.
+
+delete(UID) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      delete_(UID)
+      end).
+
+delete_(UID) ->
+    lager:debug("delete: uid ~p~n", [UID]),
+    Key = exodm_db:encode_id(UID),
+    lager:debug("delete: key ~p~n", [Key]),
+    case exist_(?TAB, Key) of
+	true ->
+	    lager:debug("delete: exists true ~n", []),
+	    kvdb_conf:delete_tree(?TAB, Key);
+	false ->
+	    {error, not_found}
     end.
 
 process_list_options(O, Key, Options) ->
