@@ -80,20 +80,31 @@ new_(AID0, UName, Options) ->
 	    {ok, UName}
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Removes the user from the database.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec delete(UID::binary()) -> ok | {error, not_found}.
 delete(UID) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      delete_(UID)
       end).
 
+-spec delete_(UID::binary()) -> ok | {error, not_found}.
 delete_(UID) ->
-    lager:debug("delete: uid ~p~n", [UID]),
+    lager:debug("uid ~p~n", [UID]),
     Key = exodm_db:encode_id(UID),
-    lager:debug("delete: key ~p~n", [Key]),
+    lager:debug("key ~p~n", [Key]),
     case exist_(?TAB, Key) of
 	true ->
-	    lager:debug("delete: exists true ~n", []),
-	    kvdb_conf:delete_tree(?TAB, Key);
+	    lager:debug("uid ~p exists ~n", [UID]),
+	    kvdb_conf:delete_tree(?TAB, Key),
+	    %% Make sure no old session exists if new user
+	    %% with same name is created before session timeout.
+	    exodm_db_session:remove_user_session(UID);
 	false ->
 	    {error, not_found}
     end.

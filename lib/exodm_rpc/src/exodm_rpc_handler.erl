@@ -117,6 +117,7 @@ int_json_rpc(Req) ->
     end.
 
 web_rpc(St, Req, Session) ->
+    ?debug("web_rpc(~p, ~p, ~p)~n", [St, Req, Session]),
     try kvdb_conf:in_transaction(
 	  fun(Db) ->
 		  case web_rpc_(Db, St, Req) of
@@ -137,7 +138,7 @@ web_rpc(St, Req, Session) ->
     end.
 
 web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
-    ?debug("web_rpc: Method = ~p; Request = ~p~n", [Method, Request]),
+    ?debug("web_rpc_: Method = ~p; Request = ~p~n", [Method, Request]),
     AID = exodm_db_session:get_aid(),
     UID = exodm_db_session:get_user(),
     Env0 = [{aid, AID},
