@@ -16,6 +16,8 @@
 	 add_access/3,
 	 list_access/1, exist/1,
 	 delete/1]).
+-export([subscribe/1,
+	 unsubscribe/1]).
 -export([add_alias/2,
 	 lookup_by_alias/1]).
 -export([ix_alias/1]).
@@ -45,10 +47,29 @@ init() ->
 table() ->
     <<"user">>.
 
+%% Gproc pub/sub ----------------------
+subscribe(Event) when Event==add; Event==delete ->
+    gproc:reg({p, l, {?MODULE, Event}}).
+
+unsubscribe(Event) when Event==add; Event==delete ->
+    catch gproc:unreg({p, l, {?MODULE, Event}}),
+    ok.
+
+publish(Event, Data) when Event==add; Event==delete ->
+    gproc:send({p, l, {?MODULE, Event}}, {?MODULE, Event, Data}).
+%% END Gproc pub/sub ------------------
+
+
 new(AID, UName, Options) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      new_(AID, UName, Options)
+	      case new_(AID, UName, Options) of
+		  {ok, UserName} = Res ->
+		      publish(add, UserName),
+		      Res;
+		  Other ->
+		      Other
+	      end
       end).
 
 new_(AID0, UName, Options) ->
@@ -77,13 +98,19 @@ new_(AID0, UName, Options) ->
 	    %% 		    Key, exodm_db:list_key(alias, I)),
 	    %% 	      insert(?TAB, K, '__alias', to_binary(Al))
 	    %%   end, 1, proplists:get_all_values(alias, Options)),
-	    {ok, UName}
+	    {ok, exodm_db:decode_id(Key)}
     end.
 
 delete(UID) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      delete_(UID)
+	      case delete_(UID) of
+		  {true, UserName} = Res ->
+		      publish(delete, UserName),
+		      Res;
+		  Other ->
+		      Other
+	      end
       end).
 
 delete_(UID) ->
@@ -93,7 +120,8 @@ delete_(UID) ->
     case exist_(?TAB, Key) of
 	true ->
 	    lager:debug("delete: exists true ~n", []),
-	    kvdb_conf:delete_tree(?TAB, Key);
+	    kvdb_conf:delete_tree(?TAB, Key),
+	    {true, exodm_db:decode_id(Key)};
 	false ->
 	    {error, not_found}
     end.
