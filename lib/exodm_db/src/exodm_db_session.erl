@@ -9,6 +9,8 @@
 -export([remove_user_session/1]).
 -export([spawn_child/1, spawn_link_child/1, spawn_monitor_child/1]).
 
+-export([remove_account/1]).
+
 -export([set_auth_as_user/1, set_auth_as_user/2, set_auth_as_user/3,
          set_auth_as_device/1,
          set_trusted_proc/0,unset_trusted_proc/0,
@@ -45,6 +47,9 @@ authenticate(User, Pwd) ->
     UName = to_binary(User),
     check_auth_(
       UName, gen_server:call(?MODULE, {auth, UName, to_binary(Pwd)}, 10000)).
+
+remove_account(AID) ->
+    gen_server:call(?MODULE, {remove_account, AID}).
 
 check_auth_(UName, {true, AID, Role} = Result) ->
     put_auth_({UName, AID, Role}),
@@ -306,7 +311,26 @@ handle_call({refresh, U}, _From, St) ->
     end;
 handle_call({logout, U}, _From, St) ->
     ets:delete(?TAB, U),
-    {reply, true, St}.
+    {reply, true, St};
+handle_call({remove_account, AID}, _From, St) ->
+    Recs = ets:select(?TAB, [{#session{aid = AID, _ = '_'}, [], ['$_']}], 100),
+    remove_account_recs(Recs),
+    {reply, ok, St}.
+
+remove_account_recs('$end_of_table') ->
+    done;
+remove_account_recs({Recs, Cont}) ->
+    lists:foreach(
+      fun(#session{user = U, timer = TRef}) ->
+              if TRef =/= undefined ->  % necessary?
+                      erlang:cancel_timer(TRef);
+                 true -> ok
+              end,
+              ets:delete(?TAB, U)
+      end, Recs),
+    remove_account_recs(ets:select(Cont)).
+
+
 
 handle_cast({first_auth, Pid, User, Res}, #st{pending = Pend,
 					      procs = Procs} = St) ->

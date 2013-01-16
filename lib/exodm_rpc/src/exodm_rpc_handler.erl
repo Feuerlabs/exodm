@@ -743,8 +743,8 @@ process_reply({ok, {{200,_OK},_Hdrs,JSON}}, Env) ->
 			    case yang_json:validate_rpc_request(
 				   OutputSpec, struct_elems(Result)) of
 				{ok, ValidReturn, _} ->
-				    %%ValidReturn;
-				    ok;
+				    yang_json:remove_yang_info(
+				      ValidReturn);
 				{error, Reason} ->
 				    error(Reason)
 			    end;

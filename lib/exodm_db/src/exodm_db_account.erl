@@ -439,10 +439,10 @@ delete(AID0) ->
       fun(_Db) ->
 	      [Admin] = list_admins(AID, 2, <<"">>),
 	      exodm_db_user:delete(Admin),
-	      kvdb_conf:delete_tree(table(), AID)
+	      kvdb_conf:delete_tree(table(), AID),
+	      exodm_db_session:remove_account(AID)
+      end).
 
-      end).    
-    
 %% list N number of account starting after Prev
 list_accounts(N, Prev) ->
     exodm_db:in_transaction(

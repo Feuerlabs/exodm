@@ -1098,7 +1098,7 @@ upstream_rpc(Cfg) ->
     prep_list_evens(Cfg),
     Reply = exoport:rpc(exodm_rpc, rpc, ["test", "list-even", [{limit,9}]]),
     io:fwrite(user, "test:list-evens -> ~p~n", [Reply]),
-    {reply, [{evens,[2,4,6,8],_}], []} = Reply,
+    {reply, [{evens,[2,4,6,8]}], []} = Reply,
     ok.
 
 push_config_set_meth(Args) ->
