@@ -6,6 +6,7 @@
 -export([authenticate/2, logout/0, logout/1,
          is_active/0, is_active/1, refresh/0]).
 -export([get_user/0, get_role/0, get_aid/0, get_auth/0]).
+-export([remove_user_session/1]).
 -export([spawn_child/1, spawn_link_child/1, spawn_monitor_child/1]).
 
 -export([remove_account/1]).
@@ -55,6 +56,23 @@ check_auth_(UName, {true, AID, Role} = Result) ->
     Result;
 check_auth_(_, false) ->
     false.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Removes any existing user session in the ets table..
+%% Stops execution if unauthorized.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec remove_user_session(UID::binary()) -> ok | no_return().
+
+remove_user_session(UID) ->
+    case gen_server:call(?MODULE, {remove_user_session, get_auth(), UID}) of
+        true ->
+            ok;
+        false ->
+            erlang:error(unauthorized)
+    end.
 
 refresh() ->
     case gen_server:call(?MODULE, {refresh, get_user()}) of
@@ -186,7 +204,7 @@ get_auth() -> if_active_(get_auth_(), fun(X) -> X end).
 if_active_({{did,_},_,_} = X, Ret) ->
     Ret(X);
 if_active_({UName,_,_} = X, Ret) ->
-    ?dbg("if_active_(~p, Ret)~n", [X]),
+    ?dbg("if_active_(~p, Ret, ~p)~n", [X, Ret]),
     case is_active(UName) of
         true ->
             Ret(X);
@@ -278,6 +296,11 @@ handle_call({make_user_active, U, Db}, _, St) ->
             reset_timer(Session),
             {reply, {true, AID, Role}, St}
     end;
+handle_call({remove_user_session, Auth, UserToRemove}, _, St) ->
+    %% Should only be called when removing a user
+    %% Do we need to check authorization here ??
+    ets:delete(?TAB, UserToRemove),
+    {reply, true, St};
 handle_call({refresh, U}, _From, St) ->
     case ets:lookup(?TAB, U) of
         [] ->
@@ -288,7 +311,7 @@ handle_call({refresh, U}, _From, St) ->
     end;
 handle_call({logout, U}, _From, St) ->
     ets:delete(?TAB, U),
-    {reply, ok, St};
+    {reply, true, St};
 handle_call({remove_account, AID}, _From, St) ->
     Recs = ets:select(?TAB, [{#session{aid = AID, _ = '_'}, [], ['$_']}], 100),
     remove_account_recs(Recs),

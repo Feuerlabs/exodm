@@ -1,6 +1,7 @@
 -module(exodm_rpc_exodm).
 
--export([json_rpc/2]).
+-export([json_rpc/2,
+	 exodm_admin/1]).
 -include_lib("lager/include/log.hrl").
 
 -define(USER_REPOSITORY, <<"user">>).
@@ -20,6 +21,17 @@
 			error:'object-not-empty'  = E -> E
 		    end)).
 
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Checks if User is the system admin.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec exodm_admin(UID::binary()) -> boolean().
+
+exodm_admin(User) -> ?ADMIN(User).
+    
 
 result_code(ok) ->
     [{result, <<"ok">>}];
