@@ -245,11 +245,11 @@ pop_and_dispatch_run_(From, Reply, Db, Tab, Q, Sessions) ->
 			   [Mod, Env, AID, DID, Pid]),
 		    case Mod:dispatch(Tab, Req, Env, AID,
 				      exodm_db:decode_id(DID), Pid) of
-			ok ->
-			    done(From, Reply),
-			    next;
 			error ->
-			    done(From, Reply)
+			    done(From, Reply);
+			_Result ->
+			    done(From, Reply),
+			    next
 		    end;
 		false ->
 		    ?error("No matching protocol session for ~p (~p)~n"

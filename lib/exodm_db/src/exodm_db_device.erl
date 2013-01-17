@@ -555,6 +555,7 @@ lookup_keys(AID, DID0) ->
       end}.
 
 exist(AID, DID) ->
+    lager:debug("(AID=~p, DID=~p)~n", [AID,DID]),
     case read(table(AID), exodm_db:encode_id(DID), 'device-id') of
 	[] -> false;
 	[_] -> true
