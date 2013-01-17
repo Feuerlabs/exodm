@@ -259,6 +259,8 @@ create_ets() ->
     end.
 
 init([]) ->
+    exodm_db_user:subscribe(delete),
+    exodm_db_account:subscribe(delete),
     {ok, #st{}}.
 
 handle_call({auth, U, P}, From, St) ->
@@ -296,7 +298,7 @@ handle_call({make_user_active, U, Db}, _, St) ->
             reset_timer(Session),
             {reply, {true, AID, Role}, St}
     end;
-handle_call({remove_user_session, Auth, UserToRemove}, _, St) ->
+handle_call({remove_user_session, _Auth, UserToRemove}, _, St) ->
     %% Should only be called when removing a user
     %% Do we need to check authorization here ??
     ets:delete(?TAB, UserToRemove),
@@ -349,6 +351,13 @@ handle_cast({first_auth, Pid, User, Res}, #st{pending = Pend,
 
 handle_info({timeout, _, User}, St) ->
     io:fwrite("Session timeout (~s)~n", [User]),
+    ets:delete(?TAB, User),
+    {noreply, St};
+handle_info({exodm_db_account, delete, AID}, St) ->
+    Recs = ets:select(?TAB, [{#session{aid = AID, _ = '_'}, [], ['$_']}], 100),
+    remove_account_recs(Recs),
+    {noreply, St};
+handle_info({exodm_db_user, delete, User}, St) ->
     ets:delete(?TAB, User),
     {noreply, St};
 handle_info({'DOWN',_,process,Pid,normal}, #st{procs = Procs} = St) ->

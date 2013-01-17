@@ -131,7 +131,7 @@ delete_(UID) ->
 	    kvdb_conf:delete_tree(?TAB, Key),
 	    %% Make sure no old session exists if new user
 	    %% with same name is created before session timeout.
-	    exodm_db_session:remove_user_session(UID),
+	    %% exodm_db_session:remove_user_session(UID),
 	    {ok, exodm_db:decode_id(Key)};
 	false ->
 	    {error, not_found}

@@ -23,6 +23,8 @@
 -export([list_admins/1]).
 -export([incr_request_id/1,
 	 incr_transaction_id/1]).
+-export([subscribe/1,
+	 unsubscribe/1]).
 -export([key/1,
 	 table/0]).
 -export([init/0]).
@@ -48,6 +50,19 @@ init() ->
 
 table() ->
     ?TAB.
+
+%% Gproc pub/sub ----------------------
+subscribe(Event) when Event==add; Event==delete ->
+    gproc:reg({p, l, {?MODULE, Event}}).
+
+unsubscribe(Event) when Event==add; Event==delete ->
+    catch gproc:unreg({p, l, {?MODULE, Event}}),
+    ok.
+
+publish(Event, Data) when Event==add; Event==delete ->
+    gproc:send({p, l, {?MODULE, Event}}, {?MODULE, Event, Data}).
+%% END Gproc pub/sub ------------------
+
 
 %%
 %% Setup exodm account if needed
@@ -88,7 +103,9 @@ create_exodm_account_(_Db) ->
 new(Options) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      new_(Options)
+	      AIDVal = new_(Options),
+	      publish(add, AIDVal),
+	      AIDVal
       end).
 
 new_(Options) ->
@@ -440,7 +457,8 @@ delete(AID0) ->
 	      [Admin] = list_admins(AID, 2, <<"">>),
 	      exodm_db_user:delete(Admin),
 	      kvdb_conf:delete_tree(table(), AID),
-	      exodm_db_session:remove_account(AID)
+	      publish(delete, exodm_db:account_id_value(AID)),
+	      ok
       end).
 
 %% list N number of account starting after Prev
