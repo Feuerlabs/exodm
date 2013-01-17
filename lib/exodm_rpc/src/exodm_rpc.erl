@@ -39,7 +39,7 @@ notification(Module, Method, Elems) ->
     Yang = <<(to_binary(Module))/binary, ".yang">>,
     exodm_rpc_handler:notification(
       Method, Elems, [{yang, Yang},
-		      {'device-id', DID},
+		      {'device-id', exodm_db:decode_id(DID)},
 		      {aid, AID}], [], AID, DID).
 
 %% RPC from device to server
@@ -48,7 +48,7 @@ rpc(Module, Method, Elems) ->
     AID = exodm_db_session:get_aid(),
     Yang = <<(to_binary(Module))/binary, ".yang">>,
     Env = [{yang, Yang},
-	   {'device-id', DID},
+	   {'device-id', exodm_db:decode_id(DID)},
 	   {aid, exodm_db:account_id_key(AID)}],
     exodm_rpc_handler:notification(Method, Elems, Env, AID, DID).
 
