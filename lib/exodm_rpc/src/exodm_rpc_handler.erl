@@ -263,17 +263,13 @@ notification(Method, Elems, Env, AID, DID) ->
 	     end,
     [Module|_] = re:split(filename:basename(Yang, ".yang"), "@",
 			  [{return,binary}]),
-    FullMethod = case re:split(to_binary(Method), ":", [{return,binary}]) of
-		     [Meth] ->
-			 <<Module/binary, ":", Meth/binary>>;
-		     [A,B] ->
-			 <<A/binary, ":", B/binary>>
-		 end,
-    case exodm_db_yang:find_rpc(Yang, FullMethod) of
+    FullMethod0 = json_method(Method, Module, []),  % fully qualified
+    case exodm_db_yang:find_rpc(Yang, FullMethod0) of
 	{error, not_found} ->
 	    error(method_not_found);
 	{ok, {_, _, {notification,_,_,SubSpec}}} ->
 	    ?debug("SubSpec = ~p~n", [lists:sublist(SubSpec,1,2)]),
+	    FullMethod = json_method(Method, Module, SubSpec),
 	    Params = data_to_json(SubSpec, Env, Elems),
 	    JSON = {struct, [{"jsonrpc", "2.0"},
 			     {"method", FullMethod},
@@ -283,6 +279,7 @@ notification(Method, Elems, Env, AID, DID) ->
 	{ok, {_, _, {rpc, _, _, SubSpec} = RPC}} ->
 	    {input, _, _, InputSpec} = lists:keyfind(input, 1, SubSpec),
 	    ?debug("Northbound RPC = ~p~n", [RPC]),
+	    FullMethod = json_method(Method, Module, SubSpec),
 	    Params = data_to_json(InputSpec, Env, Elems),
 	    JSON = {struct, [{"jsonrpc", "2.0"},
 			     {"method", FullMethod},
@@ -292,6 +289,28 @@ notification(Method, Elems, Env, AID, DID) ->
 	    post_json(rpc, [{method, FullMethod},
 			    {spec, SubSpec} | URLEnv ++ Env], JSON)
     end.
+
+json_method(Method, Module, SubSpec) ->
+    InclModule = case lists:keyfind(
+			{<<"exosense">>,<<"rpc-include-module-name">>},
+			1, SubSpec) of
+		     {_, _, Bool, _} ->
+			 bool_value(Bool);
+		     false ->
+			 true
+		 end,
+    {M,F} = case re:split(to_binary(Method), ":", [{return,binary}]) of
+		[Meth] -> {Module, Meth};
+		[A,B] ->  {A, B}
+	    end,
+    if InclModule -> <<M/binary, ":", F/binary>>;
+       true       -> F
+    end.
+
+bool_value(B) when is_boolean(B) -> B;
+bool_value(<<"true">>) -> true;
+bool_value(<<"false">>) -> false;
+bool_value(_) -> true.
 
 stop_timer(Env) ->
     case lists:keyfind('$timer_id', 1, Env) of
@@ -720,7 +739,7 @@ post_json_(notification, Env, AID, DID, JSON) ->
 		URL <- remove_duplicate_urls(URLs)],
 	    ok
     end;
-post_json_(rpc, Env, AID, DID, JSON) ->
+post_json_(rpc, Env, _AID, _DID, JSON) ->
     case lists:keyfind('request-url', 1, Env) of
 	{_, URL} ->
 	    ?debug("Upstream rpc; URL = ~p~n", [URL]),
