@@ -31,29 +31,41 @@
 init() ->
     exodm_db:in_transaction(
       fun(_) ->
-              add_table(tab_name(system)),
-              add_table(tab_name(shared)),
-              exodm_db_session:set_trusted_proc(),
-              YangDir = filename:join(code:priv_dir(exosense_specs), "yang"),
-              {ok, Bin1} = file:read_file(
-                             filename:join(YangDir, "ietf-inet-types.yang")),
-              _Res1 = write_system("ietf-inet-types.yang", Bin1),
-              ?debug("write_system(ietf-inet-types.yang) -> ~p~n", [_Res1]),
-              {ok, Bin2} = file:read_file(
-                             filename:join(YangDir, "exosense.yang")),
-              _Res2 = write_system("exosense.yang", Bin2),
-              ?debug("write_system(exosense.yang) -> ~p~n", [_Res2]),
-              {ok, Bin3} = file:read_file(
-                             filename:join(YangDir, "exodm.yang")),
-              _Res3 = write_system("exodm.yang", Bin3),
-              ?debug("write_system(exodm.yang) -> ~p~n", [_Res3]),
-
-              {ok, Bin4} = file:read_file(
-                             filename:join(YangDir, "exodm_admin.yang")),
-              _Res4 = write_system("exodm_admin.yang", Bin4),
-              ?debug("write_system(exodm_admin.yang) -> ~p~n", [_Res4]),
-              ok
+              case needs_init() of
+                  true -> init_();
+                  false -> ok
+              end
       end).
+
+needs_init() ->
+    case kvdb_conf:info({tab_name(system), encoding}) of
+        undefined -> true;
+        _ -> false
+    end.
+
+init_() ->
+    add_table(tab_name(system)),
+    add_table(tab_name(shared)),
+    exodm_db_session:set_trusted_proc(),
+    YangDir = filename:join(code:priv_dir(exosense_specs), "yang"),
+    {ok, Bin1} = file:read_file(
+                   filename:join(YangDir, "ietf-inet-types.yang")),
+    _Res1 = write_system("ietf-inet-types.yang", Bin1),
+    ?debug("write_system(ietf-inet-types.yang) -> ~p~n", [_Res1]),
+    {ok, Bin2} = file:read_file(
+                   filename:join(YangDir, "exosense.yang")),
+    _Res2 = write_system("exosense.yang", Bin2),
+    ?debug("write_system(exosense.yang) -> ~p~n", [_Res2]),
+    {ok, Bin3} = file:read_file(
+                   filename:join(YangDir, "exodm.yang")),
+    _Res3 = write_system("exodm.yang", Bin3),
+    ?debug("write_system(exodm.yang) -> ~p~n", [_Res3]),
+
+    {ok, Bin4} = file:read_file(
+                   filename:join(YangDir, "exodm_admin.yang")),
+    _Res4 = write_system("exodm_admin.yang", Bin4),
+    ?debug("write_system(exodm_admin.yang) -> ~p~n", [_Res4]),
+    ok.
 
 
 init(AID) ->
