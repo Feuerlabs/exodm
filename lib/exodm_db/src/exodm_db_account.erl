@@ -628,7 +628,7 @@ acct_test_() ->
 
      end,
      [
-      ?_test(?dbg(test_new()))
+      {timeout, 60000, [?_test(?dbg(test_new()))]}
      ]}.
 
 test_new() ->
