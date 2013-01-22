@@ -36,7 +36,8 @@ add_device_session(AID, DID, Protocol) ->
 
 add_device_session(ExtID, Protocol) ->
     %% Normalize ExtID first
-    gproc:reg({p,l,{exodm_rpc, active_device, ExtID, Protocol}}).
+    gproc:reg({p,l,{exodm_rpc, active_device, ExtID, Protocol}},
+	      os:timestamp()).
 
 %% @spec rm_device_session(aid(), did(), protocol()) -> true.
 %% @doc Removes the session registration
@@ -61,10 +62,10 @@ device_sessions(ExtID0) ->
     {AID, DID} = exodm_db_device:dec_ext_key(ExtID0),
     ExtID = exodm_db_device:enc_ext_key(AID, DID),
     Res = gproc:select(p, [{ {{p,l,{exodm_rpc, active_device, ExtID, '$2'}},
-			      '$1', '_'},
-			     [], [{{'$1', '$2'}}] }]),
+			      '$1', '$3'},
+			     [], [{{'$1', '$2', '$3'}}] }]),
     ?debug("device_sessions(~p) -> ~p~n", [ExtID, Res]),
-    Res.
+    [{A,B} || {A,B,_} <- lists:reverse(lists:keysort(3, Res))].
 
 %% @doc Handle a JSON-RPC request; once go-ahead is given from load control.
 handler_session(Arg) ->
