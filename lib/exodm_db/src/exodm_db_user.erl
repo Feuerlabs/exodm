@@ -10,9 +10,14 @@
 
 -export([init/0,
 	 table/0]).
--export([new/3, update/2, lookup/1, lookup_attr/2,
+-export([new/2, 
+	 new/3, 
+	 update/2, 
+	 lookup/1, 
+	 lookup_attr/2,
 	 list_users/2,    %% (N, Prev)
-	 list_user_keys/0, fold_users/2,
+	 list_user_keys/0, 
+	 fold_users/2,
 	 add_access/3,
 	 list_access/1, exist/1,
 	 delete/1]).
@@ -60,6 +65,9 @@ publish(Event, Data) when Event==add; Event==delete ->
 %% END Gproc pub/sub ------------------
 
 
+new(UName, Options) ->
+    new(undefined, UName, Options).
+
 new(AID, UName, Options) ->
     exodm_db:in_transaction(
       fun(_) ->
@@ -72,25 +80,23 @@ new(AID, UName, Options) ->
 	      end
       end).
 
-new_(AID0, UName, Options) ->
+new_(undefined, UName, Options) ->
+    lager:debug("uname ~p, options ~p~n", [UName, Options]),
     [_] = exodm_db:nc_key_split(exodm_db:decode_id(UName)),  %% validation!
     Key = exodm_db:encode_id(UName),
-    AID = exodm_db:account_id_key(AID0),
     Name = binary_opt(name, Options, UName),
     case exist_(?TAB, Key) of
 	true ->
 	    {error, exists};
 	false ->
 	    insert(Key,name, Name),
-	    insert(Key,'__aid',   exodm_db:account_id_value(AID)),
-	    exodm_db_account:add_user(AID, Key),
 	    insert(Key,fullname,      binary_opt(fullname,Options)),
 	    insert(Key,phone,         binary_opt(phone,Options)),
 	    insert(Key,email,         binary_opt(email,Options)),
 	    insert(Key,skype,         binary_opt(skype,Options)),
 	    insert_password(Key, password,
 			    binary_opt(password, Options)),
-	    process_list_options(access, Key, Options),
+	    %% process_list_options(access, Key, Options),
 	    process_list_options(alias, Key, Options),
 	    %% lists:foldl(
 	    %%   fun(Al, I) when is_binary(Al) ->
@@ -99,7 +105,19 @@ new_(AID0, UName, Options) ->
 	    %% 	      insert(?TAB, K, '__alias', to_binary(Al))
 	    %%   end, 1, proplists:get_all_values(alias, Options)),
 	    {ok, exodm_db:decode_id(Key)}
+    end;
+new_(AID0, UName, Options) ->
+    case new_(undefined, UName, Options) of
+	{ok, DecodedKey} = Reply ->
+	    AID = exodm_db:account_id_key(AID0),
+	    Key = exodm_db:encode_id(UName),
+	    insert(Key,'__aid',   exodm_db:account_id_value(AID)),
+	    exodm_db_account:add_user(AID, Key),
+	    Reply;
+	Other ->
+	    Other
     end.
+    
 
 %%--------------------------------------------------------------------
 %% @doc
