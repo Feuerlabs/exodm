@@ -246,7 +246,7 @@ rpcs(File) ->
 
 rpcs(AID0, File0) ->
     ?debug("rpcs(~p, ~p)~n", [AID0, File0]),
-    {File, Rev} = internal_filename(to_binary(File0)),
+    {File, _Rev} = internal_filename(to_binary(File0)),
     {AID, Key, _} = file_key(AID0, File),
     check_access(read, AID),
     case kvdb:get_attrs(?DB, tab_name(AID), Key, [rpcs]) of
@@ -268,8 +268,11 @@ find_rpc(File, Method) ->
 find_rpc(AID0, File0, Method) ->
     ?debug("find_rpc(~p, ~p, ~p)~n", [AID0, File0, Method]),
     {File, Rev} = internal_filename(to_binary(File0)),
+    ?debug("internal file ~p, revision ~p~n", [File, Rev]),
     {AID, Key, IsTagged} = file_key(AID0, File),
+    ?debug("aid ~p, key ~p, tagflag ~p~n", [AID, Key, IsTagged]),
     check_access(read, AID),
+    ?debug("access checked~n", []),
     case Rev of
         <<>> ->
             %% no revision specified
@@ -279,16 +282,20 @@ find_rpc(AID0, File0, Method) ->
     end.
 
 find_rpc_latest(system, Key, Method, _) ->
+    ?debug("find_rpc_latest(system, ~p, ~p)~n", [Key, Method]),
     case latest_file_version(Tab = tab_name(system), Key) of
         {ok, FullName} ->
+            ?debug("latest file version ~p~n", [FullName]),
             lookup_rpc(Tab, FullName, Method);
         error ->
             {error, not_found}
     end;
 find_rpc_latest(AID, Key, Method, IsTagged) ->
+    ?debug("find_rpc_latest(~p, ~p, ~p, ~p)~n", [AID, Key, Method, IsTagged]),
     case latest_file_version(Tab = tab_name(AID), Key) of
         {ok, FullName} ->
             %% Given that we have the spec here, we only search in this spec.
+            ?debug("latest file version ~p~n", [FullName]),
             lookup_rpc(Tab, FullName, Method);
         error ->
             if IsTagged ->
@@ -313,11 +320,13 @@ find_rpc_specified(AID, Key, Method, IsTagged) ->
     end.
 
 lookup_rpc(Tab, FullName, Method) ->
+    ?debug("lookup_rpc(~p, ~p, ~p)~n", [Tab, FullName, Method]),
     ShortMethod = case re:split(Method, <<":">>, [{return,binary}]) of
                       [_, M] -> M;
                       [M] -> M
                   end,
     Key = kvdb_conf:join_key([FullName, <<"rpc">>, to_binary(ShortMethod)]),
+    ?debug("short method ~p, key ~p~n", [ShortMethod, Key]),
     kvdb_conf:read(Tab, Key).
 
 
@@ -428,7 +437,7 @@ try_file(AID, File, Opts) ->
 	    {error, einval}
     end.
 
-try_file_(AID, File0, Opts) ->
+try_file_(AID, File0, _Opts) ->
     {File, Rev} = internal_filename(File0),
     Tab = tab_name(AID),
     case Rev of
@@ -457,10 +466,14 @@ try_file_(AID, File0, Opts) ->
 
 
 latest_file_version(Tab, File) ->
+    ?debug("latest_file_version(~p, ~p)~n", [Tab, File]),
     Base = filename:basename(File, <<".yang">>),
     Sz = byte_size(Base),
-    case kvdb_conf:prev(Tab, <<Base/binary, "@:">>) of
+    Key = <<Base/binary, "@:">>,
+    ?debug("file base name ~p, size ~p, key ~p~n", [Base, Sz, Key]),
+    case kvdb_conf:prev(Tab, Key) of
         {ok, {FoundKey, _, _}} ->
+            ?debug("found key ~p~n", [FoundKey]),
             case kvdb_conf:split_key(FoundKey) of
                 [<<Base:Sz/binary, _/binary>> = FullName|_] ->
                     ?debug("Latest version: ~s~n", [FullName]),

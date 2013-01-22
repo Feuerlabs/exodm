@@ -667,6 +667,60 @@ json_rpc_({call, M, <<"list-accounts">>,
 	false ->
 	    {ok,result_code('permission-denied')}
     end;
+json_rpc_({call, M, <<"create-user">>,
+	   [{'uname', Name, _Type1} | Options]} , Env)  when ?ADMIN(M) ->
+    case has_root_access(Env) of
+	true ->
+	    exodm_db_session:set_trusted_proc(),
+	    Res =
+		exodm_db:in_transaction(
+		  fun(_Db) ->
+			  case exodm_db_user:lookup(Name) of
+			      [] ->
+				  %% Remove type info from opts
+				  Opts = [{Opt, Value} || {Opt, Value, _Type} <- Options],
+				  exodm_db_user:new(Name,Opts),
+				  result_code(ok);
+			      User ->
+				  ?debug("found ~p",[User]),
+				  result_code('object-exists')
+			  end
+		  end),
+	    exodm_db_session:unset_trusted_proc(),
+	    {ok, Res};
+	false ->
+	    {ok,result_code('permission-denied')}
+    end;
+json_rpc_({call, M, <<"delete-user">>,
+	   [{'uname', Name, _}|_Opts]} = _RPC, Env) when ?ADMIN(M) ->
+    case has_root_access(Env) andalso (Name =/= <<"exodm-admin">>) of
+	true ->
+	    exodm_db_session:set_trusted_proc(),
+	    Res =
+		exodm_db:in_transaction(
+		  fun(_Db) ->
+			  case exodm_db_user:lookup(Name) of
+			      [] ->
+				  result_code('object-not-found');
+			      User ->
+				  ?debug("found ~p",[User]),
+				  %% Check if initial admin
+				  exodm_db_user:delete(Name),
+				  result_code(ok)
+			  end
+		  end),			  
+	    {ok, Res};
+	false ->
+	    {ok,result_code('permission-denied')}
+    end;
+json_rpc_({call, M, <<"list-users">>,
+	   [{'n', N, _},
+	    {'previous', Prev, _}]} = _RPC, Env) ->
+    %% In future
+    %% AID = exodm_db_session:get_aid(), 
+    Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
+		    exodm_db_user:list_users(N, Prev)),
+    {ok, [{'users', {array,Res}}]};
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p\n", [ ?MODULE, RPC ]),
     {ok, result_code('validation-failed')}.
