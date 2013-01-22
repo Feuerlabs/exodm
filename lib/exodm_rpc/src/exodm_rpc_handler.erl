@@ -57,7 +57,9 @@ device_sessions(AID, DID) ->
     ExtID = exodm_db_device:enc_ext_key(AID, DID),
     device_sessions(ExtID).
 
-device_sessions(ExtID) ->
+device_sessions(ExtID0) ->
+    {AID, DID} = exodm_db_device:dec_ext_key(ExtID0),
+    ExtID = exodm_db_device:enc_ext_key(AID, DID),
     Res = gproc:select(p, [{ {{p,l,{exodm_rpc, active_device, ExtID, '$2'}},
 			      '$1', '_'},
 			     [], [{{'$1', '$2'}}] }]),
