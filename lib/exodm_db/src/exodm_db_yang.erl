@@ -31,29 +31,41 @@
 init() ->
     exodm_db:in_transaction(
       fun(_) ->
-              add_table(tab_name(system)),
-              add_table(tab_name(shared)),
-              exodm_db_session:set_trusted_proc(),
-              YangDir = filename:join(code:priv_dir(exosense_specs), "yang"),
-              {ok, Bin1} = file:read_file(
-                             filename:join(YangDir, "ietf-inet-types.yang")),
-              _Res1 = write_system("ietf-inet-types.yang", Bin1),
-              ?debug("write_system(ietf-inet-types.yang) -> ~p~n", [_Res1]),
-              {ok, Bin2} = file:read_file(
-                             filename:join(YangDir, "exosense.yang")),
-              _Res2 = write_system("exosense.yang", Bin2),
-              ?debug("write_system(exosense.yang) -> ~p~n", [_Res2]),
-              {ok, Bin3} = file:read_file(
-                             filename:join(YangDir, "exodm.yang")),
-              _Res3 = write_system("exodm.yang", Bin3),
-              ?debug("write_system(exodm.yang) -> ~p~n", [_Res3]),
-
-              {ok, Bin4} = file:read_file(
-                             filename:join(YangDir, "exodm_admin.yang")),
-              _Res4 = write_system("exodm_admin.yang", Bin4),
-              ?debug("write_system(exodm_admin.yang) -> ~p~n", [_Res4]),
-              ok
+              case needs_init() of
+                  true -> init_();
+                  false -> ok
+              end
       end).
+
+needs_init() ->
+    case kvdb_conf:info({tab_name(system), encoding}) of
+        undefined -> true;
+        _ -> false
+    end.
+
+init_() ->
+    add_table(tab_name(system)),
+    add_table(tab_name(shared)),
+    exodm_db_session:set_trusted_proc(),
+    YangDir = filename:join(code:priv_dir(exosense_specs), "yang"),
+    {ok, Bin1} = file:read_file(
+                   filename:join(YangDir, "ietf-inet-types.yang")),
+    _Res1 = write_system("ietf-inet-types.yang", Bin1),
+    ?debug("write_system(ietf-inet-types.yang) -> ~p~n", [_Res1]),
+    {ok, Bin2} = file:read_file(
+                   filename:join(YangDir, "exosense.yang")),
+    _Res2 = write_system("exosense.yang", Bin2),
+    ?debug("write_system(exosense.yang) -> ~p~n", [_Res2]),
+    {ok, Bin3} = file:read_file(
+                   filename:join(YangDir, "exodm.yang")),
+    _Res3 = write_system("exodm.yang", Bin3),
+    ?debug("write_system(exodm.yang) -> ~p~n", [_Res3]),
+
+    {ok, Bin4} = file:read_file(
+                   filename:join(YangDir, "exodm_admin.yang")),
+    _Res4 = write_system("exodm_admin.yang", Bin4),
+    ?debug("write_system(exodm_admin.yang) -> ~p~n", [_Res4]),
+    ok.
 
 
 init(AID) ->
@@ -351,8 +363,10 @@ store(AID, File, {Tag, _, M, L} = Mod, RPCs, Src) when
                            {tab_name(AID), Other}
                    end,
     Key1 = set_revision(FName, Revision),
+    RPCNames = [{Stmt,R} || {Stmt,_,R,_} <- RPCs],
     kvdb:put(?DB, Tab, {kvdb_conf:escape_key(Key1),
-                        [{'__checksum', Checksum}], <<>>}),
+                        [{'__checksum', Checksum},
+                         {rpcs, RPCNames}], <<>>}),
     kvdb:put(?DB, Tab, {kvdb_conf:join_key(Key1, <<"src">>), [],
                         to_binary(Src)}),
     %% ?debug("L = ~p\n", [L]),
@@ -469,9 +483,9 @@ latest_file_version(Tab, File) ->
     ?debug("latest_file_version(~p, ~p)~n", [Tab, File]),
     Base = filename:basename(File, <<".yang">>),
     Sz = byte_size(Base),
-    Key = <<Base/binary, "@:">>,
-    ?debug("file base name ~p, size ~p, key ~p~n", [Base, Sz, Key]),
-    case kvdb_conf:prev(Tab, Key) of
+    Marker = append_colon(Base, Sz),
+    ?debug("file base name ~p, size ~p, marker ~p~n", [Base, Sz, Marker]),
+    case kvdb_conf:prev(Tab, Marker) of
         {ok, {FoundKey, _, _}} ->
             ?debug("found key ~p~n", [FoundKey]),
             case kvdb_conf:split_key(FoundKey) of
@@ -485,12 +499,23 @@ latest_file_version(Tab, File) ->
             error
     end.
 
+append_colon(B, Sz) ->
+    Sz1 = Sz-1,
+    case B of
+        <<_:Sz1/binary, "@">> ->
+            <<B/binary, ":">>;
+        _ ->
+            <<B/binary, "@:">>
+    end.
 
 internal_filename(File) ->
     case re:run(File, <<"(^[^@]+)@([-0-9]*)\\.yang\$">>,
                 [{capture, all_but_first, binary}]) of
         {match, [_Base, Date]} ->
             {File, Date};
+        {match, [_Base, <<>>]} ->
+            %% e.g. <<"demo@.yang">>
+            {File, <<>>};
         nomatch ->
             Base = filename:basename(File, ".yang"),
             {<<Base/binary, "@.yang">>, <<>>}
@@ -521,4 +546,3 @@ get_aid() ->
         root -> system;
         Aid -> Aid
     end.
-            
