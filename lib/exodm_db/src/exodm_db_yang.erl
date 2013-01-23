@@ -192,21 +192,21 @@ write_(AID0, File0, Y) ->
 				open_file_hook(AID, F, Os)
 			end}],
     %% TODO: we should deep_parse the modules once that's ready
-    case yang_parser:deep_parse(File, Opts) of
-	{ok, [{module,_,_,Data} = Module]} ->
-            RPCs = [D || D <- Data,
-                         element(1, D) == rpc orelse
-                             element(1, D) == notification],
-	    %% RPCs = case yang_json:json_rpc(File, Opts) of
-	    %%            [{module,_,RPCs1}] -> RPCs1;
-            %%            {error, _} = Error ->
-            %%                error(Error, [File])
-	    %%        end,
-	    store(AID, File, Module, RPCs, Y);
+    case yang_parser:parse(File, Opts) of
         {ok, [{submodule,_,_,_} = SubMod]} ->
             store(AID, File, SubMod, [], Y);
-	{error,_} = Error ->
-	    error(Error, [Y])
+        {ok, [{module,_,_,_}]} ->
+            case yang_parser:deep_parse(File, Opts) of
+                {ok, [{module,_,_,Data} = Module]} ->
+                    RPCs = [D || D <- Data,
+                                 element(1, D) == rpc orelse
+                                     element(1, D) == notification],
+                    store(AID, File, Module, RPCs, Y);
+                {error,_} = Error ->
+                    error(Error, [Y])
+            end;
+        {error,_} = Error ->
+            error(Error, [Y])
     end.
 
 check_access(read, system) -> ok;
