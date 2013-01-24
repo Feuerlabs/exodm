@@ -8,7 +8,7 @@
 -define(SYSTEM_REPOSITORY, <<"system">>).
 
 -define(EXO(M), (M==<<"exodm">> orelse M==<<"exosense">>)).
--define(ADMIN(M), (M==<<"exodm_admin">>)).
+-define(ADMIN(M), (M==<<"exodm">>)).
 
 -define(catch_result(Expr),
 	result_code(try Expr
