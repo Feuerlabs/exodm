@@ -10,6 +10,7 @@
 
 authenticate(S, Role, Arg) ->
     ?dbg("~p:authenticate(...)~n", [?MODULE]),
+    jobs:ask(exodm_rpc_bert_sessions),
     try bert_challenge:authenticate(S, Role, Arg) of
 	{ok, St} ->
 	    ID0 = bert_challenge:remote_id(St),
