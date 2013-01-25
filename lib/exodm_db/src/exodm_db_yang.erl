@@ -20,10 +20,12 @@
          find_rpc/3, %% (AID, YangF, Method)
          specs/0,    %% () -> specs(get_aid())
          specs/1]).  %% (AID)
--export([init/0, init/1,
+-export([init/0, 
+         init/1,
          write_system/2
         ]).
--export([table/1, list_next/3]).
+-export([table/1, 
+         list_next/3]).
 
 -include_lib("lager/include/log.hrl").
 -define(DB, kvdb_conf).
@@ -48,23 +50,26 @@ init_() ->
     add_table(tab_name(shared)),
     exodm_db_session:set_trusted_proc(),
     YangDir = filename:join(code:priv_dir(exosense_specs), "yang"),
-    {ok, Bin1} = file:read_file(
-                   filename:join(YangDir, "ietf-inet-types.yang")),
-    _Res1 = write_system("ietf-inet-types.yang", Bin1),
-    ?debug("write_system(ietf-inet-types.yang) -> ~p~n", [_Res1]),
-    {ok, Bin2} = file:read_file(
-                   filename:join(YangDir, "exosense.yang")),
-    _Res2 = write_system("exosense.yang", Bin2),
-    ?debug("write_system(exosense.yang) -> ~p~n", [_Res2]),
-    {ok, Bin3} = file:read_file(
-                   filename:join(YangDir, "exodm.yang")),
-    _Res3 = write_system("exodm.yang", Bin3),
-    ?debug("write_system(exodm.yang) -> ~p~n", [_Res3]),
+    YangFiles = ["ietf-inet-types.yang",
+                 "exosense.yang",
+                 "exodm_type.yang",
+                 "exodm_user.yang",
+                 "exodm_account.yang",
+                 "exodm_device.yang",
+                 "exodm_device_group.yang",
+                 "exodm_device_type.yang",
+                 "exodm_config_set.yang",
+                 "exodm_yang_module.yang",
+                 "exodm_package.yang",
+                 "exodm.yang"], 
 
-    {ok, Bin4} = file:read_file(
-                   filename:join(YangDir, "exodm_admin.yang")),
-    _Res4 = write_system("exodm_admin.yang", Bin4),
-    ?debug("write_system(exodm_admin.yang) -> ~p~n", [_Res4]),
+    lists:foldl(
+      fun(File, _Acc) ->
+              ?debug("yang file ~s~n", [File]),
+              {ok, Bin} = file:read_file(filename:join(YangDir, File)),
+              _Res = write_system(File, Bin),
+              ?debug("write_system(~s) -> ~p~n", [File, _Res])
+      end, [], YangFiles),
     ok.
 
 
@@ -179,7 +184,7 @@ tag_file(AID0, File, Tag) ->
 write_system(File, Y) ->
     exodm_db:in_transaction(
       fun(_) ->
-              write_(system, File, Y)
+              write_(system, File, Y) 
       end).
 
 write_(AID0, File0, Y) ->
