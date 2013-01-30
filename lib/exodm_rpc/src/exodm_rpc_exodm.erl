@@ -715,14 +715,14 @@ json_rpc_({call, M, <<"delete-user">>,
     end;
 json_rpc_({call, M, <<"list-users">>,
 	   [{'n', N, _},
-	    {'previous', Prev, _}]} = _RPC, _Env) ->
+	    {'previous', Prev, _}]} = _RPC, _Env) when ?EXO(M) ->
     Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
 		    exodm_db_user:list_users(N, Prev)),
     {ok, [{'users', {array,Res}}]};
 
-json_rpc_({call, M, <<"list-account-users">>,
+json_rpc_({call, M, <<"list-own-account-users">>,
 	   [{'n', N, _},
-	    {'previous', Prev, _}]} = _RPC, _Env) ->
+	    {'previous', Prev, _}]} = _RPC, _Env) when ?EXO(M) ->
     AID = exodm_db_session:get_aid(), 
     Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
 		    exodm_db_account:list_users(AID, N, Prev)),
@@ -730,10 +730,26 @@ json_rpc_({call, M, <<"list-account-users">>,
 
 json_rpc_({call, M, <<"add-users-to-account">>,
 	   [{'account', Account, _},
-	    {"role", Role, _},
-	    {"unames", UNames, _}] = _Cfg}, Env) when ?EXO(M) ->
+	    {'role', Role, _},
+	    {'unames', UNames, _}]}, Env) when ?EXO(M) ->
     {ok, ?catch_result(exodm_db_account:add_users(Account, Role, UNames,
 						 has_root_access(Env)))};
+json_rpc_({call, M, <<"remove-users-from-account">>,
+	   [{'account', Account, _},
+	    {'unames', UNames, _}]}, Env) when ?EXO(M) ->
+    {ok, ?catch_result(exodm_db_account:remove_users(Account, UNames,
+						 has_root_access(Env)))};
+json_rpc_({call, M, <<"list-account-users">>,
+	   [{'account', Account, _},
+	    {'n', N, _},
+	    {'previous', Prev, _}]} = _RPC, Env) when ?EXO(M) ->
+    case exodm_db_account:list_users(Account, N, Prev, 
+						   has_root_access(Env)) of
+	Users when is_list(Users) ->
+	    {ok, [{'users', {array, Users}}]};
+	Other ->
+	    {ok, Other}
+    end;
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p\n", [ ?MODULE, RPC ]),
     {ok, result_code('validation-failed')}.

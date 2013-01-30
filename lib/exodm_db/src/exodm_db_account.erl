@@ -20,10 +20,12 @@
 	 list_account_keys/0,
 	 list_roles/3,
 	 list_users/3,
+	 list_users/4,
 	 list_admins/3]).
--export([add_users/4]).
+-export([add_users/4,
+	 remove_users/3]).
 -export([create_role/3,
-	 role/2,
+	 role_def/2,
 	 role_exists/2]).
 -export([register_protocol/2, 
 	 is_protocol_registered/2]).
@@ -41,13 +43,14 @@
 	 table/0]).
 -export([init/0]).
 
-%% callbacks
--export([add_user/2,
-	 remove_user/2]).
-
 -import(exodm_db, [binary_opt/2, to_binary/1]).
 
 -define(TAB, <<"acct">>).
+
+%% Predefined roles
+-define(ROOT, <<"root">>).
+-define(INIT_ADMIN, <<"initial_admin">>).
+-define(ADMIN, <<"admin">>).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -62,6 +65,7 @@ init() ->
 
 table() ->
     ?TAB.
+
 
 %% Gproc pub/sub ----------------------
 subscribe(Event) when Event==add; Event==delete ->
@@ -146,8 +150,9 @@ new_(Options) ->
 		   Other -> Other
 	       end,
     insert(Key, name, AcctName),
-    {ok, AdminUName} = exodm_db_user:new(AID, AdminUName, UserOpts),
+    {ok, AdminUName} = exodm_db_user:new(AdminUName, UserOpts),
     create_roles(AID, AdminUName, Root),
+    add_admin_user(AID, AdminUName, Root),
     exodm_db_yang:init(AID),
     exodm_db_device:init(AID),
     exodm_db_config:init(AID),
@@ -158,6 +163,30 @@ new_(Options) ->
     %% 		  end, proplists:get_all_values(alias, Options)),
     %% add_user(AID, AdminUName, _RID = 1),  % must come after adding the user
     {ok, AIDVal}.
+
+%% delete the account, caller must make sure that data
+%% access via this account is first deleted.
+delete(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:in_transaction(
+      fun(_Db) ->
+	      [Admin] = list_admins(AID, 2, <<"">>),
+	      exodm_db_user:delete(Admin),
+	      kvdb_conf:delete_tree(table(), AID),
+	      publish(delete, exodm_db:account_id_value(AID)),
+	      ok
+      end).
+
+%% list N number of account starting after Prev
+list_accounts(N, Prev) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(table(),
+				 N, exodm_db:to_binary(Prev),
+				 fun(Key) ->
+					 lookup(Key)
+				 end)
+      end).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -175,6 +204,7 @@ new_(Options) ->
 
 
 add_users(AName, Role, UNames, IsRoot) ->
+    lager:debug("aname ~p, role ~p, unames ~p", [AName, Role, UNames]),
     %% Check if account_exists
     case exodm_db_account:lookup_by_name(AName) of
 	[] -> error('object-not-found');
@@ -185,10 +215,7 @@ add_users1(AID, Role, UNames, true) ->
     %% Root - access is ok
     add_users2(AID, Role, UNames);
 add_users1(AID, Role, UNames, false) ->
-    %% Check if current user has admin rights for account
-    Client = to_binary(exodm_db_session:get_user()),
-    AccountAdmins = list_admins(AID, 100, ""), %% All?
-    case lists:member(Client, AccountAdmins) of
+    case has_admin_access(AID) of
 	true -> add_users2(AID, Role, UNames);
 	false -> error('permission-denied')
     end.
@@ -203,59 +230,126 @@ add_users2(AID, Role, UNames) ->
     
 add_users3(_AID, _Role, []) ->
     ok;
+add_users3(_AID, ?ROOT, _UNames) ->
+    error('permission-denied');
+add_users3(_AID, ?INIT_ADMIN, _UNames) ->
+    error('permission-denied');
+add_users3(AID, ?ADMIN = Role, [UName | Rest]) ->
+    add_user(AID, UName, Role),
+    insert(exodm_db:join_key(exodm_db:escape_key(AID), <<"admins">>), 
+	   UName, UName),
+    add_users3(AID, Role, Rest);
 add_users3(AID, Role, [UName | Rest]) ->
-    add_user(AID, UName),
-    exodm_db_user:add_access(AID, UName, Role),
+    add_user(AID, UName, Role),
     add_users3(AID, Role, Rest).
 
+add_user(AID, UName, Role) ->
+    exodm_db_user:add_access(AID, UName, Role),
+    kvdb_conf:write(table(), 
+		    {kvdb_conf:join_key([AID,<<"users">>,UName]), [], <<>>}).
 
-add_user(AID0, UID0) ->
-    AID = exodm_db:account_id_key(AID0),
-    UID = exodm_db:encode_id(UID0),
-    kvdb_conf:write(
-      table(), {kvdb_conf:join_key([AID,<<"users">>,UID]), [], <<>>}).
+add_admin_user(AID, UName, true) ->
+    add_user(AID, UName, ?ROOT);
+add_admin_user(AID, UName, false) ->
+    add_user(AID, UName, ?INIT_ADMIN).
 
-remove_user(AID0, UID0) ->
-    AID = exodm_db:account_id_key(AID0),
-    UID = exodm_db:encode_id(UID0),
-    Tab = table(),
-    exodm_db:in_transaction(
-      fun(_) ->
-	      AdminParent = kvdb_conf:join_key(AID, <<"admins">>),
-	      case only_child(Tab, AdminParent, UID) of
-		  true -> error(last_admin);
-		  false ->
-		      kvdb_conf:delete(
-			Tab, kvdb_conf:join_key([AID, <<"users">>, UID])),
-		      kvdb_conf:delete(
-			Tab, kvdb_conf:join_key([AID, <<"admins">>, UID]))
-	      end
-      end).
+%%--------------------------------------------------------------------
+%% @doc
+%% Remove account access from users
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec remove_users(AName::binary(),
+		   UNames::list(binary()), 
+		   IsRoot::boolean()) ->
+			  ok |
+			  {error, Reason::term()}.
 
-only_child(Tab, Parent, UID) ->
-    case kvdb_conf:first_child(Tab, Parent) of
-	{ok, Key} ->
-	    case lists:reverse(kvdb_conf:split_key(Key)) of
-		[UID|_] ->
-		    case kvdb_conf:next_child(Tab, Key) of
-			done ->
-			    true;
-			{ok, _} ->
-			    false
-		    end;
-		_ ->
-		    false
-	    end;
-	done ->
-	    %% Shouldn't happen, but strictly speaking, UID is not the only
-	    %% child.
-	    false
+
+
+remove_users(AName, UNames, IsRoot) ->
+    lager:debug("aname ~p, unames ~p", [AName, UNames]),
+    %% Check if account_exists
+    case exodm_db_account:lookup_by_name(AName) of
+	[] -> error('object-not-found');
+	[AID] -> remove_users1(AID, UNames, IsRoot)
+    end.
+		     
+remove_users1(AID, UNames, true) ->
+    %% Root - access is ok
+    remove_users2(AID, UNames);
+remove_users1(AID, UNames, false) ->
+    case has_admin_access(AID) of
+	true -> remove_users2(AID, UNames);
+	false -> error('permission-denied')
     end.
 
+
+remove_users2(_AID, []) ->
+    ok;
+remove_users2(AID, [UName | Rest]) ->
+    lager:debug("aname ~p, uname ~p", [AID, UName]),
+    case lists:keyfind(AID, 1, exodm_db_user:list_access(UName)) of
+	false -> error('object-not-found');
+	{AID, ?INIT_ADMIN} -> error('permission-denied');
+	{AID, ?ROOT} -> error('permission-denied');
+	{AID, Role} -> 
+	    remove_user(AID, UName, Role),
+	    remove_users2(AID, Rest)
+    end.
+
+remove_user(AID, UName, ?ADMIN = Role) ->
+    kvdb_conf:delete(table(), kvdb_conf:join_key([AID, <<"admins">>, UName])),
+    remove_user1(AID, UName, Role);
+remove_user(AID, UName, Role) ->
+    remove_user1(AID, UName, Role).
+
+remove_user1(AID, UName, Role) ->
+    exodm_db_user:remove_access(AID, UName),
+    kvdb_conf:delete(table(), kvdb_conf:join_key([AID, <<"users">>, UName])).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% List account users
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec list_users(AName::binary(),
+		 N::integer(),
+		 Prev::binary(),
+		 IsRoot::boolean()) ->
+			  ok |
+			  {error, Reason::term()}.
+
+
+
+list_users(AName, N, Prev, IsRoot) ->
+    lager:debug("aname ~p, n ~p, prev ~p", [AName, N, Prev]),
+    %% Check if account_exists
+    case exodm_db_account:lookup_by_name(AName) of
+	[] -> error('object-not-found');
+	[AID] -> list_users1(AID, N, Prev, IsRoot)
+    end.
+
+list_users1(AID, N, Prev, true) ->
+    %% Root - access is ok
+    list_users_(AID, N, Prev);
+list_users1(AID, N, Prev, false) ->
+    case has_admin_access(AID) of
+	true -> list_users_(AID, N, Prev);
+	false -> error('permission-denied')
+    end.
+
+has_admin_access(AID) ->
+    %% Check if current user has admin rights for account
+    Client = to_binary(exodm_db_session:get_user()),
+    AccountAdmins = list_admins(AID, 100, ""), %% All?
+    lists:member(Client, AccountAdmins).
+
 create_roles(AID, AdminUName, true) ->
-    create_admin_role(AID, AdminUName, <<"root">>);
+    create_admin_role(AID, AdminUName, ?ROOT);
 create_roles(AID, AdminUName, false) ->
-    create_admin_role(AID, AdminUName, <<"initial_admin">>),
+    create_admin_role(AID, AdminUName, ?INIT_ADMIN),
     DefaultRoles = configurable_roles(),
     lists:foldl(fun(Role, _Acc) ->
 			t_create_role_(AID, Role,initial_role_opts(Role))
@@ -275,13 +369,13 @@ configurable_roles() ->
 
 
 %% Future access format is {<<"all">> | GroupName, [list(Rpc)]}
-initial_role_opts(<<"root">>) ->
+initial_role_opts(?ROOT) ->
     [{descr, "initial root user"},
      {access, {<<"all">>,<<"root">>}}];
-initial_role_opts(<<"initial_admin">>) ->
+initial_role_opts(?INIT_ADMIN) ->
     [{descr, "initial administrator - can not be removed"},
      {access, {<<"all">>, <<"admin">>}}];
-initial_role_opts(<<"admin">>) ->
+initial_role_opts(?ADMIN) ->
     [{descr, "administrator of account"},
      {access, {<<"all">>, <<"admin">>}}];
 initial_role_opts(<<"executer">>) ->
@@ -344,7 +438,7 @@ list_roles(AID0, N, Prev) ->
       end).
 
 
-role(AID, RName) ->
+role_def(AID, RName) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      kvdb_conf:read_tree(?TAB, exodm_db:join_key(
@@ -353,45 +447,10 @@ role(AID, RName) ->
 					   exodm_db:encode_id(RName)]))
       end).
 
-register_protocol(AID, Protocol) when is_binary(Protocol) ->
-    case exodm_rpc_protocol:module(Protocol) of
-	undefined ->
-	    erlang:error({unknown_protocol, Protocol});
-	_ ->
-	    exodm_db:in_transaction(
-	      fun(_) ->
-		      Key = exodm_db:join_key(exodm_db:account_id_key(AID),
-					      <<"protocols">>),
-		      insert(Key, Protocol, <<>>)
-	      end)
-    end.
-
-is_protocol_registered(AID, Protocol) ->
-    exodm_db:in_transaction(
-      fun(_) ->
-	      case kvdb_conf:read(?TAB, exodm_db:join_key(
-					  [exodm_db:account_id_key(AID),
-					   <<"protocols">>, Protocol])) of
-		  {ok, _} ->
-		      true;
-		  {error, _} ->
-		      false
-	      end
-      end).
-
 role_exists(AID, Role0) ->
     Role = exodm_db:encode_id(to_binary(Role0)),
     exist(exodm_db:join_key([exodm_db:account_id_key(AID),
 			     <<"roles">>, Role])).
-
-group_exists(AID, GID) ->
-    case exodm_db:read(?TAB, exodm_db:join_key([AID, <<"groups">>,
-						GID, <<"name">>])) of
-	[] ->
-	    false;
-	_ ->
-	    true
-    end.
 
 valid_access(<<"view">>) -> true;
 valid_access(<<"config">>) -> true;
@@ -515,6 +574,78 @@ exist_(Key) ->
 	[_] -> true
     end.
 
+list_users(AID0, N, Prev) ->
+    list_users_(exodm_db:account_id_key(AID0), N, Prev).
+
+list_users_(AID,  N, Prev) ->
+    FullPrev = kvdb_conf:join_key([AID, <<"users">>, exodm_db:to_binary(Prev)]),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(
+		table(),
+		N, FullPrev,
+		fun(Key) ->
+			lists:last(kvdb_conf:split_key(Key))
+		end)
+      end).
+
+list_admins(AID0, N, Prev) ->
+    AID = exodm_db:account_id_key(AID0),
+    FullPrev = kvdb_conf:join_key([AID, <<"admins">>, 
+				   exodm_db:to_binary(Prev)]),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(table(),
+				 N, FullPrev,
+				 fun(Key) ->
+					 lists:last(kvdb_conf:split_key(Key))
+				 end)
+      end).
+
+
+
+list_account_keys() ->
+    lists:reverse(fold_accounts(fun(AID, Acc) ->
+					[AID|Acc]
+				end, [])).
+
+%%% Group handling
+group_exists(AID, GID) ->
+    case exodm_db:read(?TAB, exodm_db:join_key([AID, <<"groups">>,
+						GID, <<"name">>])) of
+	[] ->
+	    false;
+	_ ->
+	    true
+    end.
+
+%%% Protocol handling
+register_protocol(AID, Protocol) when is_binary(Protocol) ->
+    case exodm_rpc_protocol:module(Protocol) of
+	undefined ->
+	    erlang:error({unknown_protocol, Protocol});
+	_ ->
+	    exodm_db:in_transaction(
+	      fun(_) ->
+		      Key = exodm_db:join_key(exodm_db:account_id_key(AID),
+					      <<"protocols">>),
+		      insert(Key, Protocol, <<>>)
+	      end)
+    end.
+
+is_protocol_registered(AID, Protocol) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      case kvdb_conf:read(?TAB, exodm_db:join_key(
+					  [exodm_db:account_id_key(AID),
+					   <<"protocols">>, Protocol])) of
+		  {ok, _} ->
+		      true;
+		  {error, _} ->
+		      false
+	      end
+      end).
+
 %% Check if account is empty
 %% no device must exist
 %% no yang specs must exit
@@ -554,63 +685,6 @@ t_is_empty_users_(AID) ->
 	    end;
 	_ -> false
     end.
-
-%% delete the account, caller must make sure that data
-%% access via this account is first deleted.
-delete(AID0) ->
-    AID = exodm_db:account_id_key(AID0),
-    exodm_db:in_transaction(
-      fun(_Db) ->
-	      [Admin] = list_admins(AID, 2, <<"">>),
-	      exodm_db_user:delete(Admin),
-	      kvdb_conf:delete_tree(table(), AID),
-	      publish(delete, exodm_db:account_id_value(AID)),
-	      ok
-      end).
-
-%% list N number of account starting after Prev
-list_accounts(N, Prev) ->
-    exodm_db:in_transaction(
-      fun(_) ->
-	      exodm_db:list_next(table(),
-				 N, exodm_db:to_binary(Prev),
-				 fun(Key) ->
-					 lookup(Key)
-				 end)
-      end).
-
-list_users(AID0, N, Prev) ->
-    AID = exodm_db:account_id_key(AID0),
-    FullPrev = kvdb_conf:join_key([AID, <<"users">>, exodm_db:to_binary(Prev)]),
-    exodm_db:in_transaction(
-      fun(_) ->
-	      exodm_db:list_next(
-		table(),
-		N, FullPrev,
-		fun(Key) ->
-			lists:last(kvdb_conf:split_key(Key))
-		end)
-      end).
-
-list_admins(AID0, N, Prev) ->
-    AID = exodm_db:account_id_key(AID0),
-    FullPrev = kvdb_conf:join_key([AID, <<"admins">>, 
-				   exodm_db:to_binary(Prev)]),
-    exodm_db:in_transaction(
-      fun(_) ->
-	      exodm_db:list_next(table(),
-				 N, FullPrev,
-				 fun(Key) ->
-					 lists:last(kvdb_conf:split_key(Key))
-				 end)
-      end).
-
-
-
-list_account_keys() ->
-    lists:reverse(fold_accounts(fun(AID, Acc) ->
-					[AID|Acc]
-				end, [])).
 
 %% FIXME!!!! remove? exodm_db:fold_keys does not exist.
 list_users(AID) ->
@@ -705,6 +779,27 @@ check_access(AID0) ->
 		    error(not_authorized)
 	    end
     end.
+
+only_child(Tab, Parent, UID) ->
+    case kvdb_conf:first_child(Tab, Parent) of
+	{ok, Key} ->
+	    case lists:reverse(kvdb_conf:split_key(Key)) of
+		[UID|_] ->
+		    case kvdb_conf:next_child(Tab, Key) of
+			done ->
+			    true;
+			{ok, _} ->
+			    false
+		    end;
+		_ ->
+		    false
+	    end;
+	done ->
+	    %% Shouldn't happen, but strictly speaking, UID is not the only
+	    %% child.
+	    false
+    end.
+
 
 incr_request_id(AID0) ->
     AID = exodm_db:account_id_key(AID0),

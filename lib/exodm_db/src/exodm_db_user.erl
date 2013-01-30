@@ -13,15 +13,16 @@
 -export([init/0,
 	 table/0]).
 -export([new/2, 
-	 new/3, 
 	 update/2, 
 	 lookup/1, 
 	 lookup_attr/2,
 	 list_users/2,    %% (N, Prev)
-	 list_user_keys/0, 
+	 list_user_keys/0,
+	 exist/1,
 	 fold_users/2,
 	 add_access/3,
-	 list_access/1, exist/1,
+	 remove_access/2,
+	 list_access/1, 
 	 delete/1]).
 -export([subscribe/1,
 	 unsubscribe/1]).
@@ -78,17 +79,9 @@ publish(Event, Data) when Event==add; Event==delete ->
 		 {error, Reason::term()}.
 
 new(UName, Options) ->
-    new(undefined, UName, Options).
-
-%%--------------------------------------------------------------------
--spec new(AID::binary(), UName::binary(), Options::list(tuple())) -> 
-		 {ok, Key::term()} |
-		 {error, Reason::term()}.
-
-new(AID, UName, Options) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      case new_(AID, UName, Options) of
+	      case new_(UName, Options) of
 		  {ok, UserName} = Res ->
 		      publish(add, UserName),
 		      Res;
@@ -97,7 +90,7 @@ new(AID, UName, Options) ->
 	      end
       end).
 
-new_(undefined, UName, Options) ->
+new_(UName, Options) ->
     lager:debug("uname ~p, options ~p~n", [UName, Options]),
     [_] = exodm_db:nc_key_split(exodm_db:decode_id(UName)),  %% validation!
     Key = exodm_db:encode_id(UName),
@@ -115,17 +108,6 @@ new_(undefined, UName, Options) ->
 			    binary_opt(password, Options)),
 	    process_list_options(alias, Key, Options),
 	    {ok, exodm_db:decode_id(Key)}
-    end;
-new_(AID0, UName, Options) ->
-    case new_(undefined, UName, Options) of
-	{ok, DecodedKey} = Reply ->
-	    AID = exodm_db:account_id_key(AID0),
-	    Key = exodm_db:encode_id(UName),
-	    insert(Key,'__aid',   exodm_db:account_id_value(AID)),
-	    exodm_db_account:add_user(AID, Key),
-	    Reply;
-	Other ->
-	    Other
     end.
     
 
@@ -323,10 +305,6 @@ fold_users(F, Acc) ->
 key(UID) ->
     exodm_db:encode_id(UID).
 
-insert(Key, Item, Value) ->
-    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
-    exodm_db:write(?TAB, Key1, Value).
-
 add_access(AID, UName, RName) ->
     exodm_db:in_transaction(
       fun(_) ->
@@ -348,23 +326,11 @@ t_add_access(AID0, UName0, RName) ->
 	    error({no_such_account, AID})
     end.
 
-%% add_access_(AID, UName, RID) ->
-%%     Pos = exodm_db:append_to_list(
-%% 	    ?TAB, exodm_db:join_key(UName, <<"access">>),
-%% 	    '__aid', exodm_db:account_id_value(AID)),
-%%     insert(?TAB, exodm_db:join_key(
-%% 		   UName, exodm_db:list_key(access, Pos)),
-%% 	   '__rid', exodm_db:role_id_value(RID)).
-
 insert_access(User, AID, ARole) ->
     ?debug("user ~p, aid ~p, role ~p", [User, AID, ARole]),
     UID = exodm_db:encode_id(User),
     Pos = new_list_pos(Base = exodm_db:join_key(UID, <<"access">>)),
     insert_access_(Base, Pos, AID, ARole).
-
-new_list_pos(Base) ->
-    {ok, Last} = kvdb_conf:last_list_pos(?TAB, Base),
-    Last+1.
 
 insert_access(User, I, AID, ARole) when is_integer(I), I>=0 ->
     UID = exodm_db:encode_id(User),
@@ -373,18 +339,60 @@ insert_access(User, I, AID, ARole) when is_integer(I), I>=0 ->
 insert_access_(Base, Pos, AID, ARole) ->
     ?debug("base ~p, pos ~p, aid ~p, role ~p", [Base, Pos, AID, ARole]),
     K = exodm_db:list_key(Base, Pos),
-    insert(K, '__aid', exodm_db:account_id_value(AID)),
+    insert(K, '__aid', AID),
     insert(K, '__rid', exodm_db:encode_id(ARole)).
+
+remove_access(AID, UName) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      t_remove_access(AID, UName)
+      end).
+
+t_remove_access(AID0, UName0) ->
+    AID = exodm_db:account_id_key(AID0),
+    UName = exodm_db:encode_id(UName0),
+    case exodm_db_account:exist(AID) of
+	true ->
+	    case exist(UName) of
+		true ->
+		    delete_access(UName, AID);
+		false ->
+		    error({no_such_user, UName})
+	    end;
+	false ->
+	    error({no_such_account, AID})
+    end.
+
+delete_access(UName, AID) ->
+    ?debug("user ~p, aid ~p", [UName, AID]),
+    case lists:keyfind(AID, 2, list_access_(UName)) of
+	false -> ok; %%??
+	{I, AID, Role} -> 
+	    delete_access_(exodm_db:join_key(UName, <<"access">>), I, AID)
+    end.
+    
+delete_access_(Base, Pos, AID) ->
+    ?debug("base ~p, pos ~p, aid ~p", [Base, Pos, AID]),
+    K = exodm_db:list_key(Base, Pos),
+    ?debug("k ~p", [K]),
+    delete(K, '__aid'),
+    delete(K, '__rid').
 
 list_access(UID0) when is_binary(UID0) ->
     UID = exodm_db:encode_id(UID0),
+    [{A, R} || {_I, A, R} <- list_access_(UID)].
+
+list_access_(UID)  ->
     exodm_db:fold_list(
       ?TAB,
       fun(I, Key, Acc) ->
-    	      case {read_uint32(?TAB, Key, '__aid'),
+    	      case {read(?TAB, Key, '__aid'),
     		    read(?TAB, Key, '__rid')} of
     		  {[{_, AID}], [{_, Role}]} ->
-    		      [{I, {AID, Role}}|Acc];
+    		      [{I, 
+			exodm_db:decode_id(AID), 
+			exodm_db:decode_id(Role)} |
+		       Acc];
     		  _ -> Acc
     	      end
       end, [], exodm_db:join_key(UID, <<"access">>)).
@@ -394,6 +402,18 @@ insert_password(Key, Item, Value) ->
     %% Expensive hash; expensive to create, expensive to check against
     {ok, Hash} = bcrypt:hashpw(Value, Salt),
     insert(Key, Item, to_binary(Hash)).
+
+new_list_pos(Base) ->
+    {ok, Last} = kvdb_conf:last_list_pos(?TAB, Base),
+    Last+1.
+
+insert(Key, Item, Value) ->
+    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
+    exodm_db:write(?TAB, Key1, Value).
+
+delete(Key, Item) ->
+    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
+    kvdb_conf:delete(?TAB, Key1).
 
 read(Tab, Key,Item) ->
     Key1 = exodm_db:join_key([Key, to_binary(Item)]),
