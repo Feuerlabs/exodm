@@ -12,7 +12,7 @@
 -export([transaction/1, in_transaction/1]).
 
 -export([group_id_key/1, group_id_num/1, group_id_value/1]).
--export([role_id_key/1, role_id_num/1, role_id_value/1]).
+%%-export([role_id_key/1, role_id_num/1, role_id_value/1]).
 -export([account_id_key/1, account_id_num/1, account_id_value/1]).
 -export([float_to_bin/1, bin_to_float/1]).
 -export([int_to_bin/1, bin_to_int/1]).
@@ -139,19 +139,6 @@ group_id_num(<<$g, I/binary>>) ->
 
 group_id_value(GID) ->
     <<(group_id_num(GID)):32>>.
-
-role_id_key(<<$r, _/binary>> = GID) -> GID;
-role_id_key(ID) ->
-    list_to_binary([$r|id_key(ID)]).
-
-role_id_num(Id) when is_integer(Id) ->
-    Id;
-role_id_num(<<I:32>>) -> I;
-role_id_num(<<$r, I/binary>>) ->
-    list_to_integer(binary_to_list(I), 16).
-
-role_id_value(RID) ->
-    <<(role_id_num(RID)):32>>.
 
 account_id_key(<<$a, _/binary>> = AID) -> AID;
 account_id_key(ID) ->

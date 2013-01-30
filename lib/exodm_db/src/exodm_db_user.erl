@@ -8,6 +8,8 @@
 
 -module(exodm_db_user).
 
+-include_lib("lager/include/log.hrl").
+
 -export([init/0,
 	 table/0]).
 -export([new/2, 
@@ -65,8 +67,23 @@ publish(Event, Data) when Event==add; Event==delete ->
 %% END Gproc pub/sub ------------------
 
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Creates the user in the database.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec new(UName::binary(), Options::list(tuple())) -> 
+		 {ok, Key::term()} |
+		 {error, Reason::term()}.
+
 new(UName, Options) ->
     new(undefined, UName, Options).
+
+%%--------------------------------------------------------------------
+-spec new(AID::binary(), UName::binary(), Options::list(tuple())) -> 
+		 {ok, Key::term()} |
+		 {error, Reason::term()}.
 
 new(AID, UName, Options) ->
     exodm_db:in_transaction(
@@ -96,14 +113,7 @@ new_(undefined, UName, Options) ->
 	    insert(Key,skype,         binary_opt(skype,Options)),
 	    insert_password(Key, password,
 			    binary_opt(password, Options)),
-	    %% process_list_options(access, Key, Options),
 	    process_list_options(alias, Key, Options),
-	    %% lists:foldl(
-	    %%   fun(Al, I) when is_binary(Al) ->
-	    %% 	      K = exodm_db:join_key(
-	    %% 		    Key, exodm_db:list_key(alias, I)),
-	    %% 	      insert(?TAB, K, '__alias', to_binary(Al))
-	    %%   end, 1, proplists:get_all_values(alias, Options)),
 	    {ok, exodm_db:decode_id(Key)}
     end;
 new_(AID0, UName, Options) ->
@@ -158,10 +168,6 @@ delete_(UID) ->
 process_list_options(O, Key, Options) ->
     Found = exodm_db:list_options(O, Options),
     F = case O of
-	    access ->
-		fun({I, {AAID,ARole}}) ->
-			insert_access(Key, I, AAID, ARole)
-		end;
 	    alias ->
 		fun({I, Alias}) ->
 			exodm_db:insert_alias(?TAB, Key, I, Alias)
@@ -258,7 +264,6 @@ update_(UID, Options) ->
 	      ignore
       end,
     lists:foreach(F, Options),
-    process_list_options(access, Key, Options),
     process_list_options(alias, Key, Options).
 
 lookup(UID) ->
@@ -322,23 +327,20 @@ insert(Key, Item, Value) ->
     Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     exodm_db:write(?TAB, Key1, Value).
 
-add_access(AID, UName, RID) ->
+add_access(AID, UName, RName) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      t_add_access(AID, UName, RID)
+	      t_add_access(AID, UName, RName)
       end).
 
-t_add_access(AID0, UName0, RID) ->
+t_add_access(AID0, UName0, RName) ->
     AID = exodm_db:account_id_key(AID0),
     UName = exodm_db:encode_id(UName0),
     case exodm_db_account:exist(AID) of
 	true ->
 	    case exist(UName) of
 		true ->
-		    %% insert(?TAB, exodm_db:join_key(
-		    %% 		   [UName, <<"access">>, AID]), '__rid',
-		    %% 	   exodm_db:role_id_value(RID));
-		    insert_access(UName, AID, RID);
+		    insert_access(UName, AID, RName);
 		false ->
 		    error({no_such_user, UName})
 	    end;
@@ -355,6 +357,7 @@ t_add_access(AID0, UName0, RID) ->
 %% 	   '__rid', exodm_db:role_id_value(RID)).
 
 insert_access(User, AID, ARole) ->
+    ?debug("user ~p, aid ~p, role ~p", [User, AID, ARole]),
     UID = exodm_db:encode_id(User),
     Pos = new_list_pos(Base = exodm_db:join_key(UID, <<"access">>)),
     insert_access_(Base, Pos, AID, ARole).
@@ -368,23 +371,13 @@ insert_access(User, I, AID, ARole) when is_integer(I), I>=0 ->
     insert_access_(exodm_db:join_key(UID, <<"access">>), I, AID, ARole).
 
 insert_access_(Base, Pos, AID, ARole) ->
+    ?debug("base ~p, pos ~p, aid ~p, role ~p", [Base, Pos, AID, ARole]),
     K = exodm_db:list_key(Base, Pos),
     insert(K, '__aid', exodm_db:account_id_value(AID)),
-    insert(K, '__rid', exodm_db:role_id_value(ARole)).
+    insert(K, '__rid', exodm_db:encode_id(ARole)).
 
 list_access(UID0) when is_binary(UID0) ->
     UID = exodm_db:encode_id(UID0),
-    %% {Found, _} = kvdb_conf:prefix_match(
-    %% 		   ?TAB, exodm_db:join_key(UID, <<"access">>), infinity),
-    %% lists:flatmap(
-    %%   fun({K,_,V}) ->
-    %% 	      case kvdb_conf:raw_split_key(K) of
-    %% 		  [_,_,AID,<<"__rid">>] ->
-    %% 		      [{AID, exodm_db:role_id_key(V)}];
-    %% 		  _ ->
-    %% 		      []
-    %% 	      end
-    %%   end, Found).
     exodm_db:fold_list(
       ?TAB,
       fun(I, Key, Acc) ->

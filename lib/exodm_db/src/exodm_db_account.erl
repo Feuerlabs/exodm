@@ -7,20 +7,32 @@
 
 -module(exodm_db_account).
 
--export([new/1, update/2, lookup/1, lookup_by_name/1, exist/1]).
--export([is_empty/1, delete/1]).
--export([create_role/3]).
--export([create_exodm_account/0]).
--export([register_protocol/2, is_protocol_registered/2]).
+-include_lib("lager/include/log.hrl").
+
+-export([new/1, 
+	 update/2, 
+	 lookup/1, 
+	 lookup_by_name/1, 
+	 exist/1,
+	 is_empty/1,
+	 delete/1]).
 -export([list_accounts/2,
+	 list_account_keys/0,
+	 list_roles/3,
 	 list_users/3,
 	 list_admins/3]).
--export([list_account_keys/0]).
+-export([add_users/4]).
+-export([create_role/3,
+	 role/2,
+	 role_exists/2]).
+-export([register_protocol/2, 
+	 is_protocol_registered/2]).
+-export([create_exodm_account/0]).
 -export([fold_accounts/2]).
--export([list_users/1, list_users/2]).
+%%-export([list_users/1, list_users/2]).
 -export([list_groups/1, list_groups/2]).
 -export([system_specs/1]).
--export([list_admins/1]).
+%%-export([list_admins/1]).
 -export([incr_request_id/1,
 	 incr_transaction_id/1]).
 -export([subscribe/1,
@@ -116,15 +128,16 @@ new_(Options) ->
 		   {_, Os} when is_list(Os) ->
 		       Os
 	       end,
-    Root = case exodm_db_session:is_trusted_proc() of
-	       true -> proplists:get_bool(root, Options);
-	       false -> false
-	   end,
+    Root = 
+	case exodm_db_session:is_trusted_proc() of
+	    true -> proplists:get_bool(root, Options);
+	    false -> false
+	end,
     AID = exodm_db_system:new_aid(),
     Key = exodm_db:escape_key(AID),
     exodm_db_group:init(AID),
     exodm_db_device_type:init(AID),
-    insert(Key, '__last_rid', <<0:32>>),
+    %%insert(Key, '__last_rid', <<0:32>>),
     insert(Key, '__last_req_id', <<0:32>>),
     insert(Key, '__last_tid', <<0:32>>),
     AdminUName = binary_opt(uname, UserOpts),
@@ -134,9 +147,7 @@ new_(Options) ->
 	       end,
     insert(Key, name, AcctName),
     {ok, AdminUName} = exodm_db_user:new(AID, AdminUName, UserOpts),
-    {ok, _RID} = t_create_role_(AID, AdminUName, initial_admin(Root)),
-    UNameKey = to_binary(AdminUName),
-    insert(exodm_db:join_key(Key, <<"admins">>), UNameKey, AdminUName),
+    create_roles(AID, AdminUName, Root),
     exodm_db_yang:init(AID),
     exodm_db_device:init(AID),
     exodm_db_config:init(AID),
@@ -147,6 +158,56 @@ new_(Options) ->
     %% 		  end, proplists:get_all_values(alias, Options)),
     %% add_user(AID, AdminUName, _RID = 1),  % must come after adding the user
     {ok, AIDVal}.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Add account access to users
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec add_users(AName::binary(),
+		Role::binary(),
+		UNames::list(binary()), 
+		IsRoot::boolean()) ->
+		       ok |
+		       {error, Reason::term()}.
+
+
+
+add_users(AName, Role, UNames, IsRoot) ->
+    %% Check if account_exists
+    case exodm_db_account:lookup_by_name(AName) of
+	[] -> error('object-not-found');
+	[AID] -> add_users1(AID, Role, UNames, IsRoot)
+    end.
+		     
+add_users1(AID, Role, UNames, true) ->
+    %% Root - access is ok
+    add_users2(AID, Role, UNames);
+add_users1(AID, Role, UNames, false) ->
+    %% Check if current user has admin rights for account
+    Client = to_binary(exodm_db_session:get_user()),
+    AccountAdmins = list_admins(AID, 100, ""), %% All?
+    case lists:member(Client, AccountAdmins) of
+	true -> add_users2(AID, Role, UNames);
+	false -> error('permission-denied')
+    end.
+
+add_users2(AID, Role, UNames) ->
+    %% Check if role exists
+    Roles = list_roles(AID, 100, ""), %% All ??
+    case lists:member(Role, Roles) of
+	true -> add_users3(AID, Role, UNames);
+	false -> error('object-not-found')
+    end.
+    
+add_users3(_AID, _Role, []) ->
+    ok;
+add_users3(AID, Role, [UName | Rest]) ->
+    add_user(AID, UName),
+    exodm_db_user:add_access(AID, UName, Role),
+    add_users3(AID, Role, Rest).
+
 
 add_user(AID0, UID0) ->
     AID = exodm_db:account_id_key(AID0),
@@ -191,45 +252,68 @@ only_child(Tab, Parent, UID) ->
 	    false
     end.
 
+create_roles(AID, AdminUName, true) ->
+    create_admin_role(AID, AdminUName, <<"root">>);
+create_roles(AID, AdminUName, false) ->
+    create_admin_role(AID, AdminUName, <<"initial_admin">>),
+    DefaultRoles = configurable_roles(),
+    lists:foldl(fun(Role, _Acc) ->
+			t_create_role_(AID, Role,initial_role_opts(Role))
+		end, [], DefaultRoles).
 
-initial_admin(true) ->
+create_admin_role(AID, AdminUName, RName) ->
+    t_create_role_(AID, RName, initial_role_opts(RName)),
+    exodm_db_user:add_access(AID, AdminUName, RName),
+    UNameKey = to_binary(AdminUName),
+    insert(exodm_db:join_key(exodm_db:escape_key(AID), <<"admins">>), 
+	   UNameKey, AdminUName).
+
+%% Note!!! These must correspond to roles defined in exodm_type.yang !!!
+configurable_roles() ->
+    %% Later add user defined roles??
+    [<<"admin">>,<<"executer">>,<<"configurer">>,<<"viewer">>].
+
+
+%% Future access format is {<<"all">> | GroupName, [list(Rpc)]}
+initial_role_opts(<<"root">>) ->
     [{descr, "initial root user"},
-     {access, {<<"all">>, <<"root">>}}];
-initial_admin(false) ->
-    [{descr, "initial admin"},
-     {access, {<<"all">>, <<"admin">>}}].
+     {access, {<<"all">>,<<"root">>}}];
+initial_role_opts(<<"initial_admin">>) ->
+    [{descr, "initial administrator - can not be removed"},
+     {access, {<<"all">>, <<"admin">>}}];
+initial_role_opts(<<"admin">>) ->
+    [{descr, "administrator of account"},
+     {access, {<<"all">>, <<"admin">>}}];
+initial_role_opts(<<"executer">>) ->
+    [{descr, "user of account, can call exec rpc:s"},
+     {access, {<<"all">>, <<"exec">>}}];
+initial_role_opts(<<"configurer">>) ->
+    [{descr, "user of account, can call config rpc:s"},
+     {access, {<<"all">>, <<"config">>}}];
+initial_role_opts(<<"viewer">>) ->
+    [{descr, "user of account, can call list rpc:s"},
+     {access, {<<"all">>, <<"view">>}}].
 
-%% <AID>/roles/<Role>/descr
+
+
+
+%% <AID>/roles/<Role>/name
+%%                   /descr
 %%                   /groups/<gid> = access()
-create_role(AID, UName, Opts) ->
+create_role(AID, RName, Opts) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      t_create_role(AID, UName, Opts)
+	      t_create_role(AID, RName, Opts)
       end).
 
-t_create_role(AID0, UName, Opts) ->
+t_create_role(AID0, RName, Opts) ->
     AID = exodm_db:account_id_key(AID0),
     check_access(AID),
-    t_create_role_(AID, UName, Opts).
+    t_create_role_(AID, RName, Opts).
 
-t_create_role_(AID, UName, Opts) ->
-    case exodm_db_user:exist(UName) of
-	true ->
-	    {ok, RID} = create_role_(AID, UName, Opts),
-	    exodm_db_user:add_access(AID, UName, RID),
-	    {ok, RID};
-	false ->
-	    error(no_such_user)
-    end.
-
-create_role_(AID, UName, Opts) ->
-    RID = new_role_id(AID),
-    create_role_(AID, RID, UName, Opts).
-
-create_role_(AID, RID, UName, Opts) ->
-    Key = role_key(AID, RID),
+t_create_role_(AID, RName, Opts) ->
+    Key = role_key(AID, RName),
     insert(Key, descr, binary_opt(descr, Opts)),
-    insert(Key, uname, to_binary(UName)),
     AccessKey = exodm_db:join_key(Key, <<"access">>),
     lists:foreach(
       fun({<<"all">>, Access}) ->
@@ -244,7 +328,30 @@ create_role_(AID, RID, UName, Opts) ->
 		      error({no_such_group, [AID, G]})
 	      end
       end, proplists:get_all_values(access, Opts)),
-    {ok, exodm_db:role_id_num(RID)}.
+    ok.
+
+list_roles(AID0, N, Prev) ->
+    AID = exodm_db:account_id_key(AID0),
+    FullPrev = kvdb_conf:join_key([AID, <<"roles">>, 
+				   exodm_db:to_binary(Prev)]),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(table(),
+				 N, FullPrev,
+				 fun(Key) ->
+					 lists:last(kvdb_conf:split_key(Key))
+				 end)
+      end).
+
+
+role(AID, RName) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      kvdb_conf:read_tree(?TAB, exodm_db:join_key(
+					  [exodm_db:account_id_key(AID),
+					   <<"roles">>, 
+					   exodm_db:encode_id(RName)]))
+      end).
 
 register_protocol(AID, Protocol) when is_binary(Protocol) ->
     case exodm_rpc_protocol:module(Protocol) of
@@ -272,10 +379,10 @@ is_protocol_registered(AID, Protocol) ->
 	      end
       end).
 
-%% role_exists(AID, Role0) ->
-%%     Role = exodm_db:encode_id(to_binary(Role0)),
-%%     exist(exodm_db:join_key([exodm_db:account_id_key(AID),
-%% 				  <<"roles">>, Role, <<"descr">>])).
+role_exists(AID, Role0) ->
+    Role = exodm_db:encode_id(to_binary(Role0)),
+    exist(exodm_db:join_key([exodm_db:account_id_key(AID),
+			     <<"roles">>, Role])).
 
 group_exists(AID, GID) ->
     case exodm_db:read(?TAB, exodm_db:join_key([AID, <<"groups">>,
@@ -286,7 +393,7 @@ group_exists(AID, GID) ->
 	    true
     end.
 
-valid_access(<<"none">>) -> true;
+valid_access(<<"view">>) -> true;
 valid_access(<<"config">>) -> true;
 valid_access(<<"exec">>) -> true;
 valid_access(<<"admin">>) -> true;
@@ -487,7 +594,8 @@ list_users(AID0, N, Prev) ->
 
 list_admins(AID0, N, Prev) ->
     AID = exodm_db:account_id_key(AID0),
-    FullPrev = kvdb_conf:join_key([AID, <<"admins">>, exodm_db:to_binary(Prev)]),
+    FullPrev = kvdb_conf:join_key([AID, <<"admins">>, 
+				   exodm_db:to_binary(Prev)]),
     exodm_db:in_transaction(
       fun(_) ->
 	      exodm_db:list_next(table(),
@@ -552,8 +660,7 @@ list_admins(AID0) ->
       end, [], 100).
 
 fold_accounts(F, Acc) ->
-    kvdb_conf:fold_children(
-      ?TAB, F, Acc, <<>>).
+    kvdb_conf:fold_children( ?TAB, F, Acc, <<>>).
 
 %% utils
 
@@ -564,13 +671,12 @@ key(AName) ->
 role_key(AID, RID) ->
     exodm_db:join_key([exodm_db:account_id_key(AID),
 		       <<"roles">>,
-		       exodm_db:role_id_key(RID)]).
+		       exodm_db:encode_id(RID)]).
 
 new_role_id(AID0) ->
     AID = exodm_db:account_id_key(AID0),
-    exodm_db:update_counter(
-      ?TAB,
-      exodm_db:join_key(AID, <<"__last_rid">>), 1).
+    exodm_db:update_counter( ?TAB,
+			     exodm_db:join_key(AID, <<"__last_rid">>), 1).
 
 insert(Key, Item, Value) ->
     Key1 = exodm_db:join_key([Key, to_binary(Item)]),
@@ -586,6 +692,7 @@ read(Key,Item) ->
 check_access(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     UName = exodm_db_session:get_user(),
+    lager:debug("aid ~p, uname ~p", [AID, UName]),
     case UName of
 	root -> AID;
 	_ ->
@@ -593,14 +700,16 @@ check_access(AID0) ->
 		   ?TAB,exodm_db:join_key([AID, <<"admins">>,
 					   exodm_db:encode_id(UName)])) of
 		{ok, _}   -> AID;
-		{error,_} -> error(not_authorized)
+		{error,_Error} -> 
+		    lager:debug("error ~p", [_Error]),
+		    error(not_authorized)
 	    end
     end.
 
 incr_request_id(AID0) ->
     AID = exodm_db:account_id_key(AID0),
-    kvdb_conf:update_counter(
-      ?TAB, exodm_db:join_key(AID, <<"__last_req_id">>), 1).
+    kvdb_conf:update_counter(?TAB, 
+			     exodm_db:join_key(AID, <<"__last_req_id">>), 1).
 
 incr_transaction_id(AID0) ->
     AID = exodm_db:account_id_key(AID0),

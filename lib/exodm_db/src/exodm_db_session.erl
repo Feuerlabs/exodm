@@ -442,6 +442,7 @@ create_session(User, Hash, Sha) ->
     Sn.
 
 get_session_data(#session{user = User} = S) ->
+    ?debug("user ~p, session ~p", [User, S]),
     %% [{_, AID}] = exodm_db_user:lookup_attr(User,<<"__aid">>),
     [{_, {AID,Role}}|_] = Access = exodm_db_user:list_access(User),
     S#session{aid = AID,

@@ -679,7 +679,7 @@ json_rpc_({call, M, <<"create-user">>,
 			      [] ->
 				  %% Remove type info from opts
 				  Opts = [{Opt, Value} || {Opt, Value, _Type} <- Options],
-				  exodm_db_user:new(Name,Opts),
+				  exodm_db_user:new(Name, Opts),
 				  result_code(ok);
 			      User ->
 				  ?debug("found ~p",[User]),
@@ -715,12 +715,25 @@ json_rpc_({call, M, <<"delete-user">>,
     end;
 json_rpc_({call, M, <<"list-users">>,
 	   [{'n', N, _},
-	    {'previous', Prev, _}]} = _RPC, Env) ->
-    %% In future
-    %% AID = exodm_db_session:get_aid(), 
+	    {'previous', Prev, _}]} = _RPC, _Env) ->
     Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
 		    exodm_db_user:list_users(N, Prev)),
     {ok, [{'users', {array,Res}}]};
+
+json_rpc_({call, M, <<"list-account-users">>,
+	   [{'n', N, _},
+	    {'previous', Prev, _}]} = _RPC, _Env) ->
+    AID = exodm_db_session:get_aid(), 
+    Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
+		    exodm_db_account:list_users(AID, N, Prev)),
+    {ok, [{'users', {array,Res}}]};
+
+json_rpc_({call, M, <<"add-users-to-account">>,
+	   [{'account', Account, _},
+	    {"role", Role, _},
+	    {"unames", UNames, _}] = _Cfg}, Env) when ?EXO(M) ->
+    {ok, ?catch_result(exodm_db_account:add_users(Account, Role, UNames,
+						 has_root_access(Env)))};
 json_rpc_(RPC, _ENV) ->
     ?info("~p:json_rpc_() Unknown RPC: ~p\n", [ ?MODULE, RPC ]),
     {ok, result_code('validation-failed')}.
@@ -733,13 +746,13 @@ has_root_access(Env) ->
     [Aid0] = exodm_db_account:lookup_by_name(<<"exodm">>),
     Aid1 = exodm_db:account_id_num(Aid0),
     Aid  = exodm_db_session:get_aid(),
-    Rid = exodm_db_session:get_role(),
+    RName = exodm_db_session:get_role(),
     User = exodm_db_session:get_user(),
-    ?debug("user = ~p, rootaid=~w, aid=~w, rid=~w\n",
-	   [User, Aid1, Aid, Rid]),
+    ?debug("user = ~p, rootaid=~w, aid=~w, rname=~w\n",
+	   [User, Aid1, Aid, RName]),
     AccessKey = exodm_db:join_key([exodm_db:account_id_key(Aid),
 				   <<"roles">>,
-				   exodm_db:role_id_key(Rid),
+				   exodm_db:encode_id(RName),
 				   <<"access">>, 
 				   <<"all">>]),
     Access = exodm_db:read(<<"acct">>, AccessKey),
