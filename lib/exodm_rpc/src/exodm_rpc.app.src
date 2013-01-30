@@ -46,10 +46,15 @@
 		 {queues, [
 			   {exodm_rpc_from_web, standard_rate, 100},
 			   {exodm_rpc_to_device, standard_counter, 5},
-			   {exodm_rpc_from_device, standard_counter, 5}
+			   {exodm_rpc_from_device, standard_counter, 5},
+			   {exodm_rpc_bert_sessions,
+			    [{regulators, [{counter, [{limit, 50}]}]},
+			     {max_time, 10000}
+			    ]}
 			  ]}
 		]},
 	 {bert_server, [{port, 9900},
+			{idle_timeout, 60000},
 			{exo,
 			 [
 			  {reuse_mode, server},
