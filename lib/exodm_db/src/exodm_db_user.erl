@@ -20,9 +20,9 @@
 	 list_user_keys/0,
 	 exist/1,
 	 fold_users/2,
-	 add_access/3,
-	 remove_access/2,
-	 list_access/1, 
+	 add_role/3,
+	 remove_role/3,
+	 list_roles/1, 
 	 delete/1]).
 -export([subscribe/1,
 	 unsubscribe/1]).
@@ -32,6 +32,10 @@
 -import(exodm_db, [write/2, binary_opt/2, binary_opt/3, to_binary/1]).
 
 -define(TAB, <<"user">>).
+
+%% Role field should be renamed in database FIXME
+-define(USER_ROLE, <<"access">>).
+
 %%
 %% /account/<AID>/user/<UID>
 %% /account/<AID>/user/<UID>/'__uid'    = User ID
@@ -53,7 +57,7 @@ init() ->
       end).
 
 table() ->
-    <<"user">>.
+    ?TAB.
 
 %% Gproc pub/sub ----------------------
 subscribe(Event) when Event==add; Event==delete ->
@@ -305,20 +309,30 @@ fold_users(F, Acc) ->
 key(UID) ->
     exodm_db:encode_id(UID).
 
-add_access(AID, UName, RName) ->
+%%--------------------------------------------------------------------
+%% @doc
+%% Adds a role to the user.
+%%
+%% Can throw errors: no_such_user, no_such_account
+%% @end
+%%--------------------------------------------------------------------
+-spec add_role(AID::binary(), UName::binary(), RName::binary()) ->
+		      ok |
+		      {error, Reason::term()}.
+add_role(AID, UName, RName) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      t_add_access(AID, UName, RName)
+	      t_add_role(AID, UName, RName)
       end).
 
-t_add_access(AID0, UName0, RName) ->
+t_add_role(AID0, UName0, RName) ->
     AID = exodm_db:account_id_key(AID0),
     UName = exodm_db:encode_id(UName0),
     case exodm_db_account:exist(AID) of
 	true ->
 	    case exist(UName) of
 		true ->
-		    insert_access(UName, AID, RName);
+		    insert_role(UName, AID, RName);
 		false ->
 		    error({no_such_user, UName})
 	    end;
@@ -326,36 +340,43 @@ t_add_access(AID0, UName0, RName) ->
 	    error({no_such_account, AID})
     end.
 
-insert_access(User, AID, ARole) ->
+insert_role(User, AID, ARole) ->
     ?debug("user ~p, aid ~p, role ~p", [User, AID, ARole]),
     UID = exodm_db:encode_id(User),
-    Pos = new_list_pos(Base = exodm_db:join_key(UID, <<"access">>)),
-    insert_access_(Base, Pos, AID, ARole).
+    Pos = new_list_pos(Base = exodm_db:join_key(UID, ?USER_ROLE)),
+    insert_role_(Base, Pos, AID, ARole).
 
-insert_access(User, I, AID, ARole) when is_integer(I), I>=0 ->
-    UID = exodm_db:encode_id(User),
-    insert_access_(exodm_db:join_key(UID, <<"access">>), I, AID, ARole).
-
-insert_access_(Base, Pos, AID, ARole) ->
+insert_role_(Base, Pos, AID, ARole) ->
     ?debug("base ~p, pos ~p, aid ~p, role ~p", [Base, Pos, AID, ARole]),
     K = exodm_db:list_key(Base, Pos),
     insert(K, '__aid', AID),
     insert(K, '__rid', exodm_db:encode_id(ARole)).
 
-remove_access(AID, UName) ->
+%%--------------------------------------------------------------------
+%% @doc
+%% Removes a role from the user.
+%%
+%% Can throw errors: no_such_user, no_such_account
+%% @end
+%%--------------------------------------------------------------------
+-spec remove_role(AID::binary(), UName::binary(), RName::binary()) ->
+		      ok |
+		      {error, Reason::term()}.
+
+remove_role(AID, UName, Role) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      t_remove_access(AID, UName)
+	      t_remove_role(AID, UName, Role)
       end).
 
-t_remove_access(AID0, UName0) ->
+t_remove_role(AID0, UName0, Role) ->
     AID = exodm_db:account_id_key(AID0),
     UName = exodm_db:encode_id(UName0),
     case exodm_db_account:exist(AID) of
 	true ->
 	    case exist(UName) of
 		true ->
-		    delete_access(UName, AID);
+		    delete_role(UName, AID, Role);
 		false ->
 		    error({no_such_user, UName})
 	    end;
@@ -363,26 +384,36 @@ t_remove_access(AID0, UName0) ->
 	    error({no_such_account, AID})
     end.
 
-delete_access(UName, AID) ->
+delete_role(UName, AID, Role) ->
     ?debug("user ~p, aid ~p", [UName, AID]),
-    case lists:keyfind(AID, 2, list_access_(UName)) of
-	false -> ok; %%??
-	{I, AID, Role} -> 
-	    delete_access_(exodm_db:join_key(UName, <<"access">>), I, AID)
-    end.
+    lists:map(fun({I, A, R}) when A == AID, R == Role ->
+		      delete_role_(exodm_db:join_key(UName, ?USER_ROLE), I, AID);
+		 (_Other) -> ok
+	      end, list_roles_(UName)).
     
-delete_access_(Base, Pos, AID) ->
+delete_role_(Base, Pos, AID) ->
     ?debug("base ~p, pos ~p, aid ~p", [Base, Pos, AID]),
     K = exodm_db:list_key(Base, Pos),
     ?debug("k ~p", [K]),
     delete(K, '__aid'),
     delete(K, '__rid').
 
-list_access(UID0) when is_binary(UID0) ->
-    UID = exodm_db:encode_id(UID0),
-    [{A, R} || {_I, A, R} <- list_access_(UID)].
+%%--------------------------------------------------------------------
+%% @doc
+%% List a users roles.
+%%
+%% Can throw errors: no_such_user, no_such_account
+%% @end
+%%--------------------------------------------------------------------
+-spec list_roles(UName::binary()) ->
+		      list({AID::binary(), Role::binary()}) |
+		      {error, Reason::term()}.
 
-list_access_(UID)  ->
+list_roles(UID0) when is_binary(UID0) ->
+    UID = exodm_db:encode_id(UID0),
+    [{A, R} || {_I, A, R} <- list_roles_(UID)].
+
+list_roles_(UID)  ->
     exodm_db:fold_list(
       ?TAB,
       fun(I, Key, Acc) ->
@@ -395,7 +426,7 @@ list_access_(UID)  ->
 		       Acc];
     		  _ -> Acc
     	      end
-      end, [], exodm_db:join_key(UID, <<"access">>)).
+      end, [], exodm_db:join_key(UID, ?USER_ROLE)).
 
 insert_password(Key, Item, Value) ->
     {ok, Salt} = bcrypt:gen_salt(),

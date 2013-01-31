@@ -443,11 +443,14 @@ create_session(User, Hash, Sha) ->
 
 get_session_data(#session{user = User} = S) ->
     ?debug("user ~p, session ~p", [User, S]),
-    %% [{_, AID}] = exodm_db_user:lookup_attr(User,<<"__aid">>),
-    [{AID,Role}|_] = Access = exodm_db_user:list_access(User),
+    %% FIXME
+    %% User can belong to several accounts and have several roles !!
+    [{AID,Role}|_] = Roles = exodm_db_user:list_roles(User),
+    %% Role access format not defined yet
+    Access = Roles,
     S#session{aid = exodm_db:account_id_num(AID),
               role = Role,
-              access = [{A,R} || {_,{A,R}} <- Access]}.
+              access = Access}.
 
 sha(Hash, Passwd) ->
     crypto:sha_mac(Hash, Passwd).

@@ -661,7 +661,7 @@ json_rpc_({call, M, <<"list-accounts">>,
 	    {'previous', Prev, _}]} = _RPC, Env) when ?ADMIN(M) ->
     case has_root_access(Env) of
 	true ->
-	    Res = lists:map(fun([{id,_},{name,Name}]) -> Name end,
+	    Res = lists:map(fun([{<<"id">>,_},{<<"name">>,Name}]) -> Name end,
 			    exodm_db_account:list_accounts(N, Prev)),
 	    {ok, [{'accounts', {array,Res}}]};
 	false ->
@@ -720,14 +720,6 @@ json_rpc_({call, M, <<"list-users">>,
 		    exodm_db_user:list_users(N, Prev)),
     {ok, [{'users', {array,Res}}]};
 
-json_rpc_({call, M, <<"list-own-account-users">>,
-	   [{'n', N, _},
-	    {'previous', Prev, _}]} = _RPC, _Env) when ?EXO(M) ->
-    AID = exodm_db_session:get_aid(), 
-    Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
-		    exodm_db_account:list_users(AID, N, Prev)),
-    {ok, [{'users', {array,Res}}]};
-
 json_rpc_({call, M, <<"add-users-to-account">>,
 	   [{'account', Account, _},
 	    {'role', Role, _},
@@ -740,11 +732,19 @@ json_rpc_({call, M, <<"remove-users-from-account">>,
     {ok, ?catch_result(exodm_db_account:remove_users(Account, UNames,
 						 has_root_access(Env)))};
 json_rpc_({call, M, <<"list-account-users">>,
+	   [{'n', N, _},
+	    {'previous', Prev, _}]} = _RPC, _Env) when ?EXO(M) ->
+    %% No account given, use session account
+    AID = exodm_db_session:get_aid(), 
+    Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
+		    exodm_db_account:list_users(AID, N, Prev)),
+    {ok, [{'users', {array,Res}}]};
+json_rpc_({call, M, <<"list-account-users">>,
 	   [{'account', Account, _},
 	    {'n', N, _},
 	    {'previous', Prev, _}]} = _RPC, Env) when ?EXO(M) ->
     case exodm_db_account:list_users(Account, N, Prev, 
-						   has_root_access(Env)) of
+				     has_root_access(Env)) of
 	Users when is_list(Users) ->
 	    {ok, [{'users', {array, Users}}]};
 	Other ->
