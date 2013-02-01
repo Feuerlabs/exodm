@@ -199,7 +199,6 @@ list_users(Cfg) ->
     [<<"exodm-admin">>, <<"magnus">>, <<"ulf">>] =
 	?rpc(exodm_db_user, list_user_keys, []),
     U = [{name,<<"ulf">>},
-	 {'__aid',3},
 	 {fullname,<<"Ulf Wiger">>},
 	 {phone,<<>>},
 	 {email,<<>>},
