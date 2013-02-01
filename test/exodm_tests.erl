@@ -529,7 +529,7 @@ json_create_device_type(_Cfg) ->
 					  {"protocol", "exodm_bert"}
 					 ]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct, [{"result",0}]}},
+    {struct, [{"result", {struct, [{"result","ok"}]}},
 	      {"id", 1},
 	      {"jsonrpc", "2.0"}]} = Reply,
     ok.
@@ -542,7 +542,7 @@ json_update_device_type(_Cfg) ->
 					  {"protocol", "ga_ck3"}
 					 ]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct, [{"result",0}]}},
+    {struct, [{"result", {struct, [{"result","ok"}]}},
 	      {"id", 1},
 	      {"jsonrpc", "2.0"}]} = Reply,
     ok.
@@ -577,7 +577,7 @@ json_delete_device_type(_Cfg) ->
 				"exodm:delete-device-type", 1,
 				{struct,[{"name", "devtype_1"}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0}]}},
+    {struct, [{"result", {struct,[{"result","ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -587,7 +587,7 @@ json_delete_nonempty_device_type(_Cfg) ->
 				"exodm:delete-device-type", 1,
 				{struct,[{"name", "type1"}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",6}]}},
+    {struct, [{"result", {struct,[{"result", "object-not-empty"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -602,7 +602,7 @@ json_provision_device(_Cfg) ->
 					 {"server-key", 3},
 					 {"device-key", 4}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0}]}},
+    {struct, [{"result", {struct,[{"result","ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -661,7 +661,7 @@ json_lookup_device(_Cfg) ->
     io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
     %% lookup-device doesn't return the server- and device-key attributes
     {struct, [{"result",
-	       {struct,[{"result", 0},
+	       {struct,[{"result", "ok"},
 			{"devices",
 			 {array, [{struct, [{"dev-id", "y00000001"},
 					    {"device-type", "type1"},
@@ -679,7 +679,7 @@ json_deprovision_device(_Cfg) ->
 				{struct,[{"dev-id",
 					  {array, ["y00000001"]}}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0}]}},
+    {struct, [{"result", {struct,[{"result","ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -691,7 +691,7 @@ json_lookup_device2(_Cfg) ->
     io:fwrite(user, "~p: lookup-device (deleted) -> ~p~n", [?LINE, Reply]),
     %% lookup-device doesn't return the server- and device-key attributes
     {struct, [{"result",
-	       {struct,[ {"result", 5},
+	       {struct,[ {"result", "device-not-found"},
 			 {"devices", {array, []}} ]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
@@ -705,7 +705,7 @@ json_lookup_bad_device(_Cfg) ->
     io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
     %% lookup-device doesn't return the server- and device-key attributes
     {struct, [{"result",
-	       {struct,[ {"result", 5},
+	       {struct,[ {"result", "device-not-found"},
 			 {"devices", {array, []}} ]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
@@ -729,7 +729,7 @@ json_create_config_set_(_Cfg, Name) ->
 							   ]}}
 					]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0}]}},
+    {struct, [{"result", {struct,[{"result", "ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -743,7 +743,7 @@ json_update_config_set(Cfg) ->
 					 {"values",{struct,[{"c","yy"}]}}
 					]}),
     io:fwrite(user, "~p: update-config-set -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0}]}},
+    {struct, [{"result", {struct,[{"result", "ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -793,7 +793,7 @@ json_add_config_set_members(_Cfg) ->
 							     "x00000002"]}}
 					]}),
     io:fwrite(user, "~p: add-config-set-members -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0}]}},
+    {struct, [{"result", {struct,[{"result", "ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -822,7 +822,7 @@ json_remove_config_set_members(_Cfg) ->
 							     "x00000002"]}}
 					]}),
     io:fwrite(user, "~p: remove-config-set-members -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct, [{"result",0}]}},
+    {struct, [{"result", {struct, [{"result", "ok"}]}},
 	      {"id", 1},
 	      {"jsonrpc", "2.0"}]} = Reply,
     ok.
@@ -848,7 +848,7 @@ json_delete_config_set3(_Cfg) ->
 				"exodm:delete-config-set", "1",
 				{struct,[{"name","test_cfg_3"}]}),
     io:fwrite(user, "~p: delete-config-set -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0}]}},
+    {struct, [{"result", {struct,[{"result", "ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -863,7 +863,7 @@ json_create_device_group(_Cfg) ->
 					 {"notification-url",?URL1}
 					]}),
     io:fwrite(user, "~p: create-device-group -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0},{"gid",3}]}},
+    {struct, [{"result", {struct,[{"result", "ok"},{"gid",3}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -924,7 +924,7 @@ json_add_device_group_members(_Cfg) ->
 							     "x00000002"]}}
 					]}),
     io:fwrite(user, "~p: add-device-group-members -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0}]}},
+    {struct, [{"result", {struct,[{"result", "ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -954,7 +954,7 @@ json_remove_device_group_members(_Cfg) ->
 							     "x00000002"]}}
 					]}),
     io:fwrite(user, "~p: remove-device-group-members -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result",0}]}},
+    {struct, [{"result", {struct,[{"result", "ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -981,7 +981,7 @@ json_delete_device_group(_Cfg) ->
 				{struct, [{"gid","3"}]}),
     io:fwrite(user, "~p: delete-device-group -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct, [{"result",0}]}},
+	       {struct, [{"result", "ok"}]}},
 	       {"id", _},
 	       {"jsonrpc", "2.0"}]} = Reply,
     ok.
@@ -1023,7 +1023,7 @@ device_json_rpc1(Cfg) ->
 					  {"message", "hello"}]}),
     %% io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"transaction-id",_},
-				   {"rpc-status", 0},
+				   {"rpc-status", "accepted"},
 				   {"rpc-status-string",
 				    "Operation has been accepted" ++ _},
 				   {"final",false}]}},
@@ -1070,7 +1070,7 @@ push_config_set1(Cfg) ->
 			       io:fwrite(user, "Pid got push ~p~n", [Args]),
 			       Reply = {notify, 'push-config-set-callback',
 					[{'transaction-id', 1},
-					 {'rpc-status', <<"complete">>},
+					 {'rpc-status', "complete"},
 					 {final, true}]},
 			       Pid ! {answer, Reply}
 		       end
@@ -1079,7 +1079,7 @@ push_config_set1(Cfg) ->
     {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
 				"exodm:push-config-set", "3",
 				{struct, [{"name", "test1"}]}),
-    {struct, [{"result", {struct, [{"result", 0}]}},
+    {struct, [{"result", {struct, [{"result", "ok"}]}},
 	      {"id", _},
 	      {"jsonrpc", "2.0"}]} = Reply,
     Fetched = fetch_json(Cfg),
@@ -1088,7 +1088,7 @@ push_config_set1(Cfg) ->
 	      {"method","exodm:push-config-set-callback"},
 	      {"params",
 	       {struct, [{"transaction-id", _},
-			 {"rpc-status", 1},
+			 {"rpc-status", "complete"},
 			 {"rpc-status-string",
 			  "The operation has completed" ++ _},
 			 {"final", true}]}}]} = N,
