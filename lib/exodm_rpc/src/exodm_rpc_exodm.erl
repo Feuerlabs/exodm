@@ -728,8 +728,9 @@ json_rpc_({call, M, <<"add-users-to-account">>,
 						 has_root_access(Env)))};
 json_rpc_({call, M, <<"remove-users-from-account">>,
 	   [{'account', Account, _},
+	    {'role', Role, _},
 	    {'unames', UNames, _}]}, Env) when ?EXO(M) ->
-    {ok, ?catch_result(exodm_db_account:remove_users(Account, UNames,
+    {ok, ?catch_result(exodm_db_account:remove_users(Account, Role, UNames,
 						 has_root_access(Env)))};
 json_rpc_({call, M, <<"list-account-users">>,
 	   [{'n', N, _},
