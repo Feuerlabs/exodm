@@ -1,7 +1,7 @@
 %%% @author Ulf Wiger <ulf@feuerlabs.com>
-%%% @copyright (C) 2012, Tony Rogvall
+%%% @copyright (C) 2013, Tony Rogvall
 %%% @doc
-%%%     Exosense device manipulation
+%%%     Exosense account db
 %%% @end
 %%% Created :  9 Mar 2012 by Tony Rogvall <tony@rogvall.se>
 
@@ -28,7 +28,6 @@
 	 is_empty/1]).
 -export([list_accounts/2,
 	 list_account_keys/0,
-	 list_users/4,
 	 list_users/3,
 	 list_admins/3,
 	 list_roles/3,
@@ -395,37 +394,7 @@ list_account_keys() ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec list_users(AName::binary(),
-		 N::integer(),
-		 Prev::binary(),
-		 IsRoot::boolean()) ->
-			list(UName::binary()) |
-			  {error, Reason::term()}.
-
-list_users(AName, N, Prev, IsRoot) ->
-    lager:debug("aname ~p, n ~p, prev ~p", [AName, N, Prev]),
-    %% Check if account_exists
-    case lookup_by_name(AName) of
-	[] -> error('object-not-found');
-	[AID] -> list_users1(AID, N, Prev, IsRoot)
-    end.
-
-list_users1(AID, N, Prev, true) ->
-    %% Root - access is ok
-    list_users_(AID, N, Prev);
-list_users1(AID, N, Prev, false) ->
-    case has_admin_access(AID) of
-	true -> list_users_(AID, N, Prev);
-	false -> error('permission-denied')
-    end.
-
-%%--------------------------------------------------------------------
-%% @doc
-%% List N number of account users starting after Prev
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec list_users(AName::binary(),
+-spec list_users(AID::binary(),
 		 N::integer(),
 		 Prev::binary()) ->
 			list(UName::binary()) |
