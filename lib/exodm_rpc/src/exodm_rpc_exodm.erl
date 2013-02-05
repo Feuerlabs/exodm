@@ -105,6 +105,7 @@ json_rpc_({call, M, <<"delete-account">>,
 	    {ok,result_code('permission-denied')}
     end;
 
+%% User
 json_rpc_({call, M, <<"list-accounts">>,
 	   [{'n', N, _},
 	    {'previous', Prev, _}]} = _RPC, Env) when ?ADMIN(M) ->

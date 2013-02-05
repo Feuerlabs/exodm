@@ -6,6 +6,7 @@
 -export([read/1,     %% (YangF) -> read(get_aid(), YangF)
          read/2,     %% (AID, YangF) -> read(AID, YangF, [])
          read/3,     %% (AID, YangF, Opts)
+	 write/2,    %% (YangF, YangSpec) -> write(get_aid(), YangF, YangSpec)
          write/3,    %% (AID, YangF, YangSpec)
          tag_file/2, %% (YangF, Tag) -> tag_file(AID, YangF, Tag)
          tag_file/3, %% (AID, YangF, Tag)
@@ -140,6 +141,9 @@ read(AID0, Y, Opts0) ->
     yang_parser:parse(Y, [{open_hook, fun(F, Opts) ->
 					      open_file_hook(AID, F, Opts)
 				      end}|Opts0]).
+
+write(File, YangSpec) ->
+    write(get_aid(), File, YangSpec).
 
 write(AID, File, Y) ->
     exodm_db:in_transaction(
