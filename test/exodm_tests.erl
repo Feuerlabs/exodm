@@ -212,11 +212,11 @@ list_accounts(Cfg) ->
     [<<"a00000001">>,
      <<"a00000002">>,
      <<"a00000003">>] = rpc(Cfg, exodm_db_account, list_account_keys, []),
-    [{id,<<"00000002">>},
-     {name, <<"feuer">>}] =
+    [{<<"id">>,<<"00000002">>},
+     {<<"name">>, <<"feuer">>}] =
 	rpc(Cfg, exodm_db_account, lookup, [<<"a00000002">>]),
-    [{id,<<"00000003">>},
-     {name, <<"wiger">>}] =
+    [{<<"id">>,<<"00000003">>},
+     {<<"name">>, <<"wiger">>}] =
 	rpc(Cfg, exodm_db_account, lookup, [<<"a00000003">>]),
     ok.
 

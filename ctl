@@ -6,6 +6,8 @@ CALLER_DIR=$PWD
 
 SCRIPT_DIR=$(cd ${0%/*} && pwd)
 
+echo "CALLER_DIR=$CALLER_DIR; SCRIPT_DIR=$SCRIPT_DIR"
+
 ## Emulate readlink -f to resolve the full physical directory
 cd `dirname $SCRIPT_DIR`
 TARGET_DIR=`basename $SCRIPT_DIR`
@@ -64,6 +66,8 @@ while [ $# -gt 0 ]; do
             ;;
         convert)
             CMD="$EXODM console_boot exodm_setup -- -setup mode convert"
+            shift
+            ;;
         *)
             echo $"Usage: $0 [-l | -local] {start|attach|stop|convert}"
             exit 1
