@@ -1002,12 +1002,13 @@ acct_test_() ->
      ]}.
 
 test_new() ->
-    {ok, AID} = new([{name, <<"test1">>},
+    ok = new([{name, <<"test1">>},
 		     {admin, [{uname, <<"u1">>},
 			      {alias, <<"u">>},
 			      {fullname, <<"Mr U">>},
 			      {password, <<"pwd">>}]}]),
     AllTabs = kvdb:list_tables(kvdb_conf),
+    [AID] = lookup_by_name(<<"test1">>),
     lists:all(fun(T) ->
 		      lists:member(T, AllTabs)
 	      end, [exodm_db_device:table(AID),

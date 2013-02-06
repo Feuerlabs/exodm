@@ -28,7 +28,8 @@
 -define(URL1, <<"http://localhost:8898">>).
 -define(URL2, <<"http://localhost:8899">>).
 
-
+-define(ACC1, <<"feuer">>).
+-define(ACC2, <<"wiger">>).
 
 exodm_test_() ->
     {setup,
@@ -126,24 +127,26 @@ exodm_test_() ->
 %% exodm_db_account:new([{name,<<"test">>},{admin,[{uname,<<"t">>},{alias,<<"tee">>},{fullname,<<"Mr T">>},{password,<<"pwd">>}]}]).
 %%
 populate(Cfg) ->
-    {ok, AID1} = ?rpc(exodm_db_account,new,
+    ok = ?rpc(exodm_db_account,new,
 		      [
 		       [
-			{name, <<"feuer">>},
+			{name, ?ACC1},
 			{admin, [{uname, <<"magnus">>},
 				 {alias, <<"love">>},
 				 {fullname, <<"Magnus Feuer">>},
 				 {password, <<"feuerlabs">>}]}
 		       ]]),
-    {ok, AID2} = ?rpc(exodm_db_account,new,
+    ok = ?rpc(exodm_db_account,new,
 		      [
 		       [
-			{name, <<"wiger">>},
+			{name, ?ACC2},
 			{admin, [{uname, <<"ulf">>},
 				 {alias, [<<"uffe">>, <<"uwiger">>]},
 				 {fullname, <<"Ulf Wiger">>},
 				 {password, <<"wiger">>}]}
 		       ]]),
+    [AID1] = ?rpc(exodm_db_account, lookup_by_name, [?ACC1]),
+    [AID2] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     {ok, GID1} = ?rpc(exodm_db_group,new,
 		      [
 		       AID2, [{name, <<"feuerlabs">>},
@@ -213,21 +216,22 @@ list_accounts(Cfg) ->
      <<"a00000002">>,
      <<"a00000003">>] = rpc(Cfg, exodm_db_account, list_account_keys, []),
     [{<<"id">>,<<"00000002">>},
-     {<<"name">>, <<"feuer">>}] =
+     {<<"name">>, ?ACC1}] =
 	rpc(Cfg, exodm_db_account, lookup, [<<"a00000002">>]),
     [{<<"id">>,<<"00000003">>},
-     {<<"name">>, <<"wiger">>}] =
+     {<<"name">>,?ACC2}] =
 	rpc(Cfg, exodm_db_account, lookup, [<<"a00000003">>]),
     ok.
 
 list_groups(Cfg) ->
+    [AID] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     [<<"g00000001">>,
      <<"g00000002">>] =
-	?rpc(exodm_db_account,list_groups, [3]),
+	?rpc(exodm_db_account,list_groups, [AID]),
     ok.
 
 list_group_devices(Cfg) ->
-    AID = 3,
+    [AID] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     [<<"x00000001">>,
      <<"x00000002">>,
      <<"x00000003">>] =
@@ -243,9 +247,10 @@ list_group_devices(Cfg) ->
     ok.
 
 list_group_notifications(Cfg) ->
+    [AID] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     [?URL1, ?URL2] =
 	?rpc(exodm_db_device,lookup_group_notifications,
-	     [_AID=3, <<"x00000001">>]),
+	     [AID, <<"x00000001">>]),
     ok.
 
 
@@ -349,8 +354,9 @@ store_config_scr2() ->
 
 add_config_set_member(Cfg) ->
     ok = rscript(Cfg, add_config_set_member_scr()),
+    [AID] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     [<<"test1">>, <<"test2">>] =
-	?rpc(exodm_db_device, list_config_sets, [<<"a00000003">>,
+	?rpc(exodm_db_device, list_config_sets, [AID,
 						 <<"x00000001">>]),
     ok.
 
