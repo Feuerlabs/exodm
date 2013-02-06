@@ -22,6 +22,7 @@
 	 fold_users/2,
 	 add_role/3,
 	 remove_role/3,
+	 list_accounts/1, 
 	 list_roles/1, 
 	 delete/1]).
 -export([subscribe/1,
@@ -85,14 +86,20 @@ publish(Event, Data) when Event==add; Event==delete ->
 new(UName, Options) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      case new_(UName, Options) of
-		  {ok, UserName} = Res ->
-		      publish(add, UserName),
-		      Res;
-		  Other ->
-		      Other
-	      end
-      end).
+              case lookup(UName) of
+		  [] ->
+                      case new_(UName, Options) of
+                          {ok, UserName} ->
+                              publish(add, UserName),
+                              ok;
+                          Other ->
+                              Other
+                      end;
+                  User ->
+ 		      ?debug("found ~p",[User]),
+		      error('object-exists')
+              end
+     end).
 
 new_(UName, Options) ->
     lager:debug("uname ~p, options ~p~n", [UName, Options]),
@@ -121,20 +128,26 @@ new_(UName, Options) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec delete(UID::binary()) -> ok | {error, not_found}.
-delete(UID) ->
+-spec delete(UName::binary()) -> ok | {error, not_found}.
+
+delete(UName) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      case delete_(UID) of
-		  {ok, UserName} = Res ->
-		      publish(delete, UserName),
-		      Res;
-		  Other ->
-		      Other
+	      case lookup(UName) of
+		  [] ->
+		      error('object-not-found');
+		  _User ->
+                      case delete_(UName) of
+                          {ok, UserName} ->
+                              publish(delete, UserName),
+                              ok;
+                          Other ->
+                              Other
+                      end
 	      end
       end).
 
--spec delete_(UID::binary()) -> {ok, binary()} | {error, not_found}.
+
 delete_(UID) ->
     lager:debug("uid ~p~n", [UID]),
     Key = exodm_db:encode_id(UID),
@@ -400,6 +413,31 @@ delete_role_(Base, Pos, AID) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% List a users accounts.
+%%
+%% Can throw errors: no_such_user
+%% @end
+%%--------------------------------------------------------------------
+-spec list_accounts(UName::binary()) ->
+                        list(AID::binary()) |
+                        {error, Reason::term()}.
+
+list_accounts(UID) when is_binary(UID) ->
+    lists:usort([A || {_I, A} <- list_accounts_(UID)]).
+
+list_accounts_(UID)  ->
+    exodm_db:fold_list(
+      ?TAB,
+      fun(I, Key, Acc) ->
+    	      case read(?TAB, Key, '__aid') of
+    		  [{_, AID}] ->
+    		      [{I, exodm_db:decode_id(AID)} | Acc];
+    		  _ -> Acc
+    	      end
+      end, [], exodm_db:join_key(UID, ?USER_ROLE)).
+
+%%--------------------------------------------------------------------
+%% @doc
 %% List a users roles.
 %%
 %% Can throw errors: no_such_user, no_such_account
@@ -428,6 +466,11 @@ list_roles_(UID)  ->
     	      end
       end, [], exodm_db:join_key(UID, ?USER_ROLE)).
 
+%%--------------------------------------------------------------------
+%%
+%% Utils
+%%
+%%--------------------------------------------------------------------
 insert_password(Key, Item, Value) ->
     {ok, Salt} = bcrypt:gen_salt(),
     %% Expensive hash; expensive to create, expensive to check against
@@ -446,7 +489,7 @@ delete(Key, Item) ->
     Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     kvdb_conf:delete(?TAB, Key1).
 
-read(Tab, Key,Item) ->
+read(Tab, Key, Item) ->
     Key1 = exodm_db:join_key([Key, to_binary(Item)]),
     case exodm_db:read(Tab, Key1) of
 	{ok,{_,_,Value}} ->

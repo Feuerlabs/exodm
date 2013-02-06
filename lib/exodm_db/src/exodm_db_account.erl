@@ -156,9 +156,13 @@ create_exodm_account_(_Db) ->
 new(Options) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      AIDVal = new_(Options),
-	      publish(add, AIDVal),
-	      AIDVal
+              case lookup_by_name(binary_opt(?ACC_OPT_NAME, Options)) of
+		  [] ->
+                      {ok, AIDVal} = new_(Options),
+                      publish(add, AIDVal),
+                      ok;
+                  _Other -> error('object-exists')
+              end
       end).
 
 new_(Options) ->
@@ -186,7 +190,7 @@ new_(Options) ->
 		   Other -> Other
 	       end,
     insert(Key, ?ACC_DB_NAME, AcctName),
-    {ok, AdminUName} = exodm_db_user:new(AdminUName, UserOpts),
+    exodm_db_user:new(AdminUName, UserOpts),
     create_roles(AID, Root),
     add_admin_user(AID, AdminUName, Root),
     exodm_db_yang:init(AID),
@@ -206,10 +210,26 @@ new_(Options) ->
 %% access via this account is first deleted.
 %% @end
 %%--------------------------------------------------------------------
--spec delete(AID::binary()) ->
+-spec delete(Name::binary()) ->
 		    ok.
 
-delete(AID0) ->
+delete(Name) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+              case lookup_by_name(Name) of
+		  [AID] ->
+                      case is_empty(AID) of
+                          true -> 
+                              ok = delete_(AID),
+                              publish(delete, exodm_db:account_id_value(AID)),
+                              ok;
+                          false -> error('object-not-empty')
+                      end;
+                  _Other -> error('object-not-found')
+              end
+      end).
+
+delete_(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:in_transaction(
       fun(_Db) ->
@@ -954,35 +974,6 @@ check_access(AID0) ->
 %%--------------------------------------------------------------------
 fold_accounts(F, Acc) ->
     kvdb_conf:fold_children( ?TAB, F, Acc, <<>>).
-
-
-%%--------------------------------------------------------------------
-%% NOT WORKING ??
-%%--------------------------------------------------------------------
-%% FIXME!!!! remove? exodm_db:fold_keys does not exist.
-list_users(AID) ->
-    list_users(AID, 30).
-
-list_users(AID0, Limit) ->
-    AID = exodm_db:account_id_key(AID0),
-    exodm_db:fold_keys(
-      ?TAB,
-      exodm_db:join_key(AID, ?ACC_DB_USERS),
-      fun([A, <<"users">>, UID|_], Acc) ->
-	      {next, exodm_db:join_key([A,?ACC_DB_USERS, UID]), [UID|Acc]};
-	 (_, Acc) ->
-	      {done, Acc}
-      end, [], Limit).
-
-%% FIXME!!!! remove? exodm_db:fold_keys does not exist.
-list_admins(AID0) ->
-    AID = exodm_db:account_id_key(AID0),
-    exodm_db:fold_keys(
-      ?TAB,
-      exodm_db:join_key(AID, ?ACC_DB_ADMINS),
-      fun([UName|_], Acc) ->
-	      [UName|Acc]
-      end, [], 100).
 
 %%--------------------------------------------------------------------
 %%% EUnit
