@@ -35,3 +35,16 @@
 %% Role options
 -define(ROLE_OPT_DESCR, descr).
 -define(ROLE_OPT_ACCESS, access). %% Should be replaced by rpc:s???
+
+%% Device
+-define(DEV_DB_CONFIG_SET, <<"config_set">>).
+-define(DEV_DB_DEVICE_TYPE, <<"device-type">>).
+-define(DEV_DB_PROTOCOL, <<"protocol">>).
+-define(DEV_DB_DEVICE_ID, <<"device-id">>).
+-define(DEV_DB_LATITUDE, <<"latitude">>).
+-define(DEV_DB_LONGITUDE, <<"longitude">>).
+-define(DEV_DB_TIMESTAMP, <<"timestamp">>).
+-define(DEV_DB_DEVICE_KEY, <<"device-key">>).
+-define(DEV_DB_SERVER_KEY, <<"server-key">>).
+-define(DEV_DB_SESSION_TIMEOUT, <<"session-timeout">>).
+-define(DEV_DB_GROUPS, <<"groups">>).

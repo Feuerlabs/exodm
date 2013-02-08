@@ -30,24 +30,10 @@
 
 -include_lib("lager/include/log.hrl").
 -include_lib("kvdb/include/kvdb_conf.hrl").
+-include("exodm_db.hrl").
 
 -import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).
 -import(lists, [reverse/1]).
-%%
-%% /<aid>/devices/<did>/name       = string()
-%% /<aid>/devices/<did>/msisdn     = msisdn()
-%% /<aid>/devices/<did>/imsi       = imsi()
-%% /<aid>/devices/<did>/imei       = imei()
-%% /<aid>/devices/<did>/longitud   = uint32()
-%% /<aid>/devices/<did>/latitude   = uint32()
-%% /<aid>/devices/<did>/timestamp  = uint32()
-%% /<aid>/devices/<did>/device-key = uint64()
-%% /<aid>/devices/<did>/did      = string()
-%% /<aid>/devices/<did>/server-key = uint64()
-%% /<aid>/devices/<did>/groups[<i>]/gid = uint32()
-%%
-
-%% FIXME option validation
 
 init(AID) ->
     exodm_db:in_transaction(
@@ -67,7 +53,6 @@ new(AID, ID, Options) ->
 
 new_(AID0, ID0, Options) ->
     ?info("new(~p, ~p, ~p)~n", [AID0, ID0, Options]),
-%%    DID = exodm_db_system:new_did(),
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(ID0),
     exodm_db:all_required(['device-type'], Options),
@@ -83,7 +68,6 @@ insert_(Tab, AID, DID, Options) ->
     insert_groups(AID, Tab, DID, proplists:get_value(groups, Options, [])),
     insert_device_type(
       Tab, AID, DID, proplists:get_value('device-type', Options)),
-    %% insert_protocol(Tab, DID, proplists:get_value(protocol, Options)),
     _ = [insert_attr(Tab, DID, K, V) ||
 	    {K,V} <- Options,
 	    not lists:member(K, ['device-id','gid', 'device-type',
@@ -91,15 +75,6 @@ insert_(Tab, AID, DID, Options) ->
 				 'protocol', 'groups'])],
     ok.
 
-
-required(Keys, Options) ->
-    lists:foreach(fun(K) -> required_(K, Options) end, Keys).
-
-required_(K, Options) ->
-    case lists:keymember(K, 1, Options) of
-	true -> true;
-	false -> error({required, K})
-    end.
 
 delete_devices(AID, DevIdList) ->
     exodm_db:in_transaction(
@@ -164,43 +139,6 @@ update_(AID0, DID0, DeleteOther, Options) ->
 	    end,
 	    insert_(Tab, AID, DID, Options)
     end.
-%% lists:foreac Nh(
-    %%   fun
-    %% 	  ({name,Value}) ->
-    %% 	      insert(Tab,DID,name,to_binary(Value));
-    %% 	  ({msisdn,Value}) ->
-    %% 	      insert(Tab,DID,msisdn, to_binary(Value));
-    %% 	  ({imsi,Value}) ->
-    %% 	      insert(Tab,DID,imsi,to_binary(Value));
-    %% 	  ({imei,Value}) ->
-    %% 	      insert(Tab,DID,imei,to_binary(Value));
-    %% 	  ({activity,Act}) ->
-    %% 	      insert(Tab,DID,activity,<<Act:32>>);
-    %% 	  ({latitude,Lat}) ->
-    %% 	      insert(Tab,DID,latitude,<<Lat:32>>);
-    %% 	  ({longitude,Lon}) ->
-    %% 	      insert(Tab,DID,longitude,<<Lon:32>>);
-    %% 	  ({timestamp,Ts}) ->
-    %% 	      insert(Tab,DID,timestamp,<<Ts:32>>);
-    %% 	  ({group,{I,GID}}) ->
-    %% 	      insert_group(AID,Tab,DID,I,GID);
-    %% 	  ({protocol, Protocol0}) ->
-    %% 	      Protocol = to_binary(Protocol0),
-    %% 	      insert_protocol(Tab, DID, Protocol);
-    %% 	  (_) ->
-    %% 	      skip
-    %%   end, Options),
-    %% insert_keys(Tab, DID, Options).
-
-insert_protocol(_Tab, _DID, undefined) ->
-    ok;
-insert_protocol(Tab, DID, Protocol) ->
-    case exodm_rpc_protocol:module(Protocol) of
-	undefined ->
-	    error(unknown_protocol, [Protocol]);
-	_ ->
-	    insert(Tab, DID, protocol, to_binary(Protocol))
-    end.
 
 insert_device_type(_Tab, _AID, _DID, undefined) ->
     ok;
@@ -219,22 +157,9 @@ delete(AID0, DID0) ->
     %% Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) -> delete_device(AID, DID) end).
-    %% 	      case exist(AID, DID) of
-    %% 		  true ->
-    %% 		      remove_devtype(Tab, AID, DID),
-    %% 		      Groups = lookup_groups(AID, DID),
-    %% 		      kvdb_conf:delete_all(Tab, DID),
-    %% 		      lists:foreach(
-    %% 			fun(GID) when is_binary(GID) ->
-    %% 				exodm_db_group:remove_device(AID, GID, DID)
-    %% 			end, Groups);
-    %% 		  false ->
-    %% 		      ok
-    %% 	      end
-    %%   end).
 
 remove_devtype(Tab, AID, DID) ->
-    case kvdb_conf:read(Tab, kvdb_conf:join_key(DID, <<"device-type">>)) of
+    case kvdb_conf:read(Tab, kvdb_conf:join_key(DID, ?DEV_DB_DEVICE_TYPE)) of
 	{ok, {_, _, T}} ->
 	    exodm_db_device_type:remove_device(AID, T, DID);
 	{error, not_found} ->
@@ -251,7 +176,7 @@ add_config_set_(AID0, DID0, CfgName) ->
     Tab = table(AID),
     case exist(AID, DID) of
 	true ->
-	    insert(Tab, exodm_db:join_key(DID, <<"config_set">>),
+	    insert(Tab, exodm_db:join_key(DID, ?DEV_DB_CONFIG_SET),
 		   CfgName, <<>>);
 	false ->
 	    error({unknown_device, [AID, DID]})
@@ -269,7 +194,7 @@ remove_config_set_(AID0, DID0, CfgName) ->
     case exist(AID, DID) of
 	true ->
 	    kvdb_conf:delete(Tab, kvdb_conf:join_key(
-				    [DID, <<"config_set">>, CfgName]));
+				    [DID, ?DEV_DB_CONFIG_SET, CfgName]));
 	false->
 	    ok
     end.
@@ -285,7 +210,7 @@ list_config_sets_(Tab, DID) ->
     Set = kvdb_conf:fold_children(
 	    Tab, fun(K, Acc) ->
 			 [lists:last(exodm_db:split_key(K))|Acc]
-		 end, [], exodm_db:join_key(DID, <<"config_set">>)),
+		 end, [], exodm_db:join_key(DID, ?DEV_DB_CONFIG_SET)),
     lists:reverse(Set).
 
 
@@ -311,16 +236,16 @@ protocol(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
-    case read(Tab, DID, 'device-type') of
-	[] ->
+    case read_value(Tab, DID, ?DEV_DB_DEVICE_TYPE) of
+	false ->
 	    %% BW compatibility; remove soon
-	    case read(Tab, DID, protocol) of
-		[] ->
+	    case read_value(Tab, DID, ?DEV_DB_PROTOCOL) of
+		false ->
 		    error(no_protocol_defined, [AID, DID]);
-		[{_, P}] ->
+		P ->
 		    P
 	    end;
-	[{_, T}] ->
+	T ->
 	    case kvdb_conf:read(
 		   exodm_db_device_type:table(AID),
 		   kvdb_conf:join_key(T, <<"protocol">>)) of
@@ -344,10 +269,10 @@ lookup(AID, DID) ->
       end).
 
 lookup_(Tab,Key) ->
-    case kvdb_conf:read(Tab, kvdb_conf:join_key(Key, <<"device-id">>)) of
+    case kvdb_conf:read(Tab, kvdb_conf:join_key(Key, ?DEV_DB_DEVICE_ID)) of
 	{ok, {_, _, _}} ->
 	    [{'dev-id', exodm_db:decode_id(Key)} |
-	     read(Tab,Key,'device-type')  ++
+	     lookup_attr_(Tab,Key,'device-type') ++
 		 lookup_attrs(Tab, Key)];
 	{error, _} ->
 	    []
@@ -369,27 +294,21 @@ lookup_attrs(Tab, Key) ->
 
 remove_keys(L) ->
     [Obj || {K,_} = Obj <- L,
-	    K =/= <<"device-key">>,
-	    K =/= <<"server-key">>].
+	    K =/= ?DEV_DB_DEVICE_KEY,
+	    K =/= ?DEV_DB_SERVER_KEY].
 
 convert_attr({K,V}) ->
     {K, decode_value(K, V)}.
 
-%% ++
-%% 	read(Tab,Key, msisdn) ++
-%% 	read(Tab,Key, imsi) ++
-%% 	read(Tab,Key, imei) ++
-%% 	read(Tab,Key, 'device-key') ++
-%% 	read(Tab,Key, 'server-key') ++
-%% 	read(Tab,Key, yang) ++
-%% 	read_uint32(Tab,Key, activity) ++
-%% 	read_uint32(Tab,Key, status) ++
-%% 	read_uint32(Tab,Key, longitude) ++
-%% 	read_uint32(Tab,Key, latitude) ++
-%% 	read_uint32(Tab,Key, timestamp).
+lookup_attr(AID, DID, Attr) when is_atom(Attr) ->
+    lookup_attr_(table(AID), DID, Attr).
 
-lookup_attr(AID, DID, Attr) ->
-    read(table(AID), exodm_db:encode_id(DID), Attr).
+lookup_attr_(Tab, DID, Attr) when is_atom(Attr) ->
+    case read_value(Tab, exodm_db:encode_id(DID), to_binary(Attr)) of
+	false -> [];
+	Value -> [{Attr,Value}]
+    end.
+	     
 
 list_device_keys(AID) ->
     list_device_keys(AID, 30).
@@ -416,21 +335,12 @@ fold_devices(F, Acc, AID, Limit) when
 lookup_groups(AID, DID0) ->
     Tab = table(AID),
     DID = exodm_db:encode_id(DID0),
-    case kvdb_conf:read_tree(Tab, kvdb_conf:join_key(DID, <<"groups">>)) of
+    case kvdb_conf:read_tree(Tab, kvdb_conf:join_key(DID,?DEV_DB_GROUPS)) of
 	#conf_tree{tree = T} ->
 	    [GID || {GID,_, _} <- T];
 	_ ->
 	    []
     end.
-    %% lists:reverse(
-    %%   exodm_db:fold_list2(
-    %% 	Tab,
-    %% 	fun(I,Key,Acc) ->
-    %% 		case read_uint32(Tab, Key, 'gid') of
-    %% 		    [{_,GID}] -> [{group,{I,GID}} | Acc];
-    %% 		    [] -> Acc
-    %% 		end
-    %% 	end, [], DID, groups)).
 
 
 lookup_group_notifications(AID0, DID0) ->
@@ -461,17 +371,17 @@ lookup_position(AID, DID0) ->
     Tab = table(AID),
     DID = exodm_db:encode_id(DID0),
     {
-      case read(Tab,DID,latitude) of
-	  [] -> 0.0;
-	  [{latitude,Lat}] -> exodm_db:bin_to_float(Lat)
+      case read_value(Tab,DID,?DEV_DB_LATITUDE) of
+	  false -> 0.0;
+	  Lat -> exodm_db:bin_to_float(Lat)
       end,
-      case read(Tab,DID,longitude) of
-	  [] -> 0.0;
-	  [{longitude,Lon}] -> exodm_db:bin_to_float(Lon)
+      case read_value(Tab,DID,?DEV_DB_LONGITUDE) of
+	  false -> 0.0;
+	  Lon -> exodm_db:bin_to_float(Lon)
       end,
-      case read(Tab,DID,timestamp) of
-	  [] -> 0;
-	  [{timestamp,<<Ts:32>>}] -> Ts
+      case read_value(Tab,DID,?DEV_DB_TIMESTAMP) of
+	  false -> 0;
+	  <<Ts:32>> -> Ts
       end
     }.
 
@@ -521,12 +431,12 @@ client_auth_config(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
-    case read(Tab, DID, 'device-key') of
-	[] -> {error, not_found};
-	[{_, Ck}] ->
-	    case read(Tab, DID, 'server-key') of
-		[] -> {error, not_found};
-		[{_, Cs}] ->
+    case read_value(Tab, DID, ?DEV_DB_DEVICE_KEY) of
+	false -> {error, not_found};
+	Ck ->
+	    case read_value(Tab, DID, ?DEV_DB_SERVER_KEY) of
+		false -> {error, not_found};
+		Cs ->
 		    ExtKey = enc_ext_key(AID, DID),
 		    [{bert,
 		      [{auth, [
@@ -545,20 +455,20 @@ lookup_keys(AID, DID0) ->
     DID = exodm_db:encode_id(DID0),
     Tab = table(AID),
     {
-      case read(Tab, DID,'device-key') of
-	  [] -> <<0,0,0,0,0,0,0,0>>;
-	  [{'device-key',Ck}] -> Ck
+      case read_value(Tab, DID, ?DEV_DB_DEVICE_KEY) of
+	  false -> <<0,0,0,0,0,0,0,0>>;
+	  Ck -> Ck
       end,
-      case read(Tab, DID, 'server-key') of
-	  [] ->  <<0,0,0,0,0,0,0,0>>;
-	  [{'server-key',Sk}] -> Sk
+      case read_value(Tab, DID, ?DEV_DB_SERVER_KEY) of
+	  false ->  <<0,0,0,0,0,0,0,0>>;
+	  Sk -> Sk
       end}.
 
 exist(AID, DID) ->
     lager:debug("(AID=~p, DID=~p)~n", [AID,DID]),
-    case read(table(AID), exodm_db:encode_id(DID), 'device-id') of
-	[] -> false;
-	[_] -> true
+    case read_value(table(AID), exodm_db:encode_id(DID), ?DEV_DB_DEVICE_ID) of
+	false -> false;
+	_ -> true
     end.
 
 %% utils
@@ -580,24 +490,24 @@ insert_attr(Tab, Key, Item, Value) ->
     Key1 = exodm_db:join_key(Key, to_binary(Item)),
     exodm_db:write(Tab, Key1, encode_value(ItemB, Value)).
 
-encode_value(<<"latitude">>, L) when is_number(L) ->
+encode_value(?DEV_DB_LATITUDE, L) when is_number(L) ->
     exodm_db:float_to_bin(L);
-encode_value(<<"longitude">>, L) when is_number(L) ->
+encode_value(?DEV_DB_LONGITUDE, L) when is_number(L) ->
     exodm_db:float_to_bin(L);
-encode_value(<<"timestamp">>, L) when is_number(L) ->
+encode_value(?DEV_DB_TIMESTAMP, L) when is_number(L) ->
     exodm_db:uint_to_bin(L);
-encode_value(<<"session-timeout">>, T) ->
+encode_value(?DEV_DB_SESSION_TIMEOUT, T) ->
     list_to_binary(integer_to_list(T));
 encode_value(_, V) ->
     to_binary(V).
 
-decode_value(<<"latitude">>, Bin) ->
+decode_value(?DEV_DB_LATITUDE, Bin) ->
     exodm_db:bin_to_float(Bin);
-decode_value(<<"longitude">>, Bin) ->
+decode_value(?DEV_DB_LONGITUDE, Bin) ->
     exodm_db:bin_to_float(Bin);
-decode_value(<<"timestamp">>, Bin) ->
+decode_value(?DEV_DB_TIMESTAMP, Bin) ->
     exodm_db:bin_to_uint(Bin);
-decode_value(<<"session-timeout">>, Bin) ->
+decode_value(?DEV_DB_SESSION_TIMEOUT, Bin) ->
     list_to_integer(binary_to_list(Bin));
 decode_value(_, Bin) ->
     Bin.
@@ -605,33 +515,16 @@ decode_value(_, Bin) ->
 
 
 insert_groups(AID, Tab, DID, Groups) ->
-%%     insert_groups(AID, Tab, 1, DID, Groups).
-
-%% insert_groups(AID, Tab, I0, DID, Groups0) ->
     lists:foreach(fun(G) ->
 			  insert_group_(AID, Tab, DID, G)
 		  end, Groups).
-    %% {Groups,_} = lists:mapfoldl(fun(G,I) ->
-    %% 					{{I,G}, I+1}
-    %% 				end, I0, Groups0),
-    %% lists:foreach(fun({I,G}) ->
-    %% 			  insert_group(AID, Tab, DID, I, G)
-    %% 		  end, Groups).
+
 
 insert_group_(AID, Tab, DID, GID) ->
-    K = exodm_db:join_key([DID, <<"groups">>, exodm_db:group_id_key(GID)]),
+    K = exodm_db:join_key([DID, ?DEV_DB_GROUPS, exodm_db:group_id_key(GID)]),
     exodm_db_group:add_device(AID, GID, DID),
     kvdb_conf:write(Tab, {K, [], <<>>}).
 
-%% insert_group(AID, Tab, DID, I, GID) when is_integer(I) ->
-%%     K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
-%%     exodm_db_group:add_device(AID, GID, DID),
-%%     insert(Tab, K, 'gid',  gid_value(GID)).
-
-remove_group(AID, Tab, DID, I, GID) ->
-    K = exodm_db:join_key(DID, exodm_db:list_key(groups, I)),
-    exodm_db_group:remove_device(AID, GID, DID),
-    kvdb_conf:delete_tree(Tab, K).
 
 add_groups(AID, DID0, Groups) ->
     DID = exodm_db:encode_id(DID0),
@@ -650,7 +543,7 @@ add_groups_(Tab, AID, DID, Groups) ->
     lists:foreach(
       fun(GID0) ->
 	      GID = exodm_db:group_id_key(GID0),
-	      Key = kvdb_conf:join_key([DID, <<"groups">>, GID]),
+	      Key = kvdb_conf:join_key([DID, ?DEV_DB_GROUPS, GID]),
 	      kvdb_conf:write(Tab, {Key, [], <<>>}),
 	      exodm_db_group:add_device(AID, GID, DID)
       end, Groups).
@@ -666,29 +559,13 @@ do_add_group(AID0, DID0, GID0) ->
 	      case exist(AID, DID) of
 		  true ->
 		      kvdb_conf:write(Tab, {kvdb_conf:join_key(
-					      [DID,<<"groups">>,GID]),
+					      [DID,?DEV_DB_GROUPS,GID]),
 					    [], <<>>});
 		  false ->
 		      error(unknown_device)
 	      end
       end).
-      %% 	      {Existing, Last} =
-      %% 		  kvdb_conf:fold_list(
-      %% 		    Tab, fun(I, Kl, {Acc,_}) ->
-      %% 				 {ok,{_,_,<<GID:32>>}} =
-      %% 				     kvdb_conf:read(
-      %% 				       Tab, kvdb_conf:join_key(
-      %% 					      Kl, <<"gid">>)),
-      %% 				 case lists:member(GID, Groups) of
-      %% 				     true ->
-      %% 					 {[GID|Acc],I};
-      %% 				     false ->
-      %% 					 {Acc,I}
-      %% 				 end
-      %% 			 end, {[],0}, kvdb_conf:join_key(DID,<<"groups">>)),
-      %% 	      ToAdd = Groups -- Existing,
-      %% 	      insert_groups(AID, Tab, Last+1, DID, ToAdd)
-      %% end).
+
 
 remove_groups(AID, DID0, Groups) ->
     DID = exodm_db:encode_id(DID0),
@@ -707,7 +584,7 @@ remove_groups_(Tab, AID, DID, Groups) ->
     lists:foreach(
       fun(GID0) ->
 	      GID = exodm_db:group_id_key(GID0),
-	      Key = kvdb_conf:join_key([DID, <<"groups">>, GID]),
+	      Key = kvdb_conf:join_key([DID,?DEV_DB_GROUPS,GID]),
 	      kvdb_conf:delete(Tab, Key),
 	      exodm_db_group:remove_device(AID, GID, DID)
       end, Groups).
@@ -722,69 +599,28 @@ do_remove_group(AID0, DID0, GID0) ->
 	      case exist(AID, DID) of
 		  true ->
 		      kvdb_conf:delete(Tab, kvdb_conf:join_key(
-					      [DID,<<"groups">>,GID]));
+					      [DID,?DEV_DB_GROUPS,GID]));
 		  false ->
 		      error
 	      end
       end).
 
-    %% 	      Found =
-    %% 		  kvdb_conf:fold_list(
-    %% 		    Tab, fun(I, Kl, Acc) ->
-    %% 				 {ok,{_,_,<<GID:32>>}} =
-    %% 				     kvdb_conf:read(
-    %% 				       Tab, kvdb_conf:join_key(
-    %% 					      Kl, <<"gid">>)),
-    %% 				 case lists:member(GID, Groups) of
-    %% 				     true ->
-    %% 					 [{I,GID}|Acc];
-    %% 				     false ->
-    %% 					 Acc
-    %% 				 end
-    %% 			 end, [], kvdb_conf:join_key(DID,<<"groups">>)),
-    %% 	      lists:foreach(
-    %% 		fun({I, GID}) ->
-    %% 			remove_group(AID, Tab, DID, I, GID)
-    %% 		end, Found)
-    %%   end),
-    %% ok.
-
-gid_value(GID) ->
-    <<(exodm_db:group_id_num(GID)):32>>.
-
-read(Tab, Key, Item) ->
-    read_(Tab, Item, exodm_db:join_key(attr_key(Key, to_binary(Item)))).
-
-attr_key(Key, <<"did">>        ) -> [Key, <<"device-id">>];
-attr_key(Key, <<"dev-id">>     ) -> [Key, <<"device-id">>];
-attr_key(Key, <<"device-id">>  ) -> [Key, <<"device-id">>];
-attr_key(Key, <<"device-type">>) -> [Key, <<"device-type">>];
-attr_key(Key, <<"server-key">> ) -> [Key, <<"server-key">>];
-attr_key(Key, <<"device-key">> ) -> [Key, <<"device-key">>];
-attr_key(Key, <<"protocol">>   ) -> [Key, <<"protocol">>];
+read_value(Tab, Key, Item) when is_binary(Item) ->
+    case exodm_db:read(Tab, exodm_db:join_key(attr_key(Key, Item))) of
+	{ok,{_,_,Value}} -> Value;
+	{error,not_found} -> false
+    end.
+    
+attr_key(Key, <<"did">>        ) -> [Key, ?DEV_DB_DEVICE_ID];
+attr_key(Key, <<"dev-id">>     ) -> [Key, ?DEV_DB_DEVICE_ID];
 attr_key(Key, A) -> [Key, A].
 
-
-%% read(Tab, Key, Sub, Item) ->
-%%     read_(Tab, Item, exodm_db:join_key([Key, Sub, to_binary(Item)])).
-
-read_(Tab, Item, Key) ->
-    case exodm_db:read(Tab, Key) of
-	{ok,{_,_,Value}} -> [{Item,Value}];
-	{error,not_found} -> []
-    end.
-
-read_uint32(Tab, Key,Item) ->
-    case read(Tab, Key,Item) of
-	[{Item,<<Value:32>>}] -> [{Item,Value}];
-	[] -> []
-    end.
 
 transform() ->
     code_change(exodm_db:get_db_version(), exodm_db:get_system_version()).
 
 code_change(FromVsn, ToVsn) ->
-    io:fwrite("code_change(~p, ~p)~n", [FromVsn, ToVsn]),
+    %% io:fwrite("code_change(~p, ~p)~n", [FromVsn, ToVsn]),
     Tabs = kvdb:list_tables(kvdb_conf),
     %% exodm_db:in_transaction(
     %%   fun(_) ->
@@ -824,7 +660,7 @@ transform_tab(done, _, _, _) ->
     ok.
 
 transform_tree(#conf_tree{tree = T} = CT, _, _) ->
-    io:fwrite("ConfTree = ~p~n", [CT]),
+    %% io:fwrite("ConfTree = ~p~n", [CT]),
     NewCT =
 	case lists:keyfind(<<"a">>, 1, T) of
 	    {<<"a">>, L} ->
@@ -834,7 +670,7 @@ transform_tree(#conf_tree{tree = T} = CT, _, _) ->
 	    false ->
 		rename_did(CT)
 	end,
-    io:fwrite("NewCT = ~p~n", [NewCT]),
+    %% io:fwrite("NewCT = ~p~n", [NewCT]),
     NewCT.
 
 rename_did(#conf_tree{tree = T} = CT) ->
@@ -844,63 +680,3 @@ rename_did(#conf_tree{tree = T} = CT) ->
 		(X) -> X
 	     end, T),
     CT#conf_tree{tree = NewT}.
-%% transform_tree(#conf_tree{tree = T} = CT, _, _) ->
-%%     io:fwrite("ConfTree = ~p~n", [CT]),
-%%     NewCT =
-%% 	case lists:keyfind(<<"a">>, 1, T) of
-%% 	    {<<"a">>, L} ->
-%% 		L1 = lists:map(
-%% 		       fun({<<"latitude">> = K, As, <<Lat:32>>}) ->
-%% 			       Latf = lat_int_to_float(Lat),
-%% 			       {K, As, exodm_db:float_to_bin(Latf)};
-%% 			  ({<<"longitude">> = K, As, <<Long:32>>}) ->
-%% 			       Lonf = lon_int_to_float(Long),
-%% 			       {K, As, exodm_db:float_to_bin(Lonf)};
-%% 			  (Obj) ->
-%% 			       Obj
-%% 		       end, L),
-%% 		CT#conf_tree{tree = lists:keyreplace(
-%% 				      <<"a">>, 1, T, {<<"a">>, L1})};
-%% 	    false ->
-%% 		skip
-%% 	end,
-%%     io:fwrite("NewCT = ~p~n", [NewCT]),
-%%     NewCT.
-
-
-lat_int_to_float(Lat) -> Lat / 100000.0 - 90.
-lon_int_to_float(Lon) -> Lon / 100000.0 - 180.
-
-
-%% transform_tree(#conf_tree{tree = T} = CT, _, _) ->
-%%     T1 = lists:flatmap(
-%% 	   fun({<<"protocol">>, [], _}) ->
-%% 		   [];
-%% 	      (X) ->
-%% 		   [X]
-%% 	   end, T),
-%%     CT#conf_tree{tree = lists:sort([{<<"device-type">>,[],<<"ck3">>}|T1])}.
-
-
-%% transform_tree(#conf_tree{tree = T} = CT, _, _) ->
-%%     T1 = lists:map(
-%% 	   fun({<<"__did">>, [], DID}) ->
-%% 		   {<<"did">>, [], DID};
-%% 	      ({K, _, _} = X) ->
-%% 		   case lists:member(K, [<<"config_set">>, <<"device-key">>,
-%% 					 <<"server-key">>, <<"did">>,
-%% 					 <<"protocol">>]) of
-%% 		       true ->
-%% 			   X;
-%% 		       false ->
-%% 			   {a,X}
-%% 		   end;
-%% 	      ({<<"config_set">>, L} = X) when is_list(L) ->
-%% 		   X;
-%% 	      ({<<"groups">>, L} = X) when is_list(L) ->
-%% 		   X
-%% 	   end, T),
-%%     Attrs = [C || {a, C} <- T1],
-%%     CT#conf_tree{tree = lists:sort([{<<"a">>,Attrs}|
-%% 				    [X || X <- T1,
-%% 					  element(1,X) =/= a]])}.
