@@ -481,9 +481,9 @@ dec_ext_key(<<Sep, ID/binary>>) ->
     case split(Sep, ID) of
 	[AcctName, DID] ->
 	    case exodm_db_account:lookup_by_name(AcctName) of
-		[] ->
+	        false->
 		    error;
-		[AID] ->
+		AID ->
 		    {AID, exodm_db:encode_id(DID)}
 	    end;
 	_ ->

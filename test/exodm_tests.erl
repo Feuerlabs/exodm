@@ -145,8 +145,8 @@ populate(Cfg) ->
 				 {fullname, <<"Ulf Wiger">>},
 				 {password, <<"wiger">>}]}
 		       ]]),
-    [AID1] = ?rpc(exodm_db_account, lookup_by_name, [?ACC1]),
-    [AID2] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
+    AID1 = ?rpc(exodm_db_account, lookup_by_name, [?ACC1]),
+    AID2 = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     {ok, GID1} = ?rpc(exodm_db_group,new,
 		      [
 		       AID2, [{name, <<"feuerlabs">>},
@@ -224,14 +224,14 @@ list_accounts(Cfg) ->
     ok.
 
 list_groups(Cfg) ->
-    [AID] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
+    AID = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     [<<"g00000001">>,
      <<"g00000002">>] =
 	?rpc(exodm_db_account,list_groups, [AID]),
     ok.
 
 list_group_devices(Cfg) ->
-    [AID] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
+    AID = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     [<<"x00000001">>,
      <<"x00000002">>,
      <<"x00000003">>] =
@@ -247,7 +247,7 @@ list_group_devices(Cfg) ->
     ok.
 
 list_group_notifications(Cfg) ->
-    [AID] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
+    AID = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     [?URL1, ?URL2] =
 	?rpc(exodm_db_device,lookup_group_notifications,
 	     [AID, <<"x00000001">>]),
@@ -354,7 +354,7 @@ store_config_scr2() ->
 
 add_config_set_member(Cfg) ->
     ok = rscript(Cfg, add_config_set_member_scr()),
-    [AID] = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
+    AID = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     [<<"test1">>, <<"test2">>] =
 	?rpc(exodm_db_device, list_config_sets, [AID,
 						 <<"x00000001">>]),

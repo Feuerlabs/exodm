@@ -8,6 +8,7 @@
 -module(exodm_db_account).
 
 -include_lib("lager/include/log.hrl").
+-include_lib("exodm/include/exodm.hrl").
 -include("exodm_db.hrl").
 
 %% Gproc 
@@ -40,7 +41,9 @@
 	 user_exists/2]).
 -export([create_role/3,
 	 role_def/2,
-	 role_exists/2]).
+	 role_exists/2,
+         rpc_role_list/0,
+         rpc_permission/2]).
 -export([register_protocol/2, 
 	 is_protocol_registered/2]).
 -export([incr_request_id/1,
@@ -111,9 +114,9 @@ create_exodm_account() ->
     exodm_db:in_transaction(
       fun(Db) ->
 	      case lookup_by_name(<<"exodm">>) of
-		  [] ->
+		  false ->
 		      create_exodm_account_(Db);
-		  [_] ->
+		  _ ->
 		      ok
 	      end
       end).
@@ -153,11 +156,11 @@ create_exodm_account_(_Db) ->
 -spec new(list({Option::atom(), Value::term()})) -> 
 		 {ok, AIDVal::binary()}.
 
-new(Options) ->
+new(Options) when is_list(Options) ->
     exodm_db:in_transaction(
       fun(_) ->
               case lookup_by_name(binary_opt(?ACC_OPT_NAME, Options)) of
-		  [] ->
+		  false ->
                       {ok, AIDVal} = new_(Options),
                       publish(add, AIDVal),
                       ok;
@@ -213,11 +216,11 @@ new_(Options) ->
 -spec delete(Name::binary()) ->
 		    ok.
 
-delete(Name) ->
+delete(Name) when is_binary(Name) ->
     exodm_db:in_transaction(
       fun(_) ->
               case lookup_by_name(Name) of
-		  [AID] ->
+		  AID when is_binary(AID) ->
                       case is_empty(AID) of
                           true -> 
                               ok = delete_(AID),
@@ -225,7 +228,7 @@ delete(Name) ->
                               ok;
                           false -> error('object-not-empty')
                       end;
-                  _Other -> error('object-not-found')
+                  false -> error('object-not-found')
               end
       end).
 
@@ -251,7 +254,7 @@ delete_(AID0) ->
 	     list({Option::atom(), Value::term()})) ->
 		    ok.
 
-update(AID, Options) ->
+update(AID, Options) when is_binary(AID), is_list(Options) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      t_update(AID, Options)
@@ -278,8 +281,7 @@ update_(Key, Options) ->
 %%-spec lookup(AID::binary()) ->
 %%		    list({?ACC_DB_ID, Aid::binary()},
 %%			 {(?ACC_DB_NAME), Name::binary()})).
-
-lookup(AID0) ->
+lookup(AID0) when is_binary(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     lookup_(AID).
 
@@ -296,19 +298,16 @@ lookup_(Key) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec lookup_by_name(AName::binary()) ->
-			    list(AID::binary()).
+			    AID::binary() | false.
 
-%% Why return a list??
-lookup_by_name(AName) ->
-    Matches = kvdb:index_get(kvdb_conf, ?TAB, name, AName),
-    %% e.g. [{<<"a00000001*name">>,[],<<"getaround">>}]
-    lists:foldr(
-      fun({Key, _, _}, Acc) ->
-	      case exodm_db:split_key(Key) of
-		  [ID, _] -> [ID|Acc];
-		  _       -> Acc
-	      end
-      end, [], Matches).
+lookup_by_name(AName) when is_binary(AName) ->
+    case kvdb:index_get(kvdb_conf, ?TAB, name, AName) of
+        [{Key, _, _}] ->
+            %% e.g. [{<<"a00000001*name">>,[],<<"getaround">>}]
+            [ID, _] = exodm_db:split_key(Key),
+            ID;
+        [] -> false
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -319,7 +318,7 @@ lookup_by_name(AName) ->
 -spec exist(AID0::binary()) ->
 		   Exists::boolean().
 
-exist(AID0) ->
+exist(AID0) when is_binary(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     case read(AID, ?ACC_DB_NAME) of
 	[] -> false;
@@ -338,7 +337,7 @@ exist(AID0) ->
 -spec is_empty(AID::binary()) ->
 		      Empty::boolean().
 
-is_empty(AID0) ->
+is_empty(AID0) when is_binary(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:in_transaction(
       fun(_Db) ->
@@ -395,6 +394,7 @@ list_accounts(N, Prev) ->
 				 end)
       end).
 
+
 %%--------------------------------------------------------------------
 %% @doc
 %% List all account keys.
@@ -420,7 +420,7 @@ list_account_keys() ->
 			list(UName::binary()) |
 			  {error, Reason::term()}.
 
-list_users(AID0, N, Prev) ->
+list_users(AID0, N, Prev) when is_binary(AID0) ->
     list_users_(exodm_db:account_id_key(AID0), N, Prev).
 
 list_users_(AID,  N, Prev) ->
@@ -447,7 +447,7 @@ list_users_(AID,  N, Prev) ->
 			 list(UName::binary()) |
 				     {error, Reason::term()}.
 
-list_admins(AID0, N, Prev) ->
+list_admins(AID0, N, Prev) when is_binary(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_ADMINS, 
 				   exodm_db:to_binary(Prev)]),
@@ -474,7 +474,7 @@ list_admins(AID0, N, Prev) ->
 			  ok |
 			  {error, Reason::term()}.
 
-list_roles(AID0, N, Prev) ->
+list_roles(AID0, N, Prev) when is_binary(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_ROLES, 
 				   exodm_db:to_binary(Prev)]),
@@ -497,10 +497,13 @@ list_roles(AID0, N, Prev) ->
 -spec list_user_roles(AID::binary(), UName::binary()) ->
 				list({AID::binary(), Role::binary()}).
 
-list_user_roles(AID, UName) ->
-    lists:filter(fun({A, _R}) when A == AID -> true;
-		    ({_OtherAID, _R}) -> false
-		 end, exodm_db_user:list_roles(UName)).
+list_user_roles(AID, UName) 
+  when is_binary(AID), is_binary(UName) ->
+    [R || {_A, R} <-
+              lists:filter(fun({A, _R}) when A == AID -> true;
+                              ({_OtherAID, _R}) -> false
+                           end, exodm_db_user:list_roles(UName))].
+    
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -511,12 +514,12 @@ list_user_roles(AID, UName) ->
 -spec list_groups(AID::binary()) ->
 			 list().
 
-list_groups(AID) ->
+list_groups(AID) when is_binary(AID) ->
     list_groups(AID, 30).
 
 -spec list_groups(AID::binary(), Limit::integer()) ->
 			 list().
-list_groups(AID, Limit) ->
+list_groups(AID, Limit) when is_binary(AID) ->
     exodm_db_group:list_group_keys(AID, Limit).
 
 %%--------------------------------------------------------------------
@@ -527,9 +530,9 @@ list_groups(AID, Limit) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec system_specs(AID0::binary()) ->
+-spec system_specs(AID0::term()) ->
 			  list().
-
+%% Why not binary??
 system_specs(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:in_transaction(
@@ -560,12 +563,13 @@ system_specs(AID0) ->
 
 
 
-add_users(AName, Role, UNames, IsRoot) ->
+add_users(AName, Role, UNames, IsRoot) 
+  when is_binary(AName), is_binary(Role) ->
     lager:debug("aname ~p, role ~p, unames ~p", [AName, Role, UNames]),
     %% Check if account_exists
     case lookup_by_name(AName) of
-	[] -> error('object-not-found');
-	[AID] -> add_users1(AID, Role, UNames, IsRoot)
+	false -> error('object-not-found');
+	AID -> add_users1(AID, Role, UNames, IsRoot)
     end.
 		     
 add_users1(AID, Role, UNames, true) ->
@@ -640,12 +644,13 @@ add_admin_user(AID, UName, false) ->
 
 
 
-remove_users(AName, Role, UNames, IsRoot) ->
+remove_users(AName, Role, UNames, IsRoot) 
+  when is_binary(AName), is_binary(Role) ->
     lager:debug("aname ~p, role ~p, unames ~p", [AName, Role, UNames]),
     %% Check if account_exists
     case lookup_by_name(AName) of
-	[] -> error('object-not-found');
-	[AID] -> remove_users1(AID, Role, UNames, IsRoot)
+	false -> error('object-not-found');
+	AID -> remove_users1(AID, Role, UNames, IsRoot)
     end.
 		     
 remove_users1(AID, Role, UNames, true) ->
@@ -692,7 +697,7 @@ remove_user1(AID, Role, UName) ->
 -spec user_exists(AID::binary(), UName::binary()) ->
 			 Exists::boolean().
 
-user_exists(AID, UName) ->
+user_exists(AID, UName) when is_binary(AID), is_binary(UName) ->
     case kvdb_conf:read(?TAB, exodm_db:join_key([AID, ?ACC_DB_USERS, UName])) of
 	{ok, _User} -> true;
 	{error, not_found} -> false
@@ -714,7 +719,8 @@ user_exists(AID, UName) ->
 -spec create_role(AID::binary(), RName::binary(), Opts::list()) ->
 			 ok.
 
-create_role(AID, RName, Opts) ->
+create_role(AID, RName, Opts) 
+  when is_binary(AID), is_binary(RName), is_list(Opts) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      t_create_role(AID, RName, Opts)
@@ -732,11 +738,11 @@ t_create_role_(AID, RName, Opts) ->
     insert(Key, ?ROLE_DB_EXISTS, <<"true">>),
     AccessKey = exodm_db:join_key(Key, ?ROLE_DB_ACCESS),
     lists:foreach(
-      fun({<<"all">>, Access}) ->
-	      valid_access(Access),
+      fun(<<"predefined">>) ->
+              insert(AccessKey, <<"predefined">>, <<>>);
+         ({<<"all">>, Access}) ->
 	      insert(AccessKey, <<"all">>, Access);
 	 ({G, Access}) ->
-	      valid_access(Access),
 	      case group_exists(AID, G) of
 		  true ->
 		      insert(AccessKey, G, Access);
@@ -774,14 +780,55 @@ role_def(AID, RName) ->
 -spec role_exists(AID::binary(), RName::binary()) ->
 		      Exists::boolean().
 
-role_exists(AID, RName) ->
+role_exists(AID, RName) when is_binary(AID), is_binary(RName) ->
     %% Role has a field exists
     case read(role_key(AID, RName), ?ROLE_DB_EXISTS) of
 	[] -> false;
 	ValueList when is_list(ValueList) -> true
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Check if role has permission to execute rpc.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec rpc_permission(Rpc::binary(), Roles::binary() | list(binary())) ->
+                            Permission::boolean().
 
+rpc_permission(Rpc, Roles) when is_binary(Rpc), is_list(Roles) ->
+    case lists:keyfind(Rpc, 1, ?RPC_ROLE_LIST) of
+        {Rpc, RoleList} ->
+            case Roles -- (Roles -- RoleList) of
+                [] -> false;
+                _RList -> true
+            end;
+        false ->
+            lager:debug("Warning, unknown rpc ~p", Rpc),
+            false
+    end;
+rpc_permission(Rpc, Role) when is_binary(Rpc) ->
+    case lists:keyfind(Rpc, 1, ?RPC_ROLE_LIST) of
+        {Rpc, RoleList} ->
+            lists:member(Role, RoleList);
+        false ->
+            lager:debug("Warning, unknown rpc ~p", Rpc),
+            false
+    end.
+                
+     
+%%--------------------------------------------------------------------
+%% @doc
+%% Returns the list of predefined role rpc permissions..
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec rpc_role_list() -> list({Rpc::binary(), list(Role::binary())}).
+
+rpc_role_list() ->   
+    ?RPC_ROLE_LIST.
+
+%%--------------------------------------------------------------------
 create_roles(AID, true) ->
     create_admin_role(AID, ?ROOT);
 create_roles(AID,false) ->
@@ -796,41 +843,29 @@ create_admin_role(AID, RName) ->
  
 configurable_roles() ->
     %% Later add user defined roles??
-    [?ADMIN, ?EXECUTER, ?CONFIGURER, ?VIEWER].
+    [?ADMIN, ?EXEC, ?CONFIG, ?VIEW].
 
 
 %% Future access format is {<<"all">> | GroupName, [list(Rpc)]}
 initial_role_opts(?ROOT) ->
     [{?ROLE_OPT_DESCR, "initial root user"},
-     {?ROLE_OPT_ACCESS, {<<"all">>,<<"root">>}}];
+     {?ROLE_OPT_ACCESS, <<"predefined">>}];
 initial_role_opts(?INIT_ADMIN) ->
     [{?ROLE_OPT_DESCR, "initial administrator - can not be removed"},
-     {?ROLE_OPT_ACCESS, {<<"all">>, <<"admin">>}}];
+     {?ROLE_OPT_ACCESS, <<"predefined">>}];
 initial_role_opts(?ADMIN) ->
     [{?ROLE_OPT_DESCR, "administrator of account"},
-     {?ROLE_OPT_ACCESS, {<<"all">>, <<"admin">>}}];
-initial_role_opts(<<"executer">>) ->
+     {?ROLE_OPT_ACCESS, <<"predefined">>}];
+initial_role_opts(?EXEC) ->
     [{?ROLE_OPT_DESCR, "user of account, can call exec rpc:s"},
-     {?ROLE_OPT_ACCESS, {<<"all">>, <<"exec">>}}];
-initial_role_opts(<<"configurer">>) ->
+     {?ROLE_OPT_ACCESS, <<"predefined">>}];
+initial_role_opts(?CONFIG) ->
     [{?ROLE_OPT_DESCR, "user of account, can call config rpc:s"},
-     {?ROLE_OPT_ACCESS, {<<"all">>, <<"config">>}}];
-initial_role_opts(<<"viewer">>) ->
+     {?ROLE_OPT_ACCESS, <<"predefined">>}];
+initial_role_opts(?VIEW) ->
     [{?ROLE_OPT_DESCR, "user of account, can call list rpc:s"},
-     {?ROLE_OPT_ACCESS, {<<"all">>, <<"view">>}}].
+     {?ROLE_OPT_ACCESS, <<"predefined">>}].
 
-%% Remove when switched to rpc:s ??
-valid_access(<<"view">>) -> true;
-valid_access(<<"config">>) -> true;
-valid_access(<<"exec">>) -> true;
-valid_access(<<"admin">>) -> true;
-valid_access(<<"root">>) ->
-    case exodm_db_session:is_trusted_proc() of
-	true -> true;
-	false -> error({invalid_access, <<"root">>})
-    end;
-valid_access(A) ->
-    error({invalid_access, A}).
 
 has_admin_access(AID) ->
     %% Check if current user has admin rights for account
@@ -843,8 +878,19 @@ has_admin_access(AID) ->
 
 
 
-%%% Group handling
-group_exists(AID, GID) ->
+%%--------------------------------------------------------------------
+%%% Account group handling
+%%--------------------------------------------------------------------
+%%--------------------------------------------------------------------
+%% @doc
+%% Check if role exists
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec group_exists(AID::binary(), GID::binary()) ->
+		      Exists::boolean().
+
+group_exists(AID, GID) when is_binary(AID), is_binary(GID) ->
     case exodm_db:read(?TAB, exodm_db:join_key([AID, ?ACC_DB_GROUPS,
 						GID, ?ACC_DB_GROUP_NAME])) of
 	[] ->
@@ -866,7 +912,8 @@ group_exists(AID, GID) ->
 -spec register_protocol(AID::binary(), Protocol::binary()) ->
 			       ok.
 
-register_protocol(AID, Protocol) when is_binary(Protocol) ->
+register_protocol(AID, Protocol) 
+  when is_binary(AID), is_binary(Protocol) ->
     case exodm_rpc_protocol:module(Protocol) of
 	undefined ->
 	    erlang:error({unknown_protocol, Protocol});
@@ -888,7 +935,8 @@ register_protocol(AID, Protocol) when is_binary(Protocol) ->
 -spec is_protocol_registered(AID::binary(), Protocol::binary()) ->
 			       Registered::boolean().
 
-is_protocol_registered(AID, Protocol) ->
+is_protocol_registered(AID, Protocol) 
+  when is_binary(AID), is_binary(Protocol) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      case kvdb_conf:read(?TAB, exodm_db:join_key(
@@ -911,7 +959,7 @@ is_protocol_registered(AID, Protocol) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec incr_request_id(AID0::binary()) ->
+-spec incr_request_id(AID0::term()) ->
 			     ok.
 
 incr_request_id(AID0) ->
@@ -925,7 +973,7 @@ incr_request_id(AID0) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec incr_transaction_id(AID0::binary()) ->
+-spec incr_transaction_id(AID0::term()) ->
 			     ok.
 
 incr_transaction_id(AID0) ->
@@ -1008,7 +1056,7 @@ test_new() ->
 			      {fullname, <<"Mr U">>},
 			      {password, <<"pwd">>}]}]),
     AllTabs = kvdb:list_tables(kvdb_conf),
-    [AID] = lookup_by_name(<<"test1">>),
+    AID = lookup_by_name(<<"test1">>),
     lists:all(fun(T) ->
 		      lists:member(T, AllTabs)
 	      end, [exodm_db_device:table(AID),

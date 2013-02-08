@@ -6,6 +6,7 @@
 %%% Created :  2013 Malotte W Lönne <malotte@malotte.net>
 
 %% Account DB fields
+
 -define(ACC_DB_ID, <<"id">>). %% Dummy field, used when returning data
 -define(ACC_DB_LAST_REQ, <<"__last_req_id">>).
 -define(ACC_DB_LAST_TID, <<"__last_tid">>).
@@ -25,14 +26,6 @@
 -define(ACC_OPT_UNAME, uname). %% Should be defined in user
 -define(ACC_OPT_FNAME, fullname). %% Should be defined in user
 -define(ACC_OPT_PWD, password). %% Should be defined in user
-
-%% Predefined roles
--define(ROOT, <<"root">>).
--define(INIT_ADMIN, <<"initial_admin">>).
--define(ADMIN, <<"admin">>).
--define(EXECUTER, <<"executer">>).
--define(CONFIGURER, <<"configurer">>).
--define(VIEWER, <<"viewer">>).
 
 %% Role DB fields
 -define(ROLE_DB_DESCR, <<"descr">>).
