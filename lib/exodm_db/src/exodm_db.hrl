@@ -48,3 +48,16 @@
 -define(DEV_DB_SERVER_KEY, <<"server-key">>).
 -define(DEV_DB_SESSION_TIMEOUT, <<"session-timeout">>).
 -define(DEV_DB_GROUPS, <<"groups">>).
+
+-define(USER_DB_NAME,     <<"name">>).
+-define(USER_DB_FULLNAME, <<"fullname">>).
+-define(USER_DB_PHONE,    <<"phone">>).
+-define(USER_DB_EMAIL,    <<"email">>).
+-define(USER_DB_SKYPE,    <<"skype">>).
+-define(USER_DB_PASSWORD, <<"password">>).
+-define(USER_DB_ALIAS,    <<"__alias">>).
+
+%% Role field should be renamed in database FIXME (any day)
+-define(USER_ROLE, <<"access">>).
+-define(USER_DB_ROLE_AID, <<"__aid">>).
+-define(USER_DB_ROLE_RID, <<"__rid">>).

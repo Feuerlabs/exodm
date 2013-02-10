@@ -8,8 +8,6 @@
 
 -module(exodm_db_user).
 
--include_lib("lager/include/log.hrl").
-
 -export([init/0,
 	 table/0]).
 -export([new/2, 
@@ -34,23 +32,10 @@
 
 -define(TAB, <<"user">>).
 
-%% Role field should be renamed in database FIXME
--define(USER_ROLE, <<"access">>).
+-include_lib("lager/include/log.hrl").
+-include("exodm_db.hrl").
 
-%%
-%% /account/<AID>/user/<UID>
-%% /account/<AID>/user/<UID>/'__uid'    = User ID
-%% /account/<AID>/user/<UID>/'__aid'    = Account ID
-%% /account/<AID>/user/<UID>/name       = ShortName
-%% /account/<AID>/user/<UID>/fullname   = Name|Company
-%% /account/<AID>/user/<UID>/phone      = Phone number to contact
-%% /account/<AID>/user/<UID>/email      = Email to contact
-%% /account/<AID>/user/<UID>/skype      = Skype ID of contact
-%% /account/<AID>/user/<UID>/password   = password - stored encrypted!
-%% /account/<AID>/user/<UID>/access[<u>]/__aid  = Device owner ID
-%% /account/<AID>/user/<UID>/access[<u>]/__gid  = Device group ID
-%% /account/<AID>/user/<UID>/access[<u>]/__perm = Device group access
-%%
+
 init() ->
     exodm_db:in_transaction(
       fun(_) ->
@@ -86,18 +71,18 @@ publish(Event, Data) when Event==add; Event==delete ->
 new(UName, Options) ->
     exodm_db:in_transaction(
       fun(_) ->
-              case lookup(UName) of
-		  [] ->
+              case exist(UName) of  %% FIXME! checked twice, also in new_
+		  true ->
+ 		      ?debug("found ~p",[UName]),
+		      error('object-exists');
+		  false ->
                       case new_(UName, Options) of
                           {ok, UserName} ->
                               publish(add, UserName),
                               ok;
                           Other ->
                               Other
-                      end;
-                  User ->
- 		      ?debug("found ~p",[User]),
-		      error('object-exists')
+                      end
               end
      end).
 
@@ -110,12 +95,12 @@ new_(UName, Options) ->
 	true ->
 	    {error, exists};
 	false ->
-	    insert(Key,name, Name),
-	    insert(Key,fullname,      binary_opt(fullname,Options)),
-	    insert(Key,phone,         binary_opt(phone,Options)),
-	    insert(Key,email,         binary_opt(email,Options)),
-	    insert(Key,skype,         binary_opt(skype,Options)),
-	    insert_password(Key, password,
+	    insert(Key,?USER_DB_NAME, Name),
+	    insert(Key,?USER_DB_FULLNAME, binary_opt(fullname,Options)),
+	    insert(Key,?USER_DB_PHONE,    binary_opt(phone,Options)),
+	    insert(Key,?USER_DB_EMAIL,    binary_opt(email,Options)),
+	    insert(Key,?USER_DB_SKYPE,    binary_opt(skype,Options)),
+	    insert_password(Key, ?USER_DB_PASSWORD,
 			    binary_opt(password, Options)),
 	    process_list_options(alias, Key, Options),
 	    {ok, exodm_db:decode_id(Key)}
@@ -133,20 +118,19 @@ new_(UName, Options) ->
 delete(UName) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      case lookup(UName) of
-		  [] ->
+	      case exist(UName) of %% FIXME! checked twice, also in delete_
+		  false ->
 		      error('object-not-found');
-		  _User ->
+		  true ->
                       case delete_(UName) of
                           {ok, UserName} ->
                               publish(delete, UserName),
                               ok;
-                          Other ->
+                          Other ->  %% can really not found be returned ?
                               Other
                       end
 	      end
       end).
-
 
 delete_(UID) ->
     lager:debug("uid ~p~n", [UID]),
@@ -188,9 +172,9 @@ add_alias_(UID0, Alias) ->
 	    case alias_exists(Alias) of
 		false ->
 		    exodm_db:append_to_list(
-		      <<"user">>, exodm_db:join_key(UID, <<"alias">>),
+		      ?TAB, exodm_db:join_key(UID, <<"alias">>),
 		      fun(LKey) ->
-			      insert(LKey, '__alias', to_binary(Alias))
+			      insert(LKey, ?USER_DB_ALIAS, to_binary(Alias))
 		      end);
 		true ->
 		    error(alias_exists, [UID0, Alias])
@@ -238,26 +222,18 @@ update(UID, Options) ->
       end).
 
 update_(UID, Options) ->
-    Key = key(UID),
+    Key = exodm_db:encode_id(UID),
     F=fun
 	  ({fullname,Value}) ->
-	      insert(Key,fullname, to_binary(Value));
+	      insert(Key,?USER_DB_FULLNAME, to_binary(Value));
 	  ({phone,Value}) ->
-	      insert(Key,phone,    to_binary(Value));
+	      insert(Key,?USER_DB_PHONE,    to_binary(Value));
 	  ({email,Value}) ->
-	      insert(Key,email,    to_binary(Value));
+	      insert(Key,?USER_DB_EMAIL,    to_binary(Value));
 	  ({skype,Value}) ->
-	      insert(Key,skype,    to_binary(Value));
-	  %% ({account,Acct}) ->
-	  %% 	  Account = to_binary(Acct),
-	  %% 	  case exodm_db_system:get_aid_user(Account) of
-	  %% 	      {error, not_found} ->
-	  %% 		  erlang:error({no_such_aid, Account});
-	  %% 	      _ ->
-	  %% 		  insert(Key, account, Account)
-	  %% 	  end;
+	      insert(Key,?USER_DB_SKYPE,    to_binary(Value));
 	  ({password,Value}) ->
-	      insert_password(Key, password,
+	      insert_password(Key, ?USER_DB_PASSWORD,
 			      to_binary(Value));
 	  (_) ->
 	      ignore
@@ -265,37 +241,32 @@ update_(UID, Options) ->
     lists:foreach(F, Options),
     process_list_options(alias, Key, Options).
 
-lookup(UID) ->
-    lookup_(<<"user">>, key(UID)).
+%% read_uint32(Tab, Key,'__aid') ++ 
+lookup(UID0) ->
+    UID = exodm_db:encode_id(UID0),
+    lookup_attr_(?TAB,UID,name) ++
+    lookup_attr_(?TAB,UID,fullname) ++
+    lookup_attr_(?TAB,UID,phone) ++
+    lookup_attr_(?TAB,UID,email) ++
+    lookup_attr_(?TAB,UID,skype).
 
-%% lookup(AID, UID) ->
-%%     case exist(AID, UID) of
-%% 	true ->
-%% 	    lookup(UID);
-%% 	false ->
-%% 	    []
-%%     end.
+lookup_attr(UID, Attr) when is_atom(Attr) ->
+    lookup_attr_(?TAB, exodm_db:encode_id(UID), Attr).
 
-lookup_(Tab, Key) ->
-    read(Tab, Key,name) ++
-	read_uint32(Tab, Key,'__aid') ++
-	read(Tab, Key,fullname) ++
-	read(Tab, Key,phone) ++
-	read(Tab, Key,email) ++
-	read(Tab, Key,skype).
-
-lookup_attr(UName, Attr) ->
-    Tab = <<"user">>,
-    Key = exodm_db:encode_id(UName),
-    read(Tab, Key, Attr).
+lookup_attr_(Tab, UID, Attr) when is_atom(Attr) ->
+    case read_value(Tab, UID, atom_to_binary(Attr,latin1)) of
+	false -> [];
+	Value -> [{Attr,Value}]
+    end.
+    
 
 exist(UID) ->
     exist_(?TAB, exodm_db:encode_id(UID)).
 
-exist_(Tab, Key) ->
-    case read(Tab, Key,name) of
-	[] -> false;
-	[_] -> true
+exist_(Tab, UID) ->
+    case read_value(Tab,UID,?USER_DB_NAME) of
+	false -> false;
+	_ -> true
     end.
 
 list_users(N, Prev) ->
@@ -316,11 +287,8 @@ list_user_keys() ->
 
 fold_users(F, Acc) ->
     kvdb_conf:fold_children(
-      <<"user">>, F, Acc, <<>>).
+      ?TAB, F, Acc, <<>>).
 
-
-key(UID) ->
-    exodm_db:encode_id(UID).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -362,8 +330,8 @@ insert_role(User, AID, ARole) ->
 insert_role_(Base, Pos, AID, ARole) ->
     ?debug("base ~p, pos ~p, aid ~p, role ~p", [Base, Pos, AID, ARole]),
     K = exodm_db:list_key(Base, Pos),
-    insert(K, '__aid', AID),
-    insert(K, '__rid', exodm_db:encode_id(ARole)).
+    insert(K, ?USER_DB_ROLE_AID, AID),
+    insert(K, ?USER_DB_ROLE_RID, exodm_db:encode_id(ARole)).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -408,14 +376,15 @@ delete_role_(Base, Pos, AID) ->
     ?debug("base ~p, pos ~p, aid ~p", [Base, Pos, AID]),
     K = exodm_db:list_key(Base, Pos),
     ?debug("k ~p", [K]),
-    delete(K, '__aid'),
-    delete(K, '__rid').
+    delete(K, ?USER_DB_ROLE_AID),
+    delete(K, ?USER_DB_ROLE_RID).
 
 %%--------------------------------------------------------------------
 %% @doc
 %% List a users accounts.
 %%
 %% Can throw errors: no_such_user
+%% FIXME: documenation ! is this still true?
 %% @end
 %%--------------------------------------------------------------------
 -spec list_accounts(UName::binary()) ->
@@ -429,10 +398,9 @@ list_accounts_(UID)  ->
     exodm_db:fold_list(
       ?TAB,
       fun(I, Key, Acc) ->
-    	      case read(?TAB, Key, '__aid') of
-    		  [{_, AID}] ->
-    		      [{I, exodm_db:decode_id(AID)} | Acc];
-    		  _ -> Acc
+    	      case read_value(?TAB, Key, ?USER_DB_ROLE_AID) of
+		  false -> Acc;
+		  AID -> [{I, exodm_db:decode_id(AID)} | Acc]
     	      end
       end, [], exodm_db:join_key(UID, ?USER_ROLE)).
 
@@ -441,6 +409,7 @@ list_accounts_(UID)  ->
 %% List a users roles.
 %%
 %% Can throw errors: no_such_user, no_such_account
+%% FIXME: documenation ! is this still true?
 %% @end
 %%--------------------------------------------------------------------
 -spec list_roles(UName::binary()) ->
@@ -455,14 +424,15 @@ list_roles_(UID)  ->
     exodm_db:fold_list(
       ?TAB,
       fun(I, Key, Acc) ->
-    	      case {read(?TAB, Key, '__aid'),
-    		    read(?TAB, Key, '__rid')} of
-    		  {[{_, AID}], [{_, Role}]} ->
+    	      case {read_value(?TAB, Key, ?USER_DB_ROLE_AID),
+    		    read_value(?TAB, Key, ?USER_DB_ROLE_RID)} of
+		  {false,_} -> Acc;
+		  {_,false} -> Acc;
+		  {AID,Role} ->
     		      [{I, 
 			exodm_db:decode_id(AID), 
 			exodm_db:decode_id(Role)} |
-		       Acc];
-    		  _ -> Acc
+		       Acc]
     	      end
       end, [], exodm_db:join_key(UID, ?USER_ROLE)).
 
@@ -474,6 +444,7 @@ list_roles_(UID)  ->
 insert_password(Key, Item, Value) ->
     {ok, Salt} = bcrypt:gen_salt(),
     %% Expensive hash; expensive to create, expensive to check against
+    %% So make sure we can not use this fact for a DOS attack!
     {ok, Hash} = bcrypt:hashpw(Value, Salt),
     insert(Key, Item, to_binary(Hash)).
 
@@ -481,24 +452,24 @@ new_list_pos(Base) ->
     {ok, Last} = kvdb_conf:last_list_pos(?TAB, Base),
     Last+1.
 
-insert(Key, Item, Value) ->
-    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
+insert(Key, Item, Value) when is_binary(Item) ->
+    Key1 = exodm_db:join_key([Key, Item]),
     exodm_db:write(?TAB, Key1, Value).
 
-delete(Key, Item) ->
-    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
+delete(Key, Item) when is_binary(Item) ->
+    Key1 = exodm_db:join_key([Key, Item]),
     kvdb_conf:delete(?TAB, Key1).
 
-read(Tab, Key, Item) ->
-    Key1 = exodm_db:join_key([Key, to_binary(Item)]),
+
+read_value(Tab, Key, Item) when is_binary(Item) ->
+    Key1 = exodm_db:join_key([Key, Item]),
     case exodm_db:read(Tab, Key1) of
-	{ok,{_,_,Value}} ->
-	    [{Item,Value}];
-	{error,not_found} -> []
+	{ok,{_,_,Value}} -> Value;
+	{error,not_found} -> false
     end.
 
-read_uint32(Tab, Key,Item) ->
-    case read(Tab, Key,Item) of
-	[{Item,<<Value:32>>}] -> [{Item,Value}];
-	[] -> []
-    end.
+%%read_uint32(Tab, Key,Item) ->
+%%    case read(Tab, Key,Item) of
+%%	[{Item,<<Value:32>>}] -> [{Item,Value}];
+%%	[] -> []
+%%    end.
