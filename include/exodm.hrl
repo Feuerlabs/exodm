@@ -34,6 +34,7 @@
 -define(RPC_ADD_ACCOUNT_USERS,  <<"add-account-users">>).
 -define(RPC_REMOVE_ACCOUNT_USERS,  <<"remove-account-users">>).
 -define(RPC_LIST_ACCOUNT_USERS,  <<"list-account-users">>).
+-define(RPC_LIST_ACCOUNT_ROLES,  <<"list-account-roles">>).
 
 -define(RPC_CREATE_USER,  <<"create-user">>).
 -define(RPC_DELETE_USER,  <<"delete-user">>). 
@@ -51,6 +52,7 @@
 -define(RPC_CREATE_YANG_MODULE, <<"create-yang-module">>).
 -define(RPC_DELETE_YANG_MODULE, <<"delete-yang-module">>).
 -define(RPC_LIST_YANG_MODULES, <<"list-yang-modules">>).
+-define(RPC_LIST_EXEC_PERMISSION, <<"list-execution-permission">>).
 
 -define(RPC_CREATE_DEVICE_TYPE, <<"create-device-type">>). 
 -define(RPC_UPDATE_DEVICE_TYPE, <<"update-device-type">>).
@@ -93,6 +95,7 @@
          {?RPC_ADD_ACCOUNT_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_REMOVE_ACCOUNT_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_LIST_ACCOUNT_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
+         {?RPC_LIST_ACCOUNT_ROLES, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
 
          {?RPC_CREATE_USER, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_DELETE_USER, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
@@ -118,6 +121,7 @@
          {?RPC_CREATE_YANG_MODULE, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_DELETE_YANG_MODULE, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_LIST_YANG_MODULES, [?ROOT, ?INIT_ADMIN, ?ADMIN, ?VIEW]},
+         {?RPC_LIST_EXEC_PERMISSION, [?ROOT, ?INIT_ADMIN, ?ADMIN, ?VIEW]},
 
          {?RPC_CREATE_DEVICE_TYPE, 
           [?ROOT, ?INIT_ADMIN, ?ADMIN]},

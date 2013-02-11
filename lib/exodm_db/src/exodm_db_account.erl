@@ -43,6 +43,7 @@
 	 role_def/2,
 	 role_exists/2,
          rpc_role_list/0,
+         rpc_roles/2,
          rpc_permission/2]).
 -export([register_protocol/2, 
 	 is_protocol_registered/2]).
@@ -468,14 +469,13 @@ list_admins(AID0, N, Prev) when is_binary(AID0) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec list_roles(AName::binary(),
+-spec list_roles(AID::binary(),
 		 N::integer(),
 		 Prev::binary()) ->
 			  ok |
 			  {error, Reason::term()}.
 
-list_roles(AID0, N, Prev) when is_binary(AID0) ->
-    AID = exodm_db:account_id_key(AID0),
+list_roles(AID, N, Prev) when is_binary(AID) ->
     FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_ROLES, 
 				   exodm_db:to_binary(Prev)]),
     exodm_db:in_transaction(
@@ -789,6 +789,25 @@ role_exists(AID, RName) when is_binary(AID), is_binary(RName) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% Get roles with permission to execute rpc.
+%% Only implemented for exodm yang module.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec rpc_roles(AID::binary(), Rpc::binary()) ->
+                       Permission::boolean().
+
+rpc_roles(AID, Rpc) when is_binary(AID), is_binary(Rpc) ->
+    %% Only implemented for exodm yang module. !!!!
+    case lists:keyfind(Rpc, 1, ?RPC_ROLE_LIST) of
+        {Rpc, RoleList} -> RoleList;
+        false ->
+            lager:debug("Warning, unknown rpc ~p", Rpc),
+            error('object-not-found')
+    end.
+                
+%%--------------------------------------------------------------------
+%% @doc
 %% Check if role has permission to execute rpc.
 %%
 %% @end
@@ -804,7 +823,7 @@ rpc_permission(Rpc, Roles) when is_binary(Rpc), is_list(Roles) ->
                 _RList -> true
             end;
         false ->
-            lager:debug("Warning, unknown rpc ~p", Rpc),
+            lager:debug("Warning, unknown rpc ~p", binary_to_atom(Rpc,latin1)),
             false
     end;
 rpc_permission(Rpc, Role) when is_binary(Rpc) ->
@@ -812,7 +831,7 @@ rpc_permission(Rpc, Role) when is_binary(Rpc) ->
         {Rpc, RoleList} ->
             lists:member(Role, RoleList);
         false ->
-            lager:debug("Warning, unknown rpc ~p", Rpc),
+            lager:debug("Warning, unknown rpc ~p", binary_to_atom(Rpc,latin1)),
             false
     end.
                 
@@ -820,6 +839,8 @@ rpc_permission(Rpc, Role) when is_binary(Rpc) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Returns the list of predefined role rpc permissions..
+%% Rework when better storage of permissions.
+%% How to handle customer rpc:s ??
 %%
 %% @end
 %%--------------------------------------------------------------------

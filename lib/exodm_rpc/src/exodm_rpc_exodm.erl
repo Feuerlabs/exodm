@@ -171,6 +171,12 @@ json_rpc_(not_set, {call, ?EXODM, ?RPC_LIST_ACCOUNTS,
 	false -> {ok, result_code(?PERMISSION_DENIED)}
     end;
 
+json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_ACCOUNT_ROLES,
+	   [{'account', _Account, _}, %% Already parsed
+	    {'n', N, _},
+	    {'previous', Prev, _}|_Tail]} = _RPC, _Env) ->
+    list_account_roles(AID, N, Prev);    
+
 %% User
 json_rpc_(_AID, {call, ?EXODM, ?RPC_CREATE_USER,
 	   [{'uname', Name, _Type1} | Options]}, _Env) ->
@@ -237,7 +243,6 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_ADD_CONFIG_SET_MEMBERS,
 	    {'dev-id', DevIdList, _}|_Tail]} = _RPC, _Env) ->
     add_config_set_members(AID, CfgDataList, DevIdList);
 
-
 json_rpc_(AID, {call, ?EXODM, ?RPC_REMOVE_CONFIG_SET_MEMBERS,
 	   [{'name', Names, _},
 	    {'dev-id', DIDs, _}|_Tail]} = _RPC, _Env) ->
@@ -258,33 +263,35 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_PUSH_CONFIG_SET,
 %% Yang module
 %% User repo
 json_rpc_(AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
-	   [{repository, R, _},
+	   [{repository, ?USER_REPOSITORY, _},
 	    {name, N, _},
-	    {'yang-module', Y, _}|_Tail]} = _RPC, _Env) 
-  when R =:= ?USER_REPOSITORY ->
+	    {'yang-module', Y, _}|_Tail]} = _RPC, _Env) ->
     ?debug("aid ~p, n ~p", [AID, N]),
     create_yang_module(AID, N, Y);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
-	   [{repository, R, _},
-	    {name, Name, _}|_Tail]} = _RPC, _Env) 
-  when R =:= ?USER_REPOSITORY ->
+	   [{repository, ?USER_REPOSITORY, _},
+	    {name, Name, _}|_Tail]} = _RPC, _Env) ->
     delete_yang_module(AID, Name);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
-	   [{repository, R, _},
+	   [{repository, ?USER_REPOSITORY, _},
 	    {n,N,_},
-	    {previous, Prev, _}|_Tail]} = _RPC, _Env) 
-  when R =:= ?USER_REPOSITORY ->
+	    {previous, Prev, _}|_Tail]} = _RPC, _Env) ->
     list_yang_modules(AID, N, Prev);
+
+json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_EXEC_PERMISSION,
+	   [{repository, ?USER_REPOSITORY, _},
+	    {modulename, MName, _},
+            {rpcname, RName, _}|_Tail]} = _RPC, _Env) ->
+    list_exec_permission(AID, MName, RName);
 
 %% Yang module
 %% System repo
 json_rpc_(_AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
-	   [{repository, R, _},
+	   [{repository, ?SYSTEM_REPOSITORY, _},
 	    {name, N, _},
-	    {'yang-module', Y, _}|_Tail]} = _RPC, Env) 
-  when R =:= ?SYSTEM_REPOSITORY ->
+	    {'yang-module', Y, _}|_Tail]} = _RPC, Env) ->
     case has_root_env(Env) of
 	true ->
 	    exodm_db_session:set_trusted_proc(),
@@ -296,9 +303,8 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
     end;
 
 json_rpc_(_AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
-	   [{repository, R, _},
-	    {name, Name, _}|_Tail]} = _RPC, Env) 
-  when R =:= ?SYSTEM_REPOSITORY ->
+	   [{repository, ?SYSTEM_REPOSITORY, _},
+	    {name, Name, _}|_Tail]} = _RPC, Env) ->
     case has_root_env(Env) of
 	true ->
 	    exodm_db_session:set_trusted_proc(),
@@ -310,10 +316,9 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
     end;
 
 json_rpc_(_AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
-	   [{repository, R, _},
+	   [{repository, ?SYSTEM_REPOSITORY, _},
 	    {n, N, _},
-	    {previous, Prev, _}|_Tail]} = _RPC, Env) 
-  when R =:= ?SYSTEM_REPOSITORY ->
+	    {previous, Prev, _}|_Tail]} = _RPC, Env) ->
     case has_root_env(Env) of
 	true ->
 	    exodm_db_session:set_trusted_proc(),
@@ -432,7 +437,12 @@ delete_account(Name) ->
 list_accounts(N, Prev) ->
     Res = lists:map(fun([{<<"id">>,_},{<<"name">>,Name}]) -> Name end,
 		    exodm_db_account:list_accounts(N, Prev)),
-    {ok, [{'accounts', {array,Res}}]}.
+    {ok, [{'accounts', {array, Res}}]}.
+    
+list_account_roles(AID, N, Prev) ->
+    Res = [binary_to_atom(Role, latin1) || 
+              Role <- exodm_db_account:list_roles(AID, N, Prev)],
+    {ok, [{'roles', {array, Res}}]}.
     
 create_user(Name, Options) ->
     %% Remove type info from opts
@@ -628,6 +638,16 @@ list_yang_modules(AID, N, Prev) ->
 	    end),
     {ok, [{'yang-modules', {array, Res}}]}.
     
+list_exec_permission(AID, ?EXODM, RName) ->
+    Res = [binary_to_atom(Role, latin1) || 
+              Role <- exodm_db_account:rpc_roles(AID, RName)],
+    {ok, [{'roles', {array, Res}}]};
+list_exec_permission(_AID, _MName, _RName) ->
+    %% Not implemented yet
+    ?debug("not implemented yet", []),
+    {ok, result_code('not-implemented-yet')}.
+    
+
 create_device_type(AID, Name, Opts) ->
     ok = exodm_db_device_type:new(AID, Name, yang_json:remove_yang_info(Opts)),
     {ok, result_code(ok)}.
