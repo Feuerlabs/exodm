@@ -106,6 +106,7 @@ valid_protocol(P) ->
     end.
 
 delete(AID0, Name0) ->
+    ?debug("~p, ~p", [AID0, Name0]),
     {AID, Name} = encode(AID0, Name0),
     Tab = table_(AID),
     exodm_db:in_transaction(
@@ -125,7 +126,9 @@ delete_(Tab, Name) ->
 	done -> kvdb_conf:delete_tree(Tab, Name);
 	{ok, {K, _, _}} ->
 	    case kvdb_conf:split_key(K) of
-		[Name0, <<"devices">>|_] ->
+		[Name0, <<"devices">>| Devices] ->
+                    ?debug("config set ~p not empty, devices ~p", 
+                           [Name, Devices]),
 		    error('object-not-empty');
 		_ ->
 		    kvdb_conf:delete_tree(Tab, Name)
