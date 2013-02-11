@@ -389,8 +389,11 @@ start_rpc_client(Cfg) ->
     [{A,ok} = {A, ensure_loaded(A)} || A <- Apps],
     [[application:set_env(A, K, V) || {K,V} <- L] ||
 	{A, L} <- [{exoport, [{exodm_address, {"localhost", 9900}},
-			      {bert_port, 9990}]} | Auth]],
-    [{A,ok} = {A, application:start(A)} || A <- Apps],
+			      {bert_port, 9990},
+			      {auto_connect, true}]} | Auth]],
+    kvdb:start(),
+    kvdb_conf:open("kvdb_conf", [{backend, ets}]),
+    [application:start(A) || A <- Apps],
     [{client_auth, Auth} | Cfg].
 
 ensure_loaded(A) ->

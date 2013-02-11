@@ -24,7 +24,9 @@ authenticate(S, Role, Arg) ->
 	    %% given time, but this is only true if we have a reusable session.
 	    %% TODO: think this through.
 	    ?dbg("remote ID = ~p~n", [ID]),
-	    exodm_rpc_handler:add_device_session(ID, <<"exodm_bert">>),
+	    exodm_rpc_handler:add_device_session(
+	      ID, Protocol = <<"exodm_bert">>),
+	    prune_device_sessions(ID, Protocol),
 	    gproc:reg(_Prop = {p,l,{exodm_rpc, active_device, ID}}),
 	    ?dbg("regged with gproc: ~p~n", [_Prop]),
 	    exodm_rpc_dispatcher:check_queue(<<"to_device">>, ID),
@@ -42,6 +44,29 @@ authenticate(S, Role, Arg) ->
 normalize_ext_id(ID) ->
     {AID, DID} = exodm_db_device:dec_ext_key(ID),
     exodm_db_device:enc_ext_key(AID, DID).
+
+%% If there are lingering sessions (perhaps with sockets in TIME_WAIT), we
+%% don't want to keep them around. There should only be one active session.
+%% (Note that we do this for BERT specifically; it may be a generic pattern).
+prune_device_sessions(ID, Protocol) ->
+    Sessions = exodm_rpc_handler:device_sessions(ID),
+    prune_sessions_(Sessions, Protocol).
+
+prune_sessions_([{Pid, Protocol} = Me|Rest], Protocol) when Pid == self() ->
+    Keep = lists:filter(
+	     fun({P, Prot}) when Prot == Protocol ->
+		     ?debug("Killing old device session ~p~n", [P]),
+		     exit(P, replaced),
+		     false;
+		(_) ->
+		     true
+	     end, Rest),
+    [Me | Keep];
+prune_sessions_([{_,Prot} = H|T], Protocol) when Prot =/= Protocol ->
+    [H | prune_sessions_(T, Protocol)];
+prune_sessions_([], _) ->
+    [].
+
 
 outgoing(Data, St) ->
     bert_challenge:outgoing(Data, St).
