@@ -54,7 +54,6 @@
 			  ]}
 		]},
 	 {bert_server, [{port, 9900},
-			{idle_timeout, 60000},
 			{exo,
 			 [
 			  {reuse_mode, server},
