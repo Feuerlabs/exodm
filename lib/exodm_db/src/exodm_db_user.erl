@@ -21,6 +21,7 @@
 	 add_role/3,
 	 remove_role/3,
 	 list_accounts/1, 
+	 list_account_roles/2, 
 	 list_roles/1, 
 	 delete/1]).
 -export([subscribe/1,
@@ -28,7 +29,7 @@
 -export([add_alias/2,
 	 lookup_by_alias/1]).
 -export([ix_alias/1]).
--import(exodm_db, [write/2, binary_opt/2, binary_opt/3, to_binary/1]).
+-import(exodm_db, [write/2, to_binary/1]).
 
 -define(TAB, <<"user">>).
 
@@ -47,9 +48,11 @@ table() ->
 
 %% Gproc pub/sub ----------------------
 subscribe(Event) when Event==add; Event==delete ->
+    ?debug("~p subscribes",[self()]),
     gproc:reg({p, l, {?MODULE, Event}}).
 
 unsubscribe(Event) when Event==add; Event==delete ->
+    ?debug("~p unsubscribes",[self()]),
     catch gproc:unreg({p, l, {?MODULE, Event}}),
     ok.
 
@@ -78,9 +81,11 @@ new(UName, Options) ->
 		  false ->
                       case new_(UName, Options) of
                           {ok, UserName} ->
+                              lager:debug("user ~p created", [UserName]),
                               publish(add, UserName),
                               ok;
                           Other ->
+                              lager:debug("new result ~p returned", [Other]),
                               Other
                       end
               end
@@ -90,21 +95,21 @@ new_(UName, Options) ->
     lager:debug("uname ~p, options ~p~n", [UName, Options]),
     [_] = exodm_db:nc_key_split(exodm_db:decode_id(UName)),  %% validation!
     Key = exodm_db:encode_id(UName),
-    Name = binary_opt(name, Options, UName),
-    case exist_(?TAB, Key) of
-	true ->
-	    {error, exists};
-	false ->
-	    insert(Key,?USER_DB_NAME, Name),
-	    insert(Key,?USER_DB_FULLNAME, binary_opt(fullname,Options)),
-	    insert(Key,?USER_DB_PHONE,    binary_opt(phone,Options)),
-	    insert(Key,?USER_DB_EMAIL,    binary_opt(email,Options)),
-	    insert(Key,?USER_DB_SKYPE,    binary_opt(skype,Options)),
-	    insert_password(Key, ?USER_DB_PASSWORD,
-			    binary_opt(password, Options)),
-	    process_list_options(alias, Key, Options),
-	    {ok, exodm_db:decode_id(Key)}
-    end.
+    case proplists:get_value(?USER_OPT_PASSWORD, Options) of
+        undefined -> error(no_password);
+        Pwd ->insert_password(Key, ?USER_DB_PASSWORD, Pwd)
+    end,
+    insert(Key,?USER_DB_NAME, UName),
+    insert(Key,?USER_DB_FULLNAME, 
+           proplists:get_value(?USER_OPT_FNAME,Options, <<>>)),
+    insert(Key,?USER_DB_PHONE,    
+           proplists:get_value(?USER_OPT_PHONE,Options, <<>>)),
+    insert(Key,?USER_DB_EMAIL,    
+           proplists:get_value(?USER_OPT_EMAIL,Options, <<>>)),
+    insert(Key,?USER_DB_SKYPE,    
+           proplists:get_value(?USER_OPT_SKYPE,Options, <<>>)),
+    process_list_options(?USER_OPT_ALIAS, Key, Options),
+    {ok, exodm_db:decode_id(Key)}.
     
 
 %%--------------------------------------------------------------------
@@ -124,9 +129,11 @@ delete(UName) ->
 		  true ->
                       case delete_(UName) of
                           {ok, UserName} ->
+                              lager:debug("user ~p deleted", [UserName]),
                               publish(delete, UserName),
                               ok;
                           Other ->  %% can really not found be returned ?
+                              lager:debug("delete result ~p returned", [Other]),
                               Other
                       end
 	      end
@@ -151,7 +158,7 @@ delete_(UID) ->
 process_list_options(O, Key, Options) ->
     Found = exodm_db:list_options(O, Options),
     F = case O of
-	    alias ->
+	    ?USER_OPT_ALIAS ->
 		fun({I, Alias}) ->
 			exodm_db:insert_alias(?TAB, Key, I, Alias)
 		end
@@ -215,7 +222,7 @@ ix_alias({K, _, V}) ->
 %% new_uid() ->
 %%     exodm_db_system:new_uid().
 
-update(UID, Options) ->
+update(UID, Options) when is_binary(UID)->
     exodm_db:in_transaction(
       fun(_) ->
 	      update_(UID, Options)
@@ -224,22 +231,21 @@ update(UID, Options) ->
 update_(UID, Options) ->
     Key = exodm_db:encode_id(UID),
     F=fun
-	  ({fullname,Value}) ->
-	      insert(Key,?USER_DB_FULLNAME, to_binary(Value));
-	  ({phone,Value}) ->
-	      insert(Key,?USER_DB_PHONE,    to_binary(Value));
-	  ({email,Value}) ->
-	      insert(Key,?USER_DB_EMAIL,    to_binary(Value));
-	  ({skype,Value}) ->
-	      insert(Key,?USER_DB_SKYPE,    to_binary(Value));
-	  ({password,Value}) ->
-	      insert_password(Key, ?USER_DB_PASSWORD,
-			      to_binary(Value));
+	  ({?USER_OPT_FNAME,Value}) ->
+	      insert(Key,?USER_DB_FULLNAME, Value);
+	  ({?USER_OPT_PHONE,Value}) ->
+	      insert(Key,?USER_DB_PHONE,    Value);
+	  ({?USER_OPT_EMAIL,Value}) ->
+	      insert(Key,?USER_DB_EMAIL,    Value);
+	  ({?USER_OPT_SKYPE,Value}) ->
+	      insert(Key,?USER_DB_SKYPE,    Value);
+	  ({?USER_OPT_PASSWORD,Value}) ->
+	      insert_password(Key, ?USER_DB_PASSWORD, Value);
 	  (_) ->
 	      ignore
       end,
     lists:foreach(F, Options),
-    process_list_options(alias, Key, Options).
+    process_list_options(?USER_OPT_ALIAS, Key, Options).
 
 %% read_uint32(Tab, Key,'__aid') ++ 
 lookup(UID0) ->
@@ -392,7 +398,9 @@ delete_role_(Base, Pos, AID) ->
                         {error, Reason::term()}.
 
 list_accounts(UID) when is_binary(UID) ->
-    lists:usort([A || {_I, A} <- list_accounts_(UID)]).
+    lists:usort([A || {_I, A} <- list_accounts_(UID)]);
+list_accounts(UID) when is_list(UID) ->
+    list_accounts(to_binary(UID)).
 
 list_accounts_(UID)  ->
     exodm_db:fold_list(
@@ -437,15 +445,46 @@ list_roles_(UID)  ->
       end, [], exodm_db:join_key(UID, ?USER_ROLE)).
 
 %%--------------------------------------------------------------------
+%% @doc
+%% List a users roles for a certain account.
+%%
+%% Can throw errors: no_such_user, no_such_account
+%% FIXME: documenation ! is this still true?
+%% @end
+%%--------------------------------------------------------------------
+-spec list_account_roles(UName::binary(), AID::binary()) ->
+                                list(Role::binary()) |
+		      {error, Reason::term()}.
+
+list_account_roles(AID, UID) when is_binary(AID), is_binary(UID) ->
+    [R || {_I, R} <- list_account_roles_(AID, UID)].
+
+list_account_roles_(AID, UID)  ->
+    exodm_db:fold_list(
+      ?TAB,
+      fun(I, Key, Acc) ->
+    	      case {read_value(?TAB, Key, ?USER_DB_ROLE_AID),
+    		    read_value(?TAB, Key, ?USER_DB_ROLE_RID)} of
+		  {false,_} -> Acc;
+		  {_,false} -> Acc;
+		  {AID, Role} ->
+    		      [{I, exodm_db:decode_id(Role)} | Acc];
+                  {_OtherAID, _} -> Acc
+    	      end
+      end, [], exodm_db:join_key(UID, ?USER_ROLE)).
+
+%%--------------------------------------------------------------------
 %%
 %% Utils
 %%
 %%--------------------------------------------------------------------
 insert_password(Key, Item, Value) ->
+    ?debug("key ~p, item ~p, value ~p ", [Key, Item, Value]),
     {ok, Salt} = bcrypt:gen_salt(),
     %% Expensive hash; expensive to create, expensive to check against
     %% So make sure we can not use this fact for a DOS attack!
     {ok, Hash} = bcrypt:hashpw(Value, Salt),
+    ?debug("hash ~p", [Hash]),
     insert(Key, Item, to_binary(Hash)).
 
 new_list_pos(Base) ->

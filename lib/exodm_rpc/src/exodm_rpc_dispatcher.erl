@@ -51,14 +51,14 @@ init({Tab0, M, JobQ} = Arg) ->
 	ok = kvdb_conf:add_table(Tab, [{type, fifo},
 				       {encoding, {raw,sext,sext}}]),
 	kvdb_schema_events:notify_all_queues(kvdb:db(kvdb_conf), Tab),
-	io:fwrite("checking queues in ~p~n", [Tab]),
+	?debug("checking queues in ~p~n", [Tab]),
 	St = check_queues(kvdb:first_queue(kvdb_conf, Tab),
 			  #st{tab = Tab, mod = M,
 			      jobs_queue = JobQ}),
 	{ok, St}
     catch
 	error:E ->
-	    io:fwrite("*** ERROR: ~p:init(~p)~n"
+	    ?debug("*** ERROR: ~p:init(~p)~n"
 		      "  E = ~p~n"
 		      "  Trace = ~p~n",
 		      [?MODULE, Arg, E, erlang:get_stacktrace()]),
@@ -66,7 +66,7 @@ init({Tab0, M, JobQ} = Arg) ->
     end.
 
 check_queues({ok, Q}, #st{tab = Tab} = St) ->
-    io:fwrite("queue ~p in ~p not empty~n", [Q, Tab]),
+    ?debug("queue ~p in ~p not empty~n", [Q, Tab]),
     {_, St1} = spawn_dispatcher(Q, St),
     check_queues(kvdb:next_queue(kvdb_conf, Tab, Q), St1);
 check_queues(done, St) ->
@@ -76,7 +76,7 @@ check_queues(done, St) ->
 handle_info({gproc_ps_event,
 	     {kvdb, kvdb_conf, Tab, queue_status}, {Q, not_empty}},
 	    #st{tab = Tab} = St) ->
-    io:fwrite("queue ~p in ~p not empty~n", [Q, Tab]),
+    ?debug("queue ~p in ~p not empty~n", [Q, Tab]),
     {_, St1} = check_queue_(Q, St),
     {noreply, St1};
 handle_info({'DOWN', _, _, Pid, _}, #st{pids = Pids, queues = Qs,
@@ -101,7 +101,7 @@ handle_info({'DOWN', _, _, Pid, _}, #st{pids = Pids, queues = Qs,
 	  end,
     {noreply, St1};
 handle_info(_Msg, St) ->
-    io:fwrite("~p got ~p~n", [?MODULE, _Msg]),
+    ?debug("~p got ~p~n", [?MODULE, _Msg]),
     {noreply, St}.
 
 handle_call({check_queue, Q}, _From, St) ->
@@ -174,6 +174,7 @@ dispatch(Db, Tab, Q, JobsQ, From, Reply) ->
 	    [_|_] = Sessions ->
 		pop_and_dispatch(From, Reply, Db, Tab, Q, JobsQ, Sessions);
 	    [] ->
+                ?debug("no sessions for ~p", [Q]),
 		done(From, Reply)
 	end
     catch
@@ -261,6 +262,7 @@ pop_and_dispatch_run_(From, Reply, Db, Tab, Q, Sessions) ->
 
 
 set_user(Env, Db) ->
-    {_, UID} = lists:keyfind(user, 1, Env),
+    {user, UID} = lists:keyfind(user, 1, Env),
+    {aid, AID} = lists:keyfind(aid, 1, Env),
     exodm_db_session:logout(),
-    exodm_db_session:set_auth_as_user(UID, Db).
+    exodm_db_session:set_auth_as_user(AID, UID, Db).

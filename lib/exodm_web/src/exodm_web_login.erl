@@ -70,19 +70,30 @@ login_form() ->
 %%     User = wf:q(userTextBox),
 %%     Value =:= "tesla".
 
+%% Must be updated so that account can be chosen if more than 1
 event(ok) ->
     User = wf:q(userTextBox),
     Password = wf:q(passTextBox),
     ?debug("User = ~p; Password = **********~n", [User]),
-    case exodm_db_session:authenticate(User, Password) of
-	{true,_UID,AID} ->
-	    ?debug("Login successful! AID = ~p~n", [AID]),
-	    wf:user(User),
-	    wf:role(get_role(User), true),
-	    wf:session(account_id, AID),
-	    wf:redirect_from_login("/");
-	false ->
-	    wf:flash(?TXT("Invalid user or password."))
+    case exodm_db_user:list_accounts(User) of
+        [AID] ->
+            case exodm_db_session:authenticate(AID, User, Password) of
+                true ->
+                    ?debug("Login successful! ", []),
+                    wf:user(User),
+                    ?debug("AID = ~p~n", [AID]),
+                    wf:session(account_id, AID),
+                    wf:role(get_role(User), true),
+                    wf:redirect_from_login("/");
+                false ->
+                    wf:flash(?TXT("Invalid user or password."))
+            end;
+        [] ->
+            wf:flash(?TXT("User has no account."));
+        AIDList ->
+            %% How to handle ??
+            ?debug("AID must be choosen from ~p", [AIDList]),
+            wf:flash(?TXT("Choose AID."))
     end;
 event(_Event) ->
     io:format("Event = ~p\n", [_Event]).

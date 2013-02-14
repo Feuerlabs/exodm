@@ -20,7 +20,7 @@
 -export([init/0]).
 
 %% Account handling
--export([new/1,
+-export([new/2,
 	 delete/1, 
 	 update/2, 
 	 lookup/1, 
@@ -70,6 +70,8 @@
 %%  This modules table.
 %% @end
 %%--------------------------------------------------------------------
+-spec table() -> Table::atom().
+
 table() ->
     ?TAB.
 
@@ -78,6 +80,8 @@ table() ->
 %%  Init this modules table.
 %% @end
 %%--------------------------------------------------------------------
+-spec init() -> ok.
+
 init() ->
     exodm_db:in_transaction(
       fun(_) ->
@@ -125,16 +129,11 @@ create_exodm_account() ->
 create_exodm_account_(_Db) ->
     exodm_db_session:set_trusted_proc(),
     R=
-	new(
+	new2(?EXODM,
 	  [
-	   {?ACC_OPT_NAME, <<"exodm">>},
-	   {?ACC_OPT_ROOT, true},
-	   {?ACC_OPT_ADMIN, 
-	    [
-	     {?ACC_OPT_UNAME, <<"exodm-admin">>},
-	     {?ACC_OPT_FNAME, <<"Administrator">>},
-	     {?ACC_OPT_PWD, atom_to_binary(erlang:get_cookie(),latin1)}
-	    ]}]),
+           {?USER_OPT_FNAME, <<"Administrator">>},
+           {?USER_OPT_PASSWORD, atom_to_binary(erlang:get_cookie(),latin1)}
+	    ]),
     exodm_db_session:unset_trusted_proc(),
     R.
     
@@ -154,58 +153,46 @@ create_exodm_account_(_Db) ->
 %% FIXME option validation
 %% @end
 %%--------------------------------------------------------------------
--spec new(list({Option::atom(), Value::term()})) -> 
+-spec new(Name::binary(), list({Option::atom(), Value::term()})) -> 
 		 {ok, AIDVal::binary()}.
 
-new(Options) when is_list(Options) ->
+new(Name, Options) when is_binary(Name), is_list(Options) ->
     exodm_db:in_transaction(
       fun(_) ->
-              case lookup_by_name(binary_opt(?ACC_OPT_NAME, Options)) of
+              case lookup_by_name(Name) of
 		  false ->
-                      {ok, AIDVal} = new_(Options),
+                      {ok, AIDVal} = new1(Name, Options),
+                      publish(add, Name),
                       publish(add, AIDVal),
                       ok;
                   _Other -> error('object-exists')
               end
-      end).
+      end);
+new(Name, Options) when is_list(Name) ->
+    new(to_binary(Name), Options).
 
-new_(Options) ->
-    %% initial check: there must be an admin
-    UserOpts = case lists:keyfind(?ACC_OPT_ADMIN, 1, Options) of
-		   false ->
-		       error(no_admin_user);
-		   {_, Os} when is_list(Os) ->
-		       Os
-	       end,
-    Root = 
-	case exodm_db_session:is_trusted_proc() of
-	    true -> proplists:get_bool(?ACC_OPT_ROOT, Options);
-	    false -> false
-	end,
+new1(AcctName, Options) ->
+    case lists:keyfind(?USER_OPT_NAME, 1, Options) of
+        true -> error(user_name_not_allowed);
+        false -> new2(AcctName, Options)
+    end.
+
+new2(AcctName, Options) ->
     AID = exodm_db_system:new_aid(),
     Key = exodm_db:escape_key(AID),
     exodm_db_group:init(AID),
     exodm_db_device_type:init(AID),
     insert(Key, ?ACC_DB_LAST_REQ, <<0:32>>),
     insert(Key, ?ACC_DB_LAST_TID, <<0:32>>),
-    AdminUName = binary_opt(?ACC_OPT_UNAME, UserOpts),
-    AcctName = case binary_opt(?ACC_OPT_NAME, Options) of
-		   <<>> -> AdminUName;
-		   Other -> Other
-	       end,
+    AdminUName = <<AcctName/binary, <<"-admin">>/binary>>,
     insert(Key, ?ACC_DB_NAME, AcctName),
-    exodm_db_user:new(AdminUName, UserOpts),
-    create_roles(AID, Root),
-    add_admin_user(AID, AdminUName, Root),
+    exodm_db_user:new(AdminUName, Options),
+    create_roles(AID, AcctName),
+    add_admin_user(AID, AdminUName),
     exodm_db_yang:init(AID),
     exodm_db_device:init(AID),
     exodm_db_config:init(AID),
     AIDVal = exodm_db:account_id_value(AID),
-
-    %% lists:foreach(fun({I,Al}) ->
-    %% 			  exodm_db:insert_alias(?TAB, Key, I, Al)
-    %% 		  end, proplists:get_all_values(alias, Options)),
-    %% add_user(AID, AdminUName, _RID = 1),  % must come after adding the user
     {ok, AIDVal}.
 
 %%--------------------------------------------------------------------
@@ -225,16 +212,19 @@ delete(Name) when is_binary(Name) ->
                       case is_empty(AID) of
                           true -> 
                               ok = delete_(AID),
+                              publish(delete, Name),
                               publish(delete, exodm_db:account_id_value(AID)),
                               ok;
                           false -> error('object-not-empty')
                       end;
                   false -> error('object-not-found')
               end
-      end).
+      end);
+delete(Name) when is_list(Name) ->
+    delete(to_binary(Name)).
 
-delete_(AID0) ->
-    AID = exodm_db:account_id_key(AID0),
+
+delete_(AID) ->
     exodm_db:in_transaction(
       fun(_Db) ->
 	      [Admin] = list_admins(AID, 2, <<"">>),
@@ -278,11 +268,12 @@ update_(Key, Options) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
-%% Hmm, don't know how to specify ??
-%%-spec lookup(AID::binary()) ->
-%%		    list({?ACC_DB_ID, Aid::binary()},
-%%			 {(?ACC_DB_NAME), Name::binary()})).
-lookup(AID0) when is_binary(AID0) ->
+-spec lookup(AID::binary()|string() ) ->
+		    list({Field::binary(), Value::binary()}).
+
+lookup(AID) when is_binary(AID) ->
+    lookup_(AID);
+lookup(AID0) when is_list(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     lookup_(AID).
 
@@ -302,13 +293,20 @@ lookup_(Key) ->
 			    AID::binary() | false.
 
 lookup_by_name(AName) when is_binary(AName) ->
-    case kvdb:index_get(kvdb_conf, ?TAB, name, AName) of
-        [{Key, _, _}] ->
-            %% e.g. [{<<"a00000001*name">>,[],<<"getaround">>}]
-            [ID, _] = exodm_db:split_key(Key),
-            ID;
-        [] -> false
-    end.
+    exodm_db:in_transaction(
+      fun(_) ->
+              ?debug("accounts ~p", [list_account_keys()]),
+              case kvdb:index_get(kvdb_conf, ?TAB, name, AName) of
+                  [{Key, _, _}] ->
+                      %% e.g. [{<<"a00000001*name">>,[],<<"getaround">>}]
+                      [ID, _] = exodm_db:split_key(Key),
+                      ?debug("found ~p", [ID]),
+                      ID;
+                  [] -> 
+                      ?debug("did not find ~p", [AName]),
+                      false
+              end
+      end).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -624,9 +622,9 @@ add_user1(AID, UName, Role) ->
 			     [], <<>>})
     end.
 
-add_admin_user(AID, UName, true) ->
+add_admin_user(AID, ?EXODM_ADMIN = UName) ->
     add_user(AID, UName, ?ROOT);
-add_admin_user(AID, UName, false) ->
+add_admin_user(AID, UName) ->
     add_user(AID, UName, ?INIT_ADMIN).
 
 %%--------------------------------------------------------------------
@@ -795,15 +793,16 @@ role_exists(AID, RName) when is_binary(AID), is_binary(RName) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec rpc_roles(AID::binary(), Rpc::binary()) ->
-                       Permission::boolean().
+                       Permission::boolean() |
+                                   {error, Reason::term()}.
 
 rpc_roles(AID, Rpc) when is_binary(AID), is_binary(Rpc) ->
     %% Only implemented for exodm yang module. !!!!
     case lists:keyfind(Rpc, 1, ?RPC_ROLE_LIST) of
         {Rpc, RoleList} -> RoleList;
         false ->
-            lager:debug("Warning, unknown rpc ~p", Rpc),
-            error('object-not-found')
+            lager:debug("Warning, unknown rpc ~p", [Rpc]),
+            {error, 'object-not-found'}
     end.
                 
 %%--------------------------------------------------------------------
@@ -850,9 +849,9 @@ rpc_role_list() ->
     ?RPC_ROLE_LIST.
 
 %%--------------------------------------------------------------------
-create_roles(AID, true) ->
+create_roles(AID, ?EXODM) ->
     create_admin_role(AID, ?ROOT);
-create_roles(AID,false) ->
+create_roles(AID, _Other) ->
     create_admin_role(AID, ?INIT_ADMIN),
     DefaultRoles = configurable_roles(),
     lists:foldl(fun(Role, _Acc) ->
@@ -1071,11 +1070,10 @@ acct_test_() ->
      ]}.
 
 test_new() ->
-    ok = new([{name, <<"test1">>},
-		     {admin, [{uname, <<"u1">>},
-			      {alias, <<"u">>},
-			      {fullname, <<"Mr U">>},
-			      {password, <<"pwd">>}]}]),
+    ok = new(<<"test1">>,
+             [{alias, <<"u">>},
+              {fullname, <<"Mr U">>},
+              {password, <<"pwd">>}]),
     AllTabs = kvdb:list_tables(kvdb_conf),
     AID = lookup_by_name(<<"test1">>),
     lists:all(fun(T) ->

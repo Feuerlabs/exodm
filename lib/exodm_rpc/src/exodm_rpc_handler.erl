@@ -36,6 +36,7 @@ add_device_session(AID, DID, Protocol) ->
 
 add_device_session(ExtID, Protocol) ->
     %% Normalize ExtID first
+    ?debug("extid ~p, protocol ~p", [ExtID, Protocol]),
     gproc:reg({p,l,{exodm_rpc, active_device, ExtID, Protocol}},
 	      os:timestamp()).
 
@@ -48,6 +49,7 @@ rm_device_session(AID, DID, Protocol) ->
     rm_device_session(exodm_db_device:enc_ext_key(AID, DID), Protocol).
 
 rm_device_session(ExtID, Protocol) ->
+    ?debug("extid ~p, protocol ~p", [ExtID, Protocol]),
     catch gproc:unreg({p,l,{exodm_rpc, active_device, ExtID, Protocol}}),
     true.
 
@@ -61,13 +63,11 @@ device_sessions(AID, DID) ->
 -spec device_sessions(binary()) -> [{pid(), binary()}].
 %% (ExtID) -> [{Pid, Protocol}]
 %%
-device_sessions(ExtID0) ->
-    {AID, DID} = exodm_db_device:dec_ext_key(ExtID0),
-    ExtID = exodm_db_device:enc_ext_key(AID, DID),
+device_sessions(ExtID) when is_binary(ExtID) ->
     Res = gproc:select(p, [{ {{p,l,{exodm_rpc, active_device, ExtID, '$2'}},
 			      '$1', '$3'},
 			     [], [{{'$1', '$2', '$3'}}] }]),
-    ?debug("device_sessions(~p) -> ~p~n", [ExtID, Res]),
+    ?debug("extid ~p -> ~p~n", [ExtID, Res]),
     [{A,B} || {A,B,_} <- lists:reverse(lists:keysort(3, Res))].
 
 %% @doc Handle a JSON-RPC request; once go-ahead is given from load control.
@@ -76,7 +76,7 @@ handler_session(Arg) ->
       exodm_rpc_from_web,
       fun() ->
 	      try
-		  ?debug("handler_session(~p)~n", [Arg]),
+		  ?debug("arg ~p", [Arg]),
 		  {ok,{IP,_}} = sockname(Arg#arg.clisock),
 		  Env0 = [{client_ip_port,Arg#arg.client_ip_port},
 			  {ip,IP},
@@ -261,20 +261,25 @@ notification(Method, Elems, Env, AID, DID) ->
     {_, Yang} = lists:keyfind(yang, 1, Env),
     stop_timer(Env),
     YangSpecs = exodm_db_device:yang_modules(AID, DID),
+    ?debug("yang specs = ~p~n", [YangSpecs]),
     URLEnv = case lists:keyfind(Yang, 2, YangSpecs) of
 		 {_, _, URL} when URL =/= <<>> ->
 		     [{'notification-url', URL}, {'request-url', URL}];
 		 _ ->
 		     []
 	     end,
+    ?debug("url env = ~p~n", [URLEnv]),
     [Module|_] = re:split(filename:basename(Yang, ".yang"), "@",
 			  [{return,binary}]),
     FullMethod0 = json_method(Method, Module, []),  % fully qualified
+    ?debug("method = ~p~n", [FullMethod0]),
     case exodm_db_yang:find_rpc(Yang, FullMethod0) of
 	{error, not_found} ->
+            ?debug("rpc not found~n", []),
 	    error(method_not_found);
 	{ok, {_, _, {notification,_,_,SubSpec}}} ->
-	    ?debug("SubSpec = ~p~n", [lists:sublist(SubSpec,1,2)]),
+	    ?debug("notification, sub spec = ~p~n", 
+                   [lists:sublist(SubSpec,1,2)]),
 	    FullMethod = json_method(Method, Module, SubSpec),
 	    Params = data_to_json(SubSpec, Env, Elems),
 	    JSON = {struct, [{"jsonrpc", "2.0"},
@@ -400,7 +405,7 @@ is_exodm_method(Method, AID) ->
 std_specs() ->
     %% FIXME: "exodm" should be retired and replaced by "exosense"
     %% (by name, mainly; the two specs shall be merged into one)
-    [<<"exodm">>, <<"exosense">>, <<"exodm_admin">>].
+    [<<"exodm">>, <<"exosense">>].
 
 json_get_device_id({struct, L}) ->
     case lists:keyfind("device-id", 1, L) of
@@ -633,6 +638,7 @@ accept_response(Attrs, {rpc, _, _, Spec}) ->
 	    JSON = data_to_json(
 		     Elems, Attrs, [{'rpc-status', <<"accepted">>},
 				    {final, false}]),
+            ?debug("json ~p", [JSON]),
 	    {struct, JSON};
 	false ->
 	    "\"ok\""

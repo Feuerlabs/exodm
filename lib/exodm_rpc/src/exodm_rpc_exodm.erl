@@ -88,6 +88,8 @@ json_rpc(RPC = {_, ?EXODM, Rpc, InputList}, Env) ->
                     {ok, result_code(?ACCOUNT_NOT_SPECIFIED)};
                 AID -> 
                     ?debug("account ~p", [AID]),
+                    %% Store AID in session
+                    exodm_db_session:set_aid(AID, User),
                     case has_access(AID, User, Rpc, IsRoot) of
                         true  -> 
                             ?debug("user ~p has permission for rpc ~p", [User, Rpc]),
@@ -129,12 +131,11 @@ has_access(AID, User, Rpc, false) ->
 %% Authenticated by super user 'exodm' (only allowed using SSL?)
 %% create-account
 json_rpc_(not_set, {call, ?EXODM, ?RPC_CREATE_ACCOUNT,
-	   [{'name', Name, _Type1},
-	    {'admin-user',[Admin],_Type2}| _]} = _RPC, Env) ->
+	   [{'name', Name, _Type1}| Opts]} = _RPC, Env) ->
     case has_root_env(Env) of
 	true ->
 	    exodm_db_session:set_trusted_proc(),
-	    Res = create_account(Name, Admin),
+	    Res = create_account(Name, Opts),
 	    exodm_db_session:unset_trusted_proc(),
 	    Res;
 	false ->
@@ -428,8 +429,9 @@ json_rpc_(AID, RPC, _ENV) ->
 %% Internal functions
 %%
 %%--------------------------------------------------------------------
-create_account(Name, Admin) ->
-    {ok, ?catch_result(exodm_db_account:new([{name,Name},{admin, Admin}]))}.
+create_account(Name, Options) ->
+    Opts = [{Opt, Value} || {Opt, Value, _Type} <- Options],
+    {ok, ?catch_result(exodm_db_account:new(Name, Opts))}.
     
 delete_account(Name) ->
     {ok, ?catch_result(exodm_db_account:delete(Name))}.
@@ -639,11 +641,15 @@ list_yang_modules(AID, N, Prev) ->
     {ok, [{'yang-modules', {array, Res}}]}.
     
 list_exec_permission(AID, ?EXODM, RName) ->
-    Res = [binary_to_atom(Role, latin1) || 
-              Role <- exodm_db_account:rpc_roles(AID, RName)],
-    {ok, [{'roles', {array, Res}}]};
+    case exodm_db_account:rpc_roles(AID, RName) of
+        RList when is_list(RList) ->
+            Res = [binary_to_atom(Role, latin1) ||  Role <- RList],
+            {ok, [{'roles', {array, Res}}]};
+        {error, Reason} ->
+            {ok, result_code(Reason)}
+    end;
 list_exec_permission(_AID, _MName, _RName) ->
-    %% Not implemented yet
+    %% Not implemented yet FIXME
     ?debug("not implemented yet", []),
     {ok, result_code('not-implemented-yet')}.
     

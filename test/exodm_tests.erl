@@ -30,6 +30,10 @@
 
 -define(ACC1, <<"feuer">>).
 -define(ACC2, <<"wiger">>).
+-define(ACC1ADM, <<"feuer-admin">>).
+-define(ACC2ADM, <<"wiger-admin">>).
+-define(ACC2PWD, "wiger").
+-define(b2l(Bin), binary_to_list(Bin)).
 
 exodm_test_() ->
     {setup,
@@ -124,26 +128,20 @@ exodm_test_() ->
 %% Tests
 
 %% for pasting into the shell during interactive debugging:
-%% exodm_db_account:new([{name,<<"test">>},{admin,[{uname,<<"t">>},{alias,<<"tee">>},{fullname,<<"Mr T">>},{password,<<"pwd">>}]}]).
+%% exodm_db_account:new(<<"test">>,[{fullname,<<"Mr T">>},{password,<<"pwd">>}]}]).
 %%
 populate(Cfg) ->
     ok = ?rpc(exodm_db_account,new,
-		      [
-		       [
-			{name, ?ACC1},
-			{admin, [{uname, <<"magnus">>},
-				 {alias, <<"love">>},
-				 {fullname, <<"Magnus Feuer">>},
-				 {password, <<"feuerlabs">>}]}
+		      [?ACC1,
+		       [{alias, <<"love">>},
+                        {fullname, <<"Magnus Feuer">>},
+                        {password, <<"feuerlabs">>}
 		       ]]),
     ok = ?rpc(exodm_db_account,new,
-		      [
-		       [
-			{name, ?ACC2},
-			{admin, [{uname, <<"ulf">>},
-				 {alias, [<<"uffe">>, <<"uwiger">>]},
-				 {fullname, <<"Ulf Wiger">>},
-				 {password, <<"wiger">>}]}
+		      [?ACC2,
+		       [{alias, [<<"uffe">>, <<"uwiger">>]},
+                        {fullname, <<"Ulf Wiger">>},
+                        {password, <<"wiger">>}
 		       ]]),
     AID1 = ?rpc(exodm_db_account, lookup_by_name, [?ACC1]),
     AID2 = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
@@ -199,14 +197,14 @@ populate(Cfg) ->
     ok.
 
 list_users(Cfg) ->
-    [<<"exodm-admin">>, <<"magnus">>, <<"ulf">>] =
+    [<<"exodm-admin">>, ?ACC1ADM, ?ACC2ADM] =
 	?rpc(exodm_db_user, list_user_keys, []),
-    U = [{name,<<"ulf">>},
+    U = [{name,?ACC2ADM},
 	 {fullname,<<"Ulf Wiger">>},
 	 {phone,<<>>},
 	 {email,<<>>},
 	 {skype,<<>>}],
-    U = ?rpc(exodm_db_user, lookup, [<<"ulf">>]),
+    U = ?rpc(exodm_db_user, lookup, [?ACC2ADM]),
     U = ?rpc(exodm_db_user, lookup_by_alias, [<<"uffe">>]),
     ok.
 
@@ -262,7 +260,7 @@ store_yang_scr() ->
       fun() ->
 	      exodm_db:transaction(
 		fun(Db) ->
-			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			exodm_db_session:set_auth_as_account(?ACC2, ?ACC2ADM, Db),
 			{ok, Bin} = file:read_file(
 				      filename:join(
 					filename:dirname(
@@ -300,7 +298,7 @@ store_config_scr() ->
       fun() ->
 	      exodm_db:transaction(
 		fun(Db) ->
-			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			exodm_db_session:set_auth_as_account(?ACC2, ?ACC2ADM, Db),
 			AID = exodm_db_session:get_aid(),
 			{ok, <<"test1">>} =
 			    exodm_db_config:new_config_set(
@@ -341,7 +339,7 @@ store_config_scr2() ->
       fun() ->
 	      exodm_db:transaction(
 		fun(Db) ->
-			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			exodm_db_session:set_auth_as_account(?ACC2, ?ACC2ADM, Db),
 			AID = exodm_db_session:get_aid(),
 			{ok, <<"test2">>} =
 			    exodm_db_config:new_config_set(
@@ -365,7 +363,7 @@ add_config_set_member_scr() ->
       fun() ->
 	      exodm_db:transaction(
 		fun(Db) ->
-			exodm_db_session:set_auth_as_user(<<"ulf">>, Db),
+			exodm_db_session:set_auth_as_account(?ACC2, ?ACC2ADM, Db),
 			AID = exodm_db_session:get_aid(),
 			exodm_db_config:add_config_set_members(
 			  AID, <<"test1">>, [<<"x00000001">>,
@@ -464,7 +462,7 @@ prep_list_evens(Cfg) ->
       [{http_reply,
 	fun(Req) ->
 		{ok, {struct, ReqElems}} =
-		    json2:decode_string(binary_to_list(Req)),
+		    json2:decode_string(?b2l(Req)),
 		{_, "test:list-even"} =
 		    lists:keyfind("method", 1, ReqElems),
 		%% we could perhaps handle "limit" dynamically...
@@ -527,7 +525,7 @@ stop_http_client(_Cfg) ->
     application:stop(crypto).
 
 json_server() ->
-    {8000, "ulf", "wiger", "/exodm/rpc"}.
+    {8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"}.
 
 json_create_device_type(_Cfg) ->
     {ok, Reply} = post_json_rpc(json_server(),
@@ -707,7 +705,7 @@ json_lookup_device2(_Cfg) ->
 
 
 json_lookup_bad_device(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:lookup-device", "1",
 				{struct,[{"dev-id", "---------"}]}),
     io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
@@ -727,7 +725,7 @@ json_create_config_set3(Cfg) ->
     json_create_config_set_(Cfg, "test_cfg_3").
 
 json_create_config_set_(_Cfg, Name) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:create-config-set", "1",
 				{struct,[{"name", Name},
 					 {"yang", "exosense.yang"},
@@ -745,7 +743,7 @@ json_create_config_set_(_Cfg, Name) ->
 json_update_config_set(Cfg) ->
     Name = "test_cfg_2",
     ok = json_create_config_set_(Cfg, Name),
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:update-config-set", "1",
 				{struct,[{"name", Name},
 					 {"values",{struct,[{"c","yy"}]}}
@@ -757,7 +755,7 @@ json_update_config_set(Cfg) ->
     ok.
 
 json_list_config_sets(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:list-config-sets", "1",
 				{struct,[{"n",3},
 					 {"previous",""}
@@ -775,7 +773,7 @@ json_list_config_sets(_Cfg) ->
     ok.
 
 json_list_config_sets_dev(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:list-config-sets", "1",
 				{struct,[{"n",3},
 					 {"previous",""},
@@ -794,7 +792,7 @@ json_list_config_sets_dev(_Cfg) ->
 
 
 json_add_config_set_members(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:add-config-set-members", "1",
 				{struct,[{"name", {array, ["test_cfg_2"]}},
 					 {"dev-id", {array, ["x00000001",
@@ -852,7 +850,7 @@ json_list_config_set_members2(_Cfg) ->
 
 
 json_delete_config_set3(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:delete-config-set", "1",
 				{struct,[{"name","test_cfg_3"}]}),
     io:fwrite(user, "~p: delete-config-set -> ~p~n", [?LINE, Reply]),
@@ -865,7 +863,7 @@ json_delete_config_set3(_Cfg) ->
 
 json_create_device_group(_Cfg) ->
     Name = "test_group_1",
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:create-device-group", "1",
 				{struct,[{"name", Name},
 					 {"notification-url",?URL1}
@@ -877,7 +875,7 @@ json_create_device_group(_Cfg) ->
     ok.
 
 json_list_device_groups(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:list-device-groups", "1",
 				{struct, [{"n", 3},
 					  {"previous", 0}
@@ -901,7 +899,7 @@ json_list_device_groups(_Cfg) ->
     ok.
 
 json_list_device_groups_dev(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:list-device-groups", "1",
 				{struct, [{"n", 3},
 					  {"previous", 0},
@@ -925,7 +923,7 @@ json_list_device_groups_dev(_Cfg) ->
 
 
 json_add_device_group_members(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:add-device-group-members", "1",
 				{struct,[{"device-groups", {array, [3]}},
 					 {"dev-id", {array, ["x00000001",
@@ -939,7 +937,7 @@ json_add_device_group_members(_Cfg) ->
 
 
 json_list_device_group_members(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:list-device-group-members", "1",
 				{struct,[{"gid", 3},
 					 {"n", 2},
@@ -955,7 +953,7 @@ json_list_device_group_members(_Cfg) ->
     ok.
 
 json_remove_device_group_members(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:remove-device-group-members", "1",
 				{struct,[{"device-groups", {array, [3]}},
 					 {"dev-id", {array, ["x00000001",
@@ -968,7 +966,7 @@ json_remove_device_group_members(_Cfg) ->
     ok.
 
 json_list_device_group_members2(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:list-device-group-members", "1",
 				{struct,[{"gid", 3},
 					 {"n", 2},
@@ -984,7 +982,7 @@ json_list_device_group_members2(_Cfg) ->
 
 
 json_delete_device_group(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:delete-device-group", "1",
 				{struct, [{"gid","3"}]}),
     io:fwrite(user, "~p: delete-device-group -> ~p~n", [?LINE, Reply]),
@@ -995,7 +993,7 @@ json_delete_device_group(_Cfg) ->
     ok.
 
 json_list_device_groups2(_Cfg) ->
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:list-device-groups", "1",
 				{struct, [{"n", 1},
 					  {"previous", 2}
@@ -1025,7 +1023,7 @@ device_json_rpc1(Cfg) ->
 		       end
 	       end),
     ask_http_reset(Cfg),
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"test:echo", "2",
 				{struct, [{"device-id", "x00000001"},
 					  {"message", "hello"}]}),
@@ -1084,7 +1082,7 @@ push_config_set1(Cfg) ->
 		       end
 	       end),
     ask_http_reset(Cfg),
-    {ok, Reply} = post_json_rpc({8000, "ulf", "wiger", "/exodm/rpc"},
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:push-config-set", "3",
 				{struct, [{"name", "test1"}]}),
     {struct, [{"result", {struct, [{"result", "ok"}]}},
@@ -1120,7 +1118,7 @@ push_config_set_meth(Args) ->
 
 
 fetch_json(Cfg) ->
-    [{Port, [ok(json2:decode_string(binary_to_list(Body))) || Body <- Msgs]} ||
+    [{Port, [ok(json2:decode_string(?b2l(Body))) || Body <- Msgs]} ||
 	{Port,Msgs} <- exodm_test_lib:ask_http_servers(fetch_content, Cfg)].
 
 ok({ok, Res}) ->
@@ -1141,7 +1139,7 @@ post_json_rpc({Port, User, Pwd, Path}, Method, ID, Params) ->
 			 Body, 3000),
     %% io:fwrite(user, "HTTP request Res = ~p~n", [Res]),
     {ok, {{200,_OK},_Hdrs,JSON}} = Res,
-    {ok, ok(json2:decode_string(binary_to_list(JSON)))}.
+    {ok, ok(json2:decode_string(?b2l(JSON)))}.
 
 %% Helpers
 
