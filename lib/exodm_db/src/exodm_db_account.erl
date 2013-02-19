@@ -33,6 +33,7 @@
 	 list_admins/3,
 	 list_roles/3,
 	 list_user_roles/2,
+	 list_users_with_roles/3,
 	 list_groups/1,
 	 list_groups/2,
 	 system_specs/1]).
@@ -419,11 +420,9 @@ list_account_keys() ->
 			list(UName::binary()) |
 			  {error, Reason::term()}.
 
-list_users(AID0, N, Prev) when is_binary(AID0) ->
-    list_users_(exodm_db:account_id_key(AID0), N, Prev).
-
-list_users_(AID,  N, Prev) ->
-    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_USERS, exodm_db:to_binary(Prev)]),
+list_users(AID,  N, Prev) when is_binary(AID) ->
+    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_USERS, 
+                                   exodm_db:to_binary(Prev)]),
     exodm_db:in_transaction(
       fun(_) ->
 	      exodm_db:list_next(
@@ -433,6 +432,55 @@ list_users_(AID,  N, Prev) ->
 			lists:last(kvdb_conf:split_key(Key))
 		end)
       end).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% List N number of account users starting after Prev
+%% Return users with their roles
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec list_users_with_roles(AID::binary(),
+                            N::integer(),
+                            Prev::binary()) ->
+                                   list({UName::binary(), 
+                                         list(Roles::binary())}) |
+                                   {error, Reason::term()}.
+
+list_users_with_roles(AID,  N, Prev) when is_binary(AID) ->
+    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_USERS, 
+                                   exodm_db:to_binary(Prev)]),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      Users = 
+                  exodm_db:list_next(
+                    table(),
+                    N, FullPrev,
+                    fun(Key) ->
+                            lists:last(kvdb_conf:split_key(Key))
+                    end),
+              lists:map(fun(User) ->
+                                Roles = list_user_roles(AID, User),
+                                {User, Roles}
+                        end, Users)
+      end).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% List account roles for user
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec list_user_roles(AID::binary(), UName::binary()) ->
+				list({AID::binary(), Role::binary()}).
+
+list_user_roles(AID, UName) 
+  when is_binary(AID), is_binary(UName) ->
+    [R || {_A, R} <-
+              lists:filter(fun({A, _R}) when A == AID -> true;
+                              ({_OtherAID, _R}) -> false
+                           end, exodm_db_user:list_roles(UName))].
+    
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -485,23 +533,6 @@ list_roles(AID, N, Prev) when is_binary(AID) ->
 				 end)
       end).
 
-
-%%--------------------------------------------------------------------
-%% @doc
-%% List account roles for user
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec list_user_roles(AID::binary(), UName::binary()) ->
-				list({AID::binary(), Role::binary()}).
-
-list_user_roles(AID, UName) 
-  when is_binary(AID), is_binary(UName) ->
-    [R || {_A, R} <-
-              lists:filter(fun({A, _R}) when A == AID -> true;
-                              ({_OtherAID, _R}) -> false
-                           end, exodm_db_user:list_roles(UName))].
-    
 
 %%--------------------------------------------------------------------
 %% @doc

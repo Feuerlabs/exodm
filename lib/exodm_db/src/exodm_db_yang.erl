@@ -12,6 +12,8 @@
          tag_file/3, %% (AID, YangF, Tag)
 	 delete/1,   %% delete(YangF) -> delete(get_aid(), YangF)
          delete/2,   %% (AID, YangF)
+	 lookup/1,   %% lookup(YangF) -> lookup(get_aid(), YangF)
+         lookup/2,   %% (AID, YangF)
 	 find/2,     %% (Index, Value) -> find(get_aid(), Index, Value)
          find/3,     %% (AID, Index, Value)
 	 rpcs/1,     %% (YangF) -> rpcs(get_aid(), YangF)
@@ -196,7 +198,6 @@ write_(AID0, File0, Y) ->
 			   (F, Os) ->
 				open_file_hook(AID, F, Os)
 			end}],
-    %% TODO: we should deep_parse the modules once that's ready
     case yang_parser:parse(File, Opts) of
         {ok, [{submodule,_,_,_} = SubMod]} ->
             store(AID, File, SubMod, [], Y);
@@ -256,6 +257,29 @@ delete(AID0, File0) ->
       fun(_) ->
               kvdb_conf:delete_tree(table(AID), Key),
               kvdb:delete(?DB, tab_name(AID), Key)
+      end).
+
+lookup(File) ->
+    lookup(get_aid(), File).
+
+lookup(AID, File) when is_binary(AID), is_binary(File) ->
+    %% More attrs??
+    %% With attr tags ??
+    ?debug("aid ~p, file ~p", [AID, File]),
+    lookup_src(AID, File).
+    
+lookup_src(AID, File)->
+    Base = filename:basename(File, <<".yang">>),
+    Key = case binary:split(Base, <<"@">>) of
+              [Name] -> <<Name/binary, "@.yang">>;
+              _ -> <<Base/binary, ".yang">>
+          end,
+    exodm_db:in_transaction(
+      fun(_) ->
+              {ok, {_, _, Src}} = 
+                  kvdb_conf:read(table(AID), 
+                                 kvdb_conf:join_key(Key, <<"src">>)),
+              {ok, Src}
       end).
 
 rpcs(File) ->

@@ -275,6 +275,11 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
 	    {name, Name, _}|_Tail]} = _RPC, _Env) ->
     delete_yang_module(AID, Name);
 
+json_rpc_(AID, {call, ?EXODM, ?RPC_LOOKUP_YANG_MODULE,
+	   [{repository, ?USER_REPOSITORY, _},
+	    {name,Name,_}|_Tail]} = _RPC, _Env) ->
+    lookup_yang_module(AID, Name);
+
 json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
 	   [{repository, ?USER_REPOSITORY, _},
 	    {n,N,_},
@@ -312,6 +317,19 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
 	    Res = delete_yang_module(system, Name),
 	    exodm_db_session:unset_trusted_proc(),
 	    Res;
+	false ->
+	    {ok,result_code(?PERMISSION_DENIED)}
+    end;
+
+json_rpc_(AID, {call, ?EXODM, ?RPC_LOOKUP_YANG_MODULE,
+	   [{repository, ?SYSTEM_REPOSITORY, _},
+	    {name,Name,_}|_Tail]} = _RPC, Env) ->
+        case has_root_env(Env) of
+	true ->
+	    exodm_db_session:set_trusted_proc(),
+	    Res = lookup_yang_module(AID, Name),
+	    exodm_db_session:unset_trusted_proc(),
+	    {ok, [{'yang-modules', {array, Res}}]};
 	false ->
 	    {ok,result_code(?PERMISSION_DENIED)}
     end;
@@ -455,13 +473,17 @@ delete_user(Name) ->
     {ok, ?catch_result(exodm_db_user:delete(Name))}.
    
 list_users(AID, N, Prev) ->
-    case exodm_db_account:list_users(AID, N, Prev) of
+    case exodm_db_account:list_users_with_roles(AID, N, Prev) of
+	[] ->
+	    {ok, [{'users', {array, []}}]};
 	Users when is_list(Users) ->
-	    {ok, [{'users', {array, Users}}]};
+	    {ok, [{'users', {array, [{struct, [{'name', Name},
+                                               {'roles',  Roles}]} ||
+                                        {Name, Roles} <- Users]}}]};
 	Other ->
 	    {ok, Other}
     end.
-  
+
 list_users(N, Prev) ->
     Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
 		    exodm_db_user:list_users(N, Prev)),
@@ -633,11 +655,18 @@ delete_yang_module(AID, Name) ->
             {ok, result_code(?OBJECT_NOT_FOUND)}
     end.
 
+lookup_yang_module(AID, Name) ->
+    case exodm_db_yang:lookup(AID, Name) of 
+        {ok, Src} ->
+            {ok, result_code(ok) ++ 
+                 [{'yang-modules', {array, [binary_to_list(Src)]}}]};
+ 	_Error -> %%?? more error codes internal error?
+            ?debug("lookup failed, reason ~p", [_Error]),
+            {ok, result_code(?OBJECT_NOT_FOUND)}
+    end.
+    
 list_yang_modules(AID, N, Prev) ->
-    Res = exodm_db:in_transaction(
-	    fun(_) ->
-		    exodm_db_yang:list_next(AID, N, Prev)
-	    end),
+    Res = exodm_db_yang:list_next(AID, N, Prev),
     {ok, [{'yang-modules', {array, Res}}]}.
     
 list_exec_permission(AID, ?EXODM, RName) ->

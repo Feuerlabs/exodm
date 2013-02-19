@@ -51,6 +51,7 @@
 
 -define(RPC_CREATE_YANG_MODULE, <<"create-yang-module">>).
 -define(RPC_DELETE_YANG_MODULE, <<"delete-yang-module">>).
+-define(RPC_LOOKUP_YANG_MODULE, <<"lookup-yang-module">>).
 -define(RPC_LIST_YANG_MODULES, <<"list-yang-modules">>).
 -define(RPC_LIST_EXEC_PERMISSION, <<"list-execution-permission">>).
 
@@ -121,6 +122,7 @@
          {?RPC_CREATE_YANG_MODULE, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_DELETE_YANG_MODULE, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_LIST_YANG_MODULES, [?ROOT, ?INIT_ADMIN, ?ADMIN, ?VIEW]},
+         {?RPC_LOOKUP_YANG_MODULE, [?ROOT, ?INIT_ADMIN, ?ADMIN, ?VIEW]},
          {?RPC_LIST_EXEC_PERMISSION, [?ROOT, ?INIT_ADMIN, ?ADMIN, ?VIEW]},
 
          {?RPC_CREATE_DEVICE_TYPE, 
