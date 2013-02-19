@@ -47,8 +47,11 @@ post_generate(Config, File) ->
     {ok,_} = file:copy("../make_node", MakeNodeTgt),
     set_x_bit(MakeNodeTgt),
     CtlTarget = filename:join(TargetDir, "ctl"),
+    ExorelTarget = filename:join(TargetDir, "exorel"),
     {ok,_} = file:copy("../ctl", CtlTarget),
+    {ok,_} = file:copy("../exorel", ExorelTarget),
     set_x_bit(CtlTarget),
+    set_x_bit(ExorelTarget),
     {ok,_} = file:copy(File, filename:join(TargetDir, filename:basename(File))),
     make_erts_link(TargetDir),
     ok.
