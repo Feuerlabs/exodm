@@ -3,17 +3,24 @@
 
 -behaviour(gen_server).
 
--export([authenticate/2, logout/0, logout/1,
-         is_active/0, is_active/1, refresh/0]).
--export([get_user/0, get_role/0, get_aid/0, get_auth/0]).
+-export([authenticate/3, 
+         logout/0,  logout/1,
+         is_active/0, is_active/1, 
+         refresh/0]).
+-export([get_user/0, 
+         %%get_role/0, 
+         get_aid/0, 
+         get_auth/0]).
 -export([remove_user_session/1]).
 -export([spawn_child/1, spawn_link_child/1, spawn_monitor_child/1]).
 
 -export([remove_account/1]).
 
--export([set_auth_as_user/1, set_auth_as_user/2, set_auth_as_user/3,
+-export([set_auth_as_user/2, set_auth_as_user/3, set_auth_as_user/4,
+         set_auth_as_account/2, set_auth_as_account/3, set_auth_as_account/4,
+         set_aid/2,
          set_auth_as_device/1,
-         set_trusted_proc/0,unset_trusted_proc/0,
+         set_trusted_proc/0, unset_trusted_proc/0,
          is_trusted_proc/0]).
 
 -export([start_link/0,
@@ -32,7 +39,6 @@
 -record(session, {user,
                   aid,
                   role,
-                  access = [],
                   hash,
                   sha,
                   timer}).
@@ -43,19 +49,19 @@
 -define(dbg(F,A), ?debug("~p " ++ F, [self()|A])).
 
 %% @spec authenticate(Username, Password) -> {true, AID} | false
-authenticate(User, Pwd) ->
+authenticate(Aid, User, Pwd) ->
+    ?debug("user ~p, pwd ~p", [User, Pwd]),
     UName = to_binary(User),
-    check_auth_(
-      UName, gen_server:call(?MODULE, {auth, UName, to_binary(Pwd)}, 10000)).
+    case gen_server:call(?MODULE, {auth, Aid, UName, to_binary(Pwd)}, 10000) of
+        true ->
+            put_auth_({UName, Aid, undefined}),
+            true;
+        false ->
+            false
+    end.
 
 remove_account(AID) ->
     gen_server:call(?MODULE, {remove_account, AID}).
-
-check_auth_(UName, {true, AID, Role} = Result) ->
-    put_auth_({UName, AID, Role}),
-    Result;
-check_auth_(_, false) ->
-    false.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -139,31 +145,72 @@ unset_trusted_proc() ->
 is_trusted_proc() ->
     get('$exodm_trusted_proc') == true.
 
+%% This is ugly !! FIXME
+set_aid(Aid, User) ->
+    case ets:lookup(?TAB, User) of
+        [] -> 
+            error(no_user_session);
+        [S=#session{role = Role}] ->
+            put_auth_({User, Aid, Role}),
+            ets:insert(?TAB, S#session {aid = Aid})
+    end.
+            
+set_role(Aid, User, Role) ->
+    case ets:lookup(?TAB, User) of
+        [] -> 
+            error(no_user_session);
+        [S] ->
+            put_auth_({User, Aid, Role}),
+            ets:insert(?TAB, S#session {role = Role})
+    end.
+            
 
-set_auth_as_user(User) ->
-    set_auth_as_user(User, kvdb_conf, false).
+set_auth_as_user(Aid, User) ->
+    set_auth_as_user(Aid, User, kvdb_conf, false).
 
-set_auth_as_user(User, Db) ->
-    set_auth_as_user(User, Db, false).
+set_auth_as_user(Aid, User, Db) ->
+    set_auth_as_user(Aid, User, Db, false).
 
-set_auth_as_user(User, Db, Sticky) ->
+set_auth_as_user(Aid, User, Db, Sticky) ->
+    ?debug("aid ~p, user ~p", [Aid, User]),
     case ets:lookup(?TAB, User) of
         [] ->
-            case check_auth_(
-                   User, gen_server:call(
-                           ?MODULE,
-                           {make_user_active, to_binary(User), Db})) of
-                {true,AID,Role} = Res ->
-                    put_auth_({User, AID, Role}),
+            ?debug("new user", []),
+            case gen_server:call(?MODULE,
+                                 {make_user_active, 
+                                  to_binary(Aid), 
+                                  to_binary(User), 
+                                  Db}) of
+                true ->
+                    ?debug("authorized", []),
+                    put_auth_({User, Aid, undefined}),
                     set_sticky_flag(Sticky),
-                    Res;
+                    true;
                 false ->
+                    ?debug("not authorized", []),
                     false
             end;
-        [#session{aid = AID, role = Role}] ->
-            put_auth_({User, AID, Role}),
+        [S=#session{role = Role}] ->
+            ?debug("old user", []),
+            put_auth_({User, Aid, Role}),
+            ets:insert(?TAB, S#session {aid = Aid}),
             set_sticky_flag(Sticky),
-            {true, AID, Role}
+            true
+    end.
+
+set_auth_as_account(Account, User) when is_binary(Account) ->
+    set_auth_as_account(Account, User, kvdb_conf, false).
+
+set_auth_as_account(Account, User, Db) when is_binary(Account) ->
+    set_auth_as_account(Account, User, Db, false).
+
+set_auth_as_account(Account, User, Db, Sticky) when is_binary(Account) ->
+    case exodm_db_account:lookup_by_name(Account) of
+        Aid when is_binary(Aid) ->  
+            set_auth_as_user(Aid, User, Db, Sticky);
+        false -> 
+            ?error("Account ~p missing!!", [Account]), 
+            false
     end.
 
 set_sticky_flag(false) ->
@@ -263,40 +310,56 @@ init([]) ->
     exodm_db_account:subscribe(delete),
     {ok, #st{}}.
 
-handle_call({auth, U, P}, From, St) ->
+handle_call({auth, A, U, P}, From, St) ->
+    ?debug("user ~p, pwd ~p", [U, P]),
     case ets:lookup(?TAB, U) of
 	[] ->
-	    {noreply, pending(U,[{From,P}], St)};
+            ?debug("not in table", []),
+	    {noreply, pending(A, U,[{From,P}], St)};
         [#session{sha = undefined}] ->
+            ?debug("sha undefined", []),
             %% system processes have accessed user, but not authenticated
             %% sessions.
-            {noreply, pending(U, [{From,P}], St)};
-	[#session{hash = Hash, aid = AID, role = Role, sha = Sha} = Session] ->
+            {noreply, pending(A, U, [{From,P}], St)};
+	[#session{hash = Hash, sha = Sha} = Session] ->
+           ?debug("sha defined", []),
 	    case sha(Hash, P) of
 		Sha ->
+                    ?debug("sha asserted", []),
 		    reset_timer(Session),
-		    {reply, {true, AID, Role}, St};
+		    {reply, true, St};
 		_ ->
+                    ?debug("sha assertion failed", []),
 		    {reply, false, St}
 	    end
     end;
-handle_call({make_user_active, U, Db}, _, St) ->
+handle_call({make_user_active, A, U, Db}, _, St) ->
     case ets:lookup(?TAB, U) of
         [] ->
             kvdb:in_transaction(
               Db, fun(_) ->
-                          case first_auth_(U, no_password) of
-                              false ->
+                          %% Check that the user has access to account
+                          case exodm_db_user:list_accounts(U) of
+                              [] ->
                                   {reply, false, St};
-                              {true, Hash, undefined} ->
-                                  #session{aid = AID, role = Role} =
-                                      create_session(U, Hash, undefined),
-                                  {reply, {true, AID, Role}, St}
+                              AList ->
+                                  case lists:member(A, AList) of
+                                      true ->
+                                          case first_auth_(U, no_password) of
+                                              false ->
+                                                  {reply, false, St};
+                                              {true, Hash, undefined} ->
+                                                  create_session(A, U, Hash, undefined),
+                                                  {reply, true, St}
+                                          end;
+                                      false ->
+                                          {reply, false, St}
+                                  end
                           end
                   end);
-        [#session{aid = AID, role = Role} = Session] ->
+        [#session{} = Session] ->
             reset_timer(Session),
-            {reply, {true, AID, Role}, St}
+            {reply, true, St}
     end;
 handle_call({remove_user_session, _Auth, UserToRemove}, _, St) ->
     %% Should only be called when removing a user
@@ -334,19 +397,17 @@ remove_account_recs({Recs, Cont}) ->
 
 
 
-handle_cast({first_auth, Pid, User, Res}, #st{pending = Pend,
+handle_cast({first_auth, Pid, Aid, User, Res}, #st{pending = Pend,
 					      procs = Procs} = St) ->
     Waiting = dict:fetch(User, Pend),
     St1 = St#st{pending = dict:erase(User, Pend),
 		procs = dict:erase(Pid, Procs)},
     case Res of
 	{true, Hash, Sha} ->
-            #session{aid = AID, role = Role} =
-                create_session(User, Hash, Sha),
-	    {noreply, process_pending(
-                        {true, AID, Role}, Waiting, User, St1)};
+            create_session(Aid, User, Hash, Sha),
+	    {noreply, process_pending(true, Waiting, Aid, User, St1)};
 	false ->
-	    {noreply, process_pending(false, Waiting, User, St1)}
+	    {noreply, process_pending(false, Waiting, Aid, User, St1)}
     end.
 
 handle_info({timeout, _, User}, St) ->
@@ -371,7 +432,7 @@ terminate(_, _) ->
 code_change(_, St, _) ->
     {ok, St}.
 
-process_pending(Reply, Waiting, User, St) ->
+process_pending(Reply, Waiting, Aid, User, St) ->
     [{From1, P1}|Rest] = Waiting,
     gen_server:reply(From1, Reply),
     Same = [X || {_, P} = X <- Rest, P == P1],
@@ -388,39 +449,47 @@ process_pending(Reply, Waiting, User, St) ->
 		    %% Different may contain clients with the right password,
 		    %% but at this point, we don't know what the right password
 		    %% is. Re-run first_auth
-		    pending(User, Different, St)
+		    pending(Aid, User, Different, St)
 	    end
     end.
 
-pending(U, [{_, P}|_] = Clients, #st{pending = Pend, procs = Procs} = St) ->
+pending(A, U, [{_, P}|_] = Clients, #st{pending = Pend, procs = Procs} = St) ->
+    ?debug("user ~p, pending ~p", [U, Pend]),
     case dict:is_key(U, Pend) of
 	true ->
+            ?debug("is key", []),
 	    St#st{pending = dict:append_list(U, Clients, Pend)};
 	false ->
+            ?debug("is not key", []),
             Me = self(),
             {Pid,_} = spawn_monitor(fun() ->
-                                            first_auth(U, P, Me)
+                                            first_auth(A, U, P, Me)
                                     end),
             St#st{pending = dict:store(U, Clients, Pend),
                   procs = dict:store(Pid, U, Procs)}
     end.
 
-first_auth(U, P, Parent) ->
+first_auth(A, U, P, Parent) ->
     Res = first_auth_(U, P),
-    gen_server:cast(Parent, {first_auth, self(), U, Res}).
+    gen_server:cast(Parent, {first_auth, self(), A, U, Res}).
 
 first_auth_(U, P) ->
     case exodm_db_user:lookup_attr(U, password) of
         [] ->
+            ?debug("user ~p, no hash", [U]),
             false;
         [{_, Hash}] ->
+            ?debug("user ~p, hash ~p", [U, Hash]),
             case P of
                 no_password ->
                     %% means we're faking authentication of a system process
                     %% we can't make a sha hash, since we don't know the pwd.
+                    ?debug("user ~p, no password ", [U]),
                     {true, Hash, undefined};
                 _ when is_binary(P) ->
+                    ?debug("user ~p, password ~p", [U, P]),
                     {ok, HashStr} = bcrypt:hashpw(P, Hash),
+                    ?debug("user ~p, new hash ~p ", [U, HashStr]),
                     case list_to_binary(HashStr) of
                         Hash ->
                             ?debug("bcrypt hash matches for ~p~n", [U]),
@@ -433,24 +502,28 @@ first_auth_(U, P) ->
             end
     end.
 
-create_session(User, Hash, Sha) ->
-    Sn = get_session_data(#session{user = User,
-                                   hash = Hash,
-                                   sha = Sha,
-                                   timer = start_timer(User)}),
-    ets:insert(?TAB, Sn),
-    Sn.
-
-get_session_data(#session{user = User} = S) ->
-    ?debug("user ~p, session ~p", [User, S]),
+create_session(AID, User, Hash, Sha) ->
+    ?debug("aid ~p, user ~p", [AID, User]),
     %% FIXME
-    %% User can belong to several accounts and have several roles !!
-    [{AID,Role}|_] = Roles = exodm_db_user:list_roles(User),
-    %% Role access format not defined yet
-    Access = Roles,
-    S#session{aid = exodm_db:account_id_num(AID),
-              role = Role,
-              access = Access}.
+    %% User can have several roles !!
+    %% Role = max_role(exodm_db_user:list_account_roles(AID, User)),
+    
+    S=#session{user = User,
+               aid = AID,
+               hash = Hash,
+               sha = Sha,
+               timer = start_timer(User)},
+%%               role = Role},
+    
+    ets:insert(?TAB, S),
+    S.
+
+max_role([Role]) ->
+    Role;
+%% FIXME !!!
+max_role([Role | _]) ->
+    Role.
+
 
 sha(Hash, Passwd) ->
     crypto:sha_mac(Hash, Passwd).

@@ -56,6 +56,7 @@ queue_notification(Module, Type, Env0, Method, Elems) when
       Type == notify; Type == reverse_request ->
     User = exodm_db_session:get_user(),
     AID = exodm_db_session:get_aid(),
+    ?debug("aid ~p, user ~p", [AID, User]),
     Yang = <<(to_binary(Module))/binary, ".yang">>,
     Env = [{yang, Yang},
 	   {user, User},
@@ -72,8 +73,7 @@ queue_notification(Module, Type, Env0, Method, Elems) when
 do(Meta, M, F, A) ->
     {_, AID} = lists:keyfind(aid, 1, Meta),
     {_, User} = lists:keyfind(uid, 1, Meta),
-    exodm_db_session:set_auth_as_user(User),
-    AID = exodm_db_session:get_aid(),  % assertion!
+    exodm_db_session:set_auth_as_user(AID, User),
     apply(M, F, A).
 
 

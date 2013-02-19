@@ -14,8 +14,6 @@
 	 yang_modules/2,
 	 protocol/2,
 	 exist/2]).
--export([list_device_keys/1, list_device_keys/2,
-	 fold_devices/3, fold_devices/4]).
 -export([key/2, tab_and_key/1]).
 -export([enc_ext_key/2, dec_ext_key/1]).
 -export([lookup_position/2, lookup_keys/2]).
@@ -214,13 +212,13 @@ list_config_sets_(Tab, DID) ->
     lists:reverse(Set).
 
 
-yang_modules(AID0, DID0) ->
-    AID = exodm_db:account_id_key(AID0),
-    DID = exodm_db:encode_id(DID0),
+yang_modules(AID, DID) when is_binary(AID), is_binary(DID) ->
+    ?debug("aid ~p, did ~p", [AID, DID]),
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->
 	      CDs = list_config_sets_(Tab, DID),
+              ?debug("Config sets = ~p~n", [CDs]),
 	      lists:map(
 		fun(Name) ->
 			{ok, Y} = exodm_db_config:get_yang_spec(AID, Name),
@@ -230,11 +228,14 @@ yang_modules(AID0, DID0) ->
 			      end,
 			{Name, Y, URL}
 		end, CDs)
-      end).
-
-protocol(AID0, DID0) ->
+      end);
+yang_modules(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
+    yang_modules(AID, DID).
+
+
+protocol(AID, DID) when is_binary(AID), is_binary(DID) ->
     Tab = table(AID),
     case read_value(Tab, DID, ?DEV_DB_DEVICE_TYPE) of
 	false ->
@@ -253,9 +254,13 @@ protocol(AID0, DID0) ->
 		{error, not_found} ->
 		    error(no_protocol_defined, [AID, DID])
 	    end
-    end.
+    end;
+protocol(AID0, DID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    DID = exodm_db:encode_id(DID0),
+    protocol(AID, DID).
 
-list_next(AID, N, Prev) ->
+list_next(AID, N, Prev) when is_binary(AID), is_binary(Prev) ->
     exodm_db:list_next(table(AID), N, Prev,
 		       fun(Key) ->
 			       [DID|_] = kvdb_conf:split_key(Key),
@@ -309,28 +314,6 @@ lookup_attr_(Tab, DID, Attr) when is_atom(Attr) ->
 	Value -> [{Attr,Value}]
     end.
 	     
-
-list_device_keys(AID) ->
-    list_device_keys(AID, 30).
-
-list_device_keys(AID, Limit) ->
-    fold_devices(fun(DID, Acc) ->
-			 [DID|Acc]
-		 end, [], AID, Limit).
-
-fold_devices(F, Acc, AID) ->
-    fold_devices(F, Acc, AID, 30).
-
-fold_devices(F, Acc, AID, Limit) when
-      Limit==infinity; is_integer(Limit), Limit > 0 ->
-    Tab = table(AID),
-    exodm_db:fold_keys(
-      Tab,
-      <<>>,
-      fun([DID|_], Acc1) ->
-	      {next, DID, F(DID,Acc1)}
-      end, Acc, Limit).
-
 
 lookup_groups(AID, DID0) ->
     Tab = table(AID),
@@ -421,6 +404,9 @@ split(_, <<>>, _) ->
 
 enc_ext_key(<<$a,_/binary>> = AID, <<$=, _/binary>> = DID) ->
     <<AID/binary, DID/binary>>;
+enc_ext_key(<<$a,_/binary>> = AID, DID) when is_integer(DID)->
+    BinDID = exodm_db:encode_id(DID),
+    <<AID/binary, BinDID/binary>>;
 enc_ext_key(AID, DID) ->
     enc_ext_key(exodm_db:account_id_key(AID), exodm_db:encode_id(DID)).
 
