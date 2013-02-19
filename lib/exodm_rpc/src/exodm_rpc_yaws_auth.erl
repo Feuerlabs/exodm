@@ -16,7 +16,7 @@ auth(#arg{headers = Hdrs} = Arg, _RequestBody) ->
     %% look at the authentication record.
     case Hdrs#headers.authorization of
 	{User, Pwd, "Basic " ++ I} ->
-	    ?info("Authenticating ~s (Basic ~s)...~n", [User, I]),
+	    ?debug("Authenticating ~s...~n", [User]),
 	    case exodm_db_session:authenticate(User, Pwd) of
 		{true, UID, AID} ->
 		    {true, list_to_binary(User)};
