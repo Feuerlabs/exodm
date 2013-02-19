@@ -6,8 +6,6 @@ CALLER_DIR=$PWD
 
 SCRIPT_DIR=$(cd ${0%/*} && pwd)
 
-echo "CALLER_DIR=$CALLER_DIR; SCRIPT_DIR=$SCRIPT_DIR"
-
 ## Emulate readlink -f to resolve the full physical directory
 cd `dirname $SCRIPT_DIR`
 TARGET_DIR=`basename $SCRIPT_DIR`
@@ -31,7 +29,6 @@ cd $CALLER_DIR
 RUNNER_SCRIPT_DIR=$PHYS_DIR/$TARGET_DIR
 
 if [ -f "$RUNNER_SCRIPT_DIR/bin/exodm.cmd" ]; then
-    echo "ctl called in original location"
     # ctl called in its original location
     d=$RUNNER_SCRIPT_DIR
     for i in `seq 1 3`;
@@ -39,16 +36,16 @@ if [ -f "$RUNNER_SCRIPT_DIR/bin/exodm.cmd" ]; then
         d=`dirname $d`
     done
     EXODM_DIR=$d
+    RELEASE_DIR=$RUNNER_SCRIPT_DIR
     EXODM="$RUNNER_SCRIPT_DIR/bin/exodm"
 else
-    echo "assume ctl copied to exodm dir"
     EXODM_DIR=$RUNNER_SCRIPT_DIR
+    lnk=`readlink $EXODM_DIR/rel/exodm`
+    RELEASE_DIR=$EXODM_DIR/rel/$lnk
     EXODM="$EXODM_DIR/rel/exodm/bin/exodm"
 fi
 
-echo "EXODM_DIR=$EXODM_DIR"
-
-USE_DIR=$RUNNER_SCRIPT_DIR
+USE_DIR=$EXODM_DIR
 
 if [ -z "$ERL_SETUP_LIBS" ]; then
     EXODM="ERL_SETUP_LIBS=\"$EXODM_DIR/rel/plugins\" $EXODM"
@@ -62,19 +59,27 @@ while [ $# -gt 0 ]; do
             ;;
         start|attach|console|stop)
             CMD="$EXODM $1"
+            echo "USE_DIR=$USE_DIR"
+            echo "CMD = $CMD"
             shift
             ;;
         convert)
             CMD="$EXODM console_boot exodm_setup -- -setup mode convert"
+            echo "CMD = $CMD"
             shift
             ;;
+        rel)
+            shift
+            args=$*
+            while [ $# -gt 0 ]; do shift; done
+            ESCRIPT=$RELEASE_DIR/erts/bin/escript
+            CMD="$ESCRIPT $RELEASE_DIR/exorel $args"
+            ;;
         *)
-            echo $"Usage: $0 [-l | -local] {start|attach|stop|convert}"
+            echo $"Usage: $0 [-l | -local] {start|attach|stop|convert|rel [args]}"
             exit 1
     esac
 done
 
-echo "CMD = $CMD"
-echo "USE_DIR = $USE_DIR"
 cd $USE_DIR
 env $CMD

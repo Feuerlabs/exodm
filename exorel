@@ -7,6 +7,7 @@
 -define(TARGET, "exodm").
 
 main([]) -> help();
+main(["help"]) -> help();
 main([F|Args] = _A) ->
     %% this insanity with 're' is because my terminal sometimes passes
     %% a non-space space character appended to the command.
@@ -70,7 +71,7 @@ rel_path() ->
     "rel/lib".
 
 make_tar(Dir, SubDir, Target) ->
-    {ok, Cwd} = file:get_cwd(),
+    Cwd = cwd(),
     ok = file:set_cwd(Dir),
     TarRes = os:cmd(TarCmd = "tar czf " ++ Target ++ " " ++ SubDir),
     io:fwrite("~s ->~n~s~n", [TarCmd, TarRes]),
@@ -93,7 +94,7 @@ git_vsn(Opts) ->
 	[_|_] = Vsn ->
 	    io:fwrite("~s~n", [Vsn]);
 	_ ->
-	    {ok, Cwd} = file:get_cwd(),
+	    Cwd = cwd(),
 	    Dir = case Opts of
 		      [] -> root_dir();
 		      ["-d",D|_] -> D
@@ -108,7 +109,7 @@ git_vsn(Opts) ->
 nodes([]) ->
     case file:list_dir(Dir = filename:join(root_dir(), "nodes")) of
 	{ok, Fs} ->
-	    list_files(Fs, Dir);
+	    list_files(Fs, Dir, []);
 	_ ->
 	    nothing
     end.
@@ -116,10 +117,21 @@ nodes([]) ->
 versions([]) ->
     case file:list_dir(Dir = rel_lib_dir()) of
 	{ok, Fs} ->
-	    list_files(Fs, Dir);
+	    list_files(Fs, Dir, ["exodm"]);
 	_ ->
 	    nothing
     end.
+
+list_files(Fs0, Dir, Exclude) ->
+    case [F1 || F1 <- lists:sort(Fs0),
+		filelib:is_dir(filename:join(Dir, F1)),
+		not lists:member(F1, Exclude)] of
+	[F|Fs] ->
+	    io:fwrite("~s~n", [F ++ lists:concat(["," ++ F1 || F1 <- Fs])]);
+	[] ->
+	    nothing
+    end.
+
 
 current([]) ->
     case file:read_link(filename:join(rel_dir(), ?TARGET)) of
@@ -192,13 +204,11 @@ vsn_matches(V, FullV) ->
     end.
 
 make_current(F) ->
-    {ok, Cwd} = file:get_cwd(),
+    Cwd = cwd(),
     RelD = rel_dir(),
     LibD = rel_lib_dir(),
     Base = filename:basename(F),
-    CwdRes1 = file:set_cwd(RelD),
-    io:fwrite("CwdRes(~p) = ~p~n", [RelD, CwdRes1]),
-    io:fwrite("-- now in ~p~n", [element(2, file:get_cwd())]),
+    _CwdRes1 = file:set_cwd(RelD),
     Res = file:make_symlink(Source1 = filename:join("lib", Base), ?TARGET),
     io:fwrite("make_symlink(Dir = ~p, ~p, ~p) -> ~p~n",
 	      [RelD, Source1, ?TARGET, Res]),
@@ -206,47 +216,73 @@ make_current(F) ->
 		RT = filename:join(Source1, "reltool.config"), "reltool.config"),
     io:fwrite("Copy ~s to reltool.config -> ~p~n", [RT, CopyRes]),
     file:set_cwd(Cwd),
-    CwdRes2 = file:set_cwd(rel_lib_dir()),
+    _CwdRes2 = file:set_cwd(LibD),
     DelRes = file:delete(?TARGET),
     io:fwrite("deleting file ~p -> ~p~n", [?TARGET, DelRes]),
     Res2 = file:make_symlink(Base, ?TARGET),
     io:fwrite("make_symlink(Dir = ~p, ~p, ~p) -> ~p~n",
 	      [LibD, Base, ?TARGET, Res2]),
-    io:fwrite("CwdRes(~p) = ~p~n", [rel_lib_dir(), CwdRes2]),
-    file:set_cwd(Cwd).
+    file:set_cwd(Cwd),
+    maybe_copy_vm_args(Cwd, Base, filename:join("rel", Source1)).
 
-    %% make_current_(rel_dir(), Source),
-    %% make_current_(rel_lib_dir(), Source),
-    %% file:set_cwd(Cwd),
-    %% file:set_cwd(filename:dirname(filename:absname(F))),
-    %% file:make_symlink(filename:basename(F), filename:join("..", ?TARGET)),
-    %% file:set_cwd(Cwd).
-
-%% make_current_(Dir, SourceDir) ->
-%%     CwdRes = file:set_cwd(Dir),
-%%     io:fwrite("CwdRes = ~p~n", [CwdRes]),
-%%     io:fwrite("-- now in ~p~n", [element(2, file:get_cwd())]),
-%%     Res = file:make_symlink(SourceDir, B = ?TARGET),
-%%     io:fwrite("make_symlink(Dir = ~p, ~p, ~p) -> ~p~n", [Dir, SourceDir, B, Res]),
-%%     Res.
-
-
-list_files(Fs0, Dir) ->
-    case [F1 || F1 <- lists:sort(Fs0),
-		filelib:is_dir(filename:join(Dir, F1)),
-		F1 =/= "exodm"] of
-	[F|Fs] ->
-	    io:fwrite("~s~n", [F ++ lists:concat(["," ++ F1 || F1 <- Fs])])
+maybe_copy_vm_args(Cwd, Base, Source) ->
+    [_, Vsn] = re:split(Base, <<"_">>, [{return, list}]),
+    case filelib:is_regular(F = filename:join(
+				  [Source, "releases", Vsn, "vm.args"])) of
+	true ->
+	    case filelib:is_regular(
+		   LocalVmArgs = filename:join(Cwd, "vm.args")) of
+		true ->
+		    io:fwrite("vm.args already copied to CWD~n", []),
+		    ok;
+		false ->
+		    io:fwrite("copying vm.args to CWD...~n", []),
+		    file:copy(F, LocalVmArgs)
+	    end,
+	    SysConfig = filename:join(filename:dirname(F), "sys.config"),
+	    case filelib:is_regular(
+		   LocalSysConfig = filename:join(Cwd, "sys.config")) of
+		true ->
+		    ok;
+		false ->
+		    io:fwrite("copying sys.config to CWD...~n", []),
+		    file:copy(SysConfig, LocalSysConfig)
+	    end,
+	    ok;
+	false ->
+	    io:fwrite("WARNING: cannot find ~s~n", [F])
     end.
 
 root_dir() ->
-    filename:dirname(escript:script_name()).
+    root_dir(filename:dirname(escript:script_name())).
 
-rel_dir() ->
-    filename:join(root_dir(), "rel").
+root_dir(".") ->
+    root_dir(cwd());
+root_dir(D) ->
+    case filelib:is_dir(_X = filename:join([D, "rel", "lib"])) of
+	true ->
+	    %% io:fwrite("found \"rel\" and \"lib\"~n", []),
+	    D;
+	false ->
+	    {ok, Fs} = file:list_dir(D),
+	    case ["releases", "bin", "erts", "ctl", "exorel"] -- Fs of
+		[] ->
+		    %% io:fwrite("found \"releases\", etc.~n", []),
+		    filename:dirname(
+		      filename:dirname(
+			filename:dirname(D)));
+		_ ->
+		    abort("Cannot recognize directory~n", [])
+	    end;
+	Other ->
+	    abort("is_dir(~p) -> ~p~n", [_X, Other])
+    end.
 
-rel_lib_dir() ->
-    filename:join(rel_dir(), "lib").
+rel_dir()  -> filename:join(root_dir(), "rel").
+%% rel_dir(D) -> filename:join(root_dir(D), "rel").
+
+rel_lib_dir()  -> filename:join(rel_dir(), "lib").
+%% rel_lib_dir(D) -> filename:join(rel_dir(D), "lib").
 
 %% modified version of setup:sort_vsns/2
 sort_vsns(Rels) ->
@@ -283,3 +319,12 @@ flip(C) -> C.
 abort(Fmt, Args) ->
     io:fwrite(Fmt, Args),
     halt(1).
+
+
+%% find_root() ->
+%%     {ok,CWD} = file:get_cwd(),
+%%     find_root(CWD).
+
+cwd() ->
+    filename:dirname(filename:absname(".")).
+
