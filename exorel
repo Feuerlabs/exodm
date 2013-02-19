@@ -123,9 +123,9 @@ versions([]) ->
     end.
 
 list_files(Fs0, Dir, Exclude) ->
-    case [F1 || F1 <- lists:sort(Fs0),
-		filelib:is_dir(filename:join(Dir, F1)),
-		not lists:member(F1, Exclude)] of
+    case [vsn_part(F1) || F1 <- sort_vsns(Fs0),
+			  filelib:is_dir(filename:join(Dir, F1)),
+			  not lists:member(F1, Exclude)] of
 	[F|Fs] ->
 	    io:fwrite("~s~n", [F ++ lists:concat(["," ++ F1 || F1 <- Fs])]);
 	[] ->
@@ -141,7 +141,7 @@ current([]) ->
 	    case file:list_dir(rel_lib_dir()) of
 		{ok, []} -> nothing;
 		{ok, Fs} ->
-		    [Latest|_] = lists:reverse(sort_vsns(Fs)),
+		    [Latest|_] = sort_vsns(Fs),
 		    make_current(Latest),
 		    io:fwrite("~s~n", [vsn_part(Latest)]);
 		_ ->
@@ -301,15 +301,18 @@ take_vsn(R) ->
 
 compare_vsns(V1, V2) ->
     ToS = fun(V) ->
-                  [pad_x(X) || X <- string:tokens(V, ".")]
+                  _S = [pad_x(X) || X <- string:tokens(V, ".-")]
           end,
     ToS(V1) < ToS(V2).
 
 pad_x(X) ->
-    S = if is_integer(X) -> integer_to_list(X);
-           true -> X
-        end,
-    lists:duplicate(30 - length(S), $0) ++ [flip(C) || C <- S].
+    try _ = list_to_integer(X),
+	  lists:duplicate(30 - length(X), $0) ++ X
+    catch
+	error:_ ->
+	    [flip(C) || C <- X]
+    end.
+    %% lists:duplicate(30 - length(S), $0) ++ [flip(C) || C <- S].
 
 flip(C) when $a =< C, C =< $z -> $A + (C - $a);
 flip(C) when $A =< C, C =< $Z -> $a + (C - $A);
