@@ -231,11 +231,12 @@ pop_and_dispatch_(From, Reply, Db, Tab, Q, JobsQ, Sessions) ->
 	     end).
 
 pop_and_dispatch_run_(From, Reply, Db, Tab, Q, Sessions) ->
-    case kvdb:pop(Db, Tab, Q) of
+    %% case kvdb:pop(Db, Tab, Q) of
+    case kvdb:peek(Db, Tab, Q) of
 	done ->
 	    done(From, Reply);
-	{ok, {_, Env, Req} = Entry} ->
-	    ?debug("POP: Entry = ~p~n", [Entry]),
+	{ok, QK, {_, Env, Req} = Entry} ->
+	    ?debug("PEEK: Entry = ~p~n", [Entry]),
 	    set_user(Env, Db),
 	    {AID, DID} = exodm_db_device:dec_ext_key(Q),
 	    Protocol = exodm_db_device:protocol(AID, DID),
@@ -249,6 +250,10 @@ pop_and_dispatch_run_(From, Reply, Db, Tab, Q, Sessions) ->
 			error ->
 			    done(From, Reply);
 			_Result ->
+			    ?debug("Valid result (~p); deleting queue object~n",
+				   [_Result]),
+			    _DeleteRes = kvdb:queue_delete(Db, Tab, QK),
+			    ?debug("Delete (~p) -> ~p~n", [QK, _DeleteRes]),
 			    done(From, Reply),
 			    next
 		    end;
@@ -257,7 +262,9 @@ pop_and_dispatch_run_(From, Reply, Db, Tab, Q, Sessions) ->
 			   "Entry now blocking queue~n",
 			   [Entry, Sessions]),
 		    done(From, Reply)
-	    end
+	    end;
+	_ ->
+	    done(From, Reply)
     end.
 
 

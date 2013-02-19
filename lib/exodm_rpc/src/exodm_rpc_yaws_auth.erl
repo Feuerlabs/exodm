@@ -16,8 +16,8 @@ auth(#arg{headers = Hdrs} = Arg, _RequestBody) ->
     %% the request arrives over a secure connection. Currently, we only
     %% look at the authentication record.
     case Hdrs#headers.authorization of
-	{UserStr, Pwd, "Basic " ++ I} ->
-	    ?info("Authenticating ~s (Basic ~s)...~n", [UserStr, I]),
+	{UserStr, Pwd, "Basic " ++ _I} ->
+	    ?debug("Authenticating ~s...~n", [UserStr]),
             User = list_to_binary(UserStr),
             case find_account(User) of
                 Aid when is_binary(Aid) ->
