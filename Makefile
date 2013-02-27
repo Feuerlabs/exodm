@@ -44,7 +44,7 @@ endif
 
 node:
 ifdef n
-	./make_node -target nodes/$(n) -rel rel/$(RELNAME) -- -name $(n)
+	./make_node -target $(PWD)/nodes/$(n) -rel $(PWD)/rel/$(RELNAME) -- -name $(n)
 else
 	echo "no node given (e.g. n=foo make node)"
 	$(error, no node given)

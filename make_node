@@ -56,7 +56,36 @@ make_node(#state{target = T, rel = R, vm_args = As}) when T=/=undefined, R=/=und
 	    end;
 	{error,_} = E ->
 	    error({could_not_consult, [SysConfigF, E]})
+    end,
+    Lnk = filename:join([T, "rel", "exodm"]),
+    filelib:ensure_dir(Lnk),
+    file:make_symlink(abs_target(R), Lnk),
+    _CpR = file:copy(filename:join(R, "ctl"), filename:join(T, "ctl")),
+    write_env(R, T).
+
+abs_target(R) ->
+    F = filename:absname(R),
+    case file:read_link(F) of
+	{ok, Filename} ->
+	    case filename:pathtype(Filename) of
+		relative ->
+		    filename:join(filename:dirname(R), Filename);
+		absolute ->
+		    Filename
+	    end;
+	{error,_} ->
+	    F
     end.
+
+write_env(R, T) ->
+    io:fwrite("write_env(~p, ~p)~n", [R, T]),
+    OutF = filename:join(T, ".exodm_env"),
+    Rb = list_to_binary(R),
+    Tb = list_to_binary(T),
+    Ex = filename:dirname(filename:dirname(Tb)),
+    Bin = <<"EXODM_DIR=",Ex/binary,"\n",
+	    "EXODM_RELEASE_DIR=",Rb/binary,"\n">>,
+    file:write_file(OutF, Bin).
 
 read_start_erl_data(R) ->
     io:fwrite("Reading ~s/releases/start_erl.data~n", [R]),
