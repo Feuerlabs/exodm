@@ -1,12 +1,14 @@
 -module(exodm_rpc_handler).
 
 -compile(export_all).
--export([handler_session/1]).
+-export([handler_session/1, web_rpc/3]).
+-export([exoport_handler_session/1, exoport_rpc/3]).
 -export([notification/5, notification/6,    % don't use notification/6!
 	 queue_message/5]).
 -export([int_json_rpc/1]).
 
 -export([device_sessions/1, device_sessions/2]).
+-export([find_device_session/2, find_device_session/3]).
 -export([add_device_session/2, add_device_session/3]).
 -export([rm_device_session/2, rm_device_session/3]).
 -export([std_specs/0]).
@@ -70,13 +72,24 @@ device_sessions(ExtID) when is_binary(ExtID) ->
     ?debug("extid ~p -> ~p~n", [ExtID, Res]),
     [{A,B} || {A,B,_} <- lists:reverse(lists:keysort(3, Res))].
 
+find_device_session(AID, DID, Protocol) ->
+    find_device_session(exodm_db_device:enc_ext_key(AID, DID), Protocol).
+
+find_device_session(ExtID, Protocol) when is_binary(ExtID) ->
+    case lists:keyfind(Protocol, 2, device_sessions(ExtID)) of
+	{Pid, _} ->
+	    {ok, Pid};
+	false ->
+	    error
+    end.
+
 %% @doc Handle a JSON-RPC request; once go-ahead is given from load control.
 handler_session(Arg) ->
     jobs:run(
       exodm_rpc_from_web,
       fun() ->
 	      try
-		  ?debug("arg ~p", [Arg]),
+		  ?debug("arg ~p~n", [Arg]),
 		  {ok,{IP,_}} = sockname(Arg#arg.clisock),
 		  Env0 = [{client_ip_port,Arg#arg.client_ip_port},
 			  {ip,IP},
@@ -88,7 +101,48 @@ handler_session(Arg) ->
 		  error:E ->
 		      Trace = erlang:get_stacktrace(),
 		      ?debug("handler_session crashed:~n"
-			     "~p~n~p", [E, Trace]),
+			     "~p~n~p~n", [E, Trace]),
+		      error({E, Trace})
+	      end
+      end).
+
+exoport_handler_session(#arg{req = #http_request{method = 'GET'}} = Arg) ->
+    jobs:run(
+      exodm_rpc_from_web,
+      fun() ->
+	      try
+		  ?debug("exoport GET, arg = ~p~n", [Arg]),
+		  {status, 404}
+	      catch
+		  error:E ->
+		      Trace = erlang:get_stacktrace(),
+		      ?debug("exoport handler crashed:~n"
+			     "~p~n~p~n", [E, Trace]),
+		      error({E, Trace})
+	      end
+      end);
+exoport_handler_session(#arg{req = #http_request{method = 'POST'}} = Arg) ->
+    jobs:run(
+      exodm_rpc_from_web,
+      fun() ->
+	      try
+		  ?debug("exoport_session, arg = ~p~n", [Arg]),
+		  {ok,{IP,_}} = sockname(Arg#arg.clisock),
+		  State0 = case Arg#arg.state of
+			       L when is_list(L) -> L;
+			       undefined  -> []
+			   end,
+		  Env0 = [{client_ip_port,Arg#arg.client_ip_port},
+			  {ip,IP},
+			  {ssl,is_ssl(Arg#arg.clisock)},
+			  {client,json_rpc}|State0],
+		  Arg2=Arg#arg{state = Env0 },
+		  yaws_rpc:handler_session(Arg2, {?MODULE, exoport_rpc})
+	      catch
+		  error:E ->
+		      Trace = erlang:get_stacktrace(),
+		      ?debug("exoport handler crashed:~n"
+			     "~p~n~p~n", [E, Trace]),
 		      error({E, Trace})
 	      end
       end).
@@ -143,6 +197,7 @@ web_rpc(St, Req, Session) ->
 	    {false, error_response({Err, Data})}
     end.
 
+
 web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
     ?debug("web_rpc_: Method = ~p; Request = ~p~n", [Method, Request]),
     AID = exodm_db_session:get_aid(),
@@ -180,7 +235,8 @@ web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
 			    {true, {response, Response}};
 			{error, Reason} ->
 			    ?debug("request NOT verified: ~p~n", [Reason]),
-			    Response = error_response(Reason),
+			    Response = error_response(
+					 {validation_error, Reason}),
 			    {false, Response}
 		    end;
 		error ->
@@ -190,7 +246,7 @@ web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
 	    web_rpc_system_(Db, AID, Env0, RPC0)
     end.
 
-web_rpc_system_(Db, AID, Env0, {call, Method, Request}) ->
+web_rpc_system_(_Db, AID, Env0, {call, Method, Request}) ->
     %% Check if this is a general RPC, supported by one of the system
     %% specs. Otherwise, it's an error.
     ?debug("no device-id~n", []),
@@ -217,6 +273,81 @@ web_rpc_system_(Db, AID, Env0, {call, Method, Request}) ->
 	    ?debug("is_exodm_method(~p, ~p) -> error~n", [Method,AID]),
 	    {false, error_response({method_not_found, Method})}
     end.
+
+
+exoport_rpc(St, Req, Session) ->
+    ?debug("exoport_rpc(~p, ~p, ~p)~n", [St, Req, Session]),
+    try kvdb_conf:in_transaction(
+	  fun(Db) ->
+		  case exoport_rpc_(Db, St, Req) of
+		      {true, Response} -> {true, 0, Session, Response};
+		      Other -> Other
+		  end
+	  end)
+    catch
+	error:E ->
+	    ?error("*** ERROR! ~p:exoport_rpc(~p, ~p, ~p)~n"
+		   "  E = ~p~n"
+		   "  Trace = ~p~n",
+		   [?MODULE, St, Req, Session, E, erlang:get_stacktrace()]),
+	    {false, error_response({internal_error,
+				    lists:flatten(io_lib:format("~p", [E]))})};
+	throw:{error_response, Err, Data} ->
+	    {false, error_response({Err, Data})}
+    end.
+
+exoport_rpc_(_Db, _InitEnv, {call, "exoport:get-messages", Args0} = Req) ->
+    ?debug("exoport_rpc_(); get() -> ~p~n", [get()]),
+    {did, AID, DID} = exodm_db_session:get_user(),
+    ExtID = exodm_db:enc_ext_key(AID, DID),
+    Args = case Args0 of
+	       {struct, As} -> As;
+	       {array, [] } -> []
+	   end,
+    N = case lists:keyfind("n", 1, Args) of
+	    false -> 50;
+	    {_, N0} ->
+		to_int(N0)
+	end,
+    Timeout = case lists:keyfind("timeout", 1, Args) of
+		  false -> 0;
+		  {_, TO} ->
+		      to_int(TO)
+	      end,
+    Msgs = exoport_rpc_exoport_http:recv(ExtID, N, Timeout),
+    {true, {response, {struct, [{"result", "ok"},
+				{"messages", Msgs}]}}};
+exoport_rpc_(_Db, InitEnv, {call, FullMethod, {struct, Args}} = Req) ->
+    try
+	?debug("exoport_rpc_(); get() -> ~p~n", [get()]),
+	{did, AID, DID} = exodm_db_session:get_user(),
+	[Mod, Method] = re:split(FullMethod, <<":">>, [{return,binary}]),
+	?debug("Mod = ~p, Method = ~p~n", [Mod, Method]),
+	Yang = <<Mod/binary, ".yang">>,
+	Env = [{yang, Yang},
+	       {'device-id', DID},
+	       {'aid', exodm_db:account_id_key(AID)} | InitEnv],
+	case notification(Method, Args, Env, AID, DID) of
+	    {error, Reason} ->
+		?debug("notification() -> {error, ~p}~n", [Reason]),
+		{false, error_response({internal_error,
+					lists:flatten(
+					  io_lib:format("~p", [Reason]))})};
+	    ValidReturn ->
+		{true, {response, ValidReturn}}
+	end
+    catch
+	error:E ->
+	    {false, error_response(E)}
+    end.
+
+to_int(L) when is_list(L) ->
+    list_to_integer(L);
+to_int(I) when is_integer(I) ->
+    I;
+to_int(B) when is_binary(B) ->
+    list_to_integer(binary_to_list(B)).
+
 
 
 check_if_device_exists(AID, DID) ->
@@ -291,14 +422,22 @@ notification(Method, Elems, Env, AID, DID) ->
 	    {input, _, _, InputSpec} = lists:keyfind(input, 1, SubSpec),
 	    ?debug("Northbound RPC = ~p~n", [RPC]),
 	    FullMethod = json_method(Method, Module, SubSpec),
-	    Params = data_to_json(InputSpec, Env, Elems),
-	    JSON = {struct, [{"jsonrpc", "2.0"},
-			     {"method", FullMethod},
-			     {"id", make_id(Env, AID)},
-			     {"params", {struct, Params}}]},
-	    ?debug("JSON = ~p~n", [JSON]),
-	    post_json(rpc, [{method, FullMethod},
-			    {spec, SubSpec} | URLEnv ++ Env], JSON)
+	    try
+		Params = data_to_json(InputSpec, Env, Elems),
+		JSON = {struct, [{"jsonrpc", "2.0"},
+				 {"method", FullMethod},
+				 {"id", make_id(Env, AID)},
+				 {"params", {struct, Params}}]},
+		?debug("JSON = ~p~n", [JSON]),
+		post_json(rpc, [{method, FullMethod},
+				{spec, SubSpec} | URLEnv ++ Env], JSON)
+	    catch
+		error:Err ->
+		    ?error("ERROR notification()~n"
+			   "Err = ~p~n"
+			   "Trace = ~p~n", [Err, erlang:get_stacktrace()]),
+		    error(Err)
+	    end
     end.
 
 json_method(Method, Module, SubSpec) ->
@@ -561,7 +700,7 @@ attempt_dispatch(_, _, _, _) ->
     ok.
 
 
-error_response({Error, _Data} = E) ->
+error_response({Error, Data} = E) ->
     ?debug("error_response(~p)~n", [E]),
     {Code, Str} =
 	case lists:keyfind(
@@ -572,7 +711,7 @@ error_response({Error, _Data} = E) ->
 	end,
     {error, {struct, [{"code", Code},
 		      {"message", Str},
-		      {"data", pp_data(Error)}]}}.
+		      {"data", pp_data(Data)}]}}.
 
 pp_data(A) when is_atom(A) ->
     atom_to_binary(A, latin1);
@@ -635,11 +774,18 @@ accept_response(Attrs, {rpc, _, _, Spec}) ->
     case lists:keyfind(output, 1, Spec) of
 	{output, _, _, Elems} ->
 	    %% {_, TID} = lists:keyfind('transaction-id', 1, Attrs),
-	    JSON = data_to_json(
-		     Elems, Attrs, [{'rpc-status', <<"accepted">>},
-				    {final, false}]),
-            ?debug("json ~p", [JSON]),
-	    {struct, JSON};
+	    try JSON = data_to_json(
+			 Elems, Attrs, [{'rpc-status', <<"accepted">>},
+					{final, false}]),
+		 ?debug("json ~p", [JSON]),
+		 {struct, JSON}
+	    catch
+		error:Err ->
+		    ?error("data_to_json() - ERROR:~n"
+			   "Err = ~p~n"
+			   "Trace = ~p~n", [Err, erlang:get_stacktrace()]),
+		    error(Err)
+	    end;
 	false ->
 	    "\"ok\""
     end.
@@ -769,16 +915,7 @@ process_reply({ok, {{200,_OK},_Hdrs,JSON}}, Env) ->
 		    {_, Spec} = lists:keyfind(spec, 1, Env),
 		    case lists:keyfind(output, 1, Spec) of
 			{output, _, _, OutputSpec} ->
-			    ?debug("validate reply:~nResult = ~p~nSpec = ~p~n",
-				   [Result, OutputSpec]),
-			    case yang_json:validate_rpc_request(
-				   OutputSpec, struct_elems(Result)) of
-				{ok, ValidReturn, _} ->
-				    yang_json:remove_yang_info(
-				      ValidReturn);
-				{error, Reason} ->
-				    error(Reason)
-			    end;
+			    to_output_form(Result, Env, OutputSpec);
 			false ->
 			    %% No output defined - let's just return 'ok'
 			    ok
@@ -792,6 +929,30 @@ process_reply({ok, {{200,_OK},_Hdrs,JSON}}, Env) ->
 process_reply(Other, Env) ->
     ?debug("process_reply(~p, ~p) - unexpected!~n", [Other, Env]),
     {error, {unexpected_reply, Other}}.
+
+get_output_form(Env) ->
+    proplists:get_value(output, Env, json).
+
+to_output_form(Result, Env, OutputSpec) ->
+    to_output_form(get_output_form(Env), Result, Env, OutputSpec).
+
+to_output_form(internal, Result, _, OutputSpec) ->
+    ?debug("validate reply:~nResult = ~p~nSpec = ~p~n",
+	   [Result, OutputSpec]),
+    case yang_json:validate_rpc_request(
+	   OutputSpec, struct_elems(Result)) of
+	{ok, ValidReturn, _} ->
+	    ?debug("ValidReturn = ~p~n",
+		   [ValidReturn]),
+	    yang_json:remove_yang_info(
+	      ValidReturn);
+	{error, Reason} ->
+	    error(Reason)
+    end;
+to_output_form(json, Result, Env, OutputSpec) ->
+    Output = data_to_json(OutputSpec, Env, struct_elems(Result)),
+    ?debug("Output = ~p~n", [Output]),
+    {struct, Output}.
 
 
 struct_elems({struct, Elems}) -> Elems.

@@ -3,7 +3,7 @@
 
 -behaviour(gen_server).
 
--export([authenticate/3, 
+-export([authenticate/3, authenticate/4,
          logout/0,  logout/1,
          is_active/0, is_active/1, 
          refresh/0]).
@@ -45,20 +45,28 @@
 
 -define(INACTIVITY_TIMER, 5*60000).  % should be configurable?
 
+-include("exodm_db.hrl").
 -include_lib("lager/include/log.hrl").
 -define(dbg(F,A), ?debug("~p " ++ F, [self()|A])).
 
 %% @spec authenticate(Username, Password) -> {true, AID} | false
-authenticate(Aid, User, Pwd) ->
-    ?debug("user ~p, pwd ~p", [User, Pwd]),
-    UName = to_binary(User),
-    case gen_server:call(?MODULE, {auth, Aid, UName, to_binary(Pwd)}, 10000) of
+authenticate(AID, User, Pwd) ->
+    authenticate(user, AID, User, Pwd).
+
+authenticate(Type, AID, ID0, Pwd) ->
+    ?debug("type = ~p, aid = ~p, id ~p~n", [Type, AID, ID0]),
+    ID = session_id(Type, AID, to_binary(ID0)),
+    case gen_server:call(
+           ?MODULE, {auth, AID, ID, to_binary(Pwd)}, 10000) of
         true ->
-            put_auth_({UName, Aid, undefined}),
+            put_auth_({ID, AID, undefined}),
             true;
         false ->
             false
     end.
+
+session_id(device, AID, ID) -> {did, AID, ID};
+session_id(user  , _  , ID) -> ID.
 
 remove_account(AID) ->
     gen_server:call(?MODULE, {remove_account, AID}).
@@ -129,7 +137,7 @@ is_active(User) ->
         true -> true;
         _ ->
             K = case User of
-                    {did,_} -> User;
+                    {did,_,_} -> User;
                     _ -> to_binary(User)
                 end,
             ets:member(?TAB, K)
@@ -230,7 +238,7 @@ is_sticky() ->
 set_auth_as_device(DID0) ->
     ?dbg("set_auth_as_device(~p)~n", [DID0]),
     {AID, DID} = exodm_db_device:dec_ext_key(DID0),
-    put_auth_({{did,DID}, AID, undefined}),
+    put_auth_({session_id(device, AID, DID), AID, undefined}),
     {true, AID, undefined}.
 
 
@@ -248,7 +256,7 @@ get_aid()  -> if_active_(get_auth_(), fun({_,X,_}) -> X end).
 get_role() -> if_active_(get_auth_(), fun({_,_,X}) -> X end).
 get_auth() -> if_active_(get_auth_(), fun(X) -> X end).
 
-if_active_({{did,_},_,_} = X, Ret) ->
+if_active_({{did,_,_},_,_} = X, Ret) ->
     Ret(X);
 if_active_({UName,_,_} = X, Ret) ->
     ?dbg("if_active_(~p, Ret, ~p)~n", [X, Ret]),
@@ -310,17 +318,17 @@ init([]) ->
     exodm_db_account:subscribe(delete),
     {ok, #st{}}.
 
-handle_call({auth, A, U, P}, From, St) ->
-    ?debug("user ~p, pwd ~p", [U, P]),
-    case ets:lookup(?TAB, U) of
+handle_call({auth, A, ID, P}, From, St) ->
+    ?debug("aid = ~p, id = ~p", [A, ID]),
+    case ets:lookup(?TAB, ID) of
 	[] ->
             ?debug("not in table", []),
-	    {noreply, pending(A, U,[{From,P}], St)};
+	    {noreply, pending(A, ID, [{From, P}], St)};
         [#session{sha = undefined}] ->
             ?debug("sha undefined", []),
             %% system processes have accessed user, but not authenticated
             %% sessions.
-            {noreply, pending(A, U, [{From,P}], St)};
+            {noreply, pending(A, ID, [{From,P}], St)};
 	[#session{hash = Hash, sha = Sha} = Session] ->
            ?debug("sha defined", []),
 	    case sha(Hash, P) of
@@ -453,50 +461,62 @@ process_pending(Reply, Waiting, Aid, User, St) ->
 	    end
     end.
 
-pending(A, U, [{_, P}|_] = Clients, #st{pending = Pend, procs = Procs} = St) ->
-    ?debug("user ~p, pending ~p", [U, Pend]),
-    case dict:is_key(U, Pend) of
+pending(A, ID, [{_, P}|_] = Clients, #st{pending = Pend, procs = Procs} = St) ->
+    ?debug("id ~p, pending ~p", [ID, Pend]),
+    case dict:is_key(ID, Pend) of
 	true ->
             ?debug("is key", []),
-	    St#st{pending = dict:append_list(U, Clients, Pend)};
+	    St#st{pending = dict:append_list(ID, Clients, Pend)};
 	false ->
             ?debug("is not key", []),
             Me = self(),
             {Pid,_} = spawn_monitor(fun() ->
-                                            first_auth(A, U, P, Me)
+                                            first_auth(A, ID, P, Me)
                                     end),
-            St#st{pending = dict:store(U, Clients, Pend),
-                  procs = dict:store(Pid, U, Procs)}
+            St#st{pending = dict:store(ID, Clients, Pend),
+                  procs = dict:store(Pid, ID, Procs)}
     end.
 
-first_auth(A, U, P, Parent) ->
-    Res = first_auth_(U, P),
-    gen_server:cast(Parent, {first_auth, self(), A, U, Res}).
+first_auth(A, ID, P, Parent) ->
+    Res = first_auth_(ID, P),
+    gen_server:cast(Parent, {first_auth, self(), A, ID, Res}).
 
-first_auth_(U, P) ->
-    case exodm_db_user:lookup_attr(U, password) of
+first_auth_(ID, P) ->
+    LookupRes = case ID of
+                    {did, AID, DID} ->
+                        exodm_db_device:lookup_attr(AID, DID, ?DEV_DB_PASSWORD);
+                    _ ->
+                        exodm_db_user:lookup_attr(ID, password)
+                end,
+    case LookupRes of
         [] ->
-            ?debug("user ~p, no hash", [U]),
-            false;
+            ?debug("id ~p, no hash", [ID]),
+            case ID of
+                {did, _, _} ->
+                    ?debug("allow device ~p with no password~n", [ID]),
+                    {true, <<>>, undefined};
+                _ ->
+                    false
+            end;
         [{_, Hash}] ->
-            ?debug("user ~p, hash ~p", [U, Hash]),
+            ?debug("id ~p, hash ~p", [ID, Hash]),
             case P of
                 no_password ->
                     %% means we're faking authentication of a system process
                     %% we can't make a sha hash, since we don't know the pwd.
-                    ?debug("user ~p, no password ", [U]),
+                    ?debug("id ~p, no password ", [ID]),
                     {true, Hash, undefined};
                 _ when is_binary(P) ->
-                    ?debug("user ~p, password ~p", [U, P]),
+                    ?debug("id ~p, password ~p", [ID, P]),
                     {ok, HashStr} = bcrypt:hashpw(P, Hash),
-                    ?debug("user ~p, new hash ~p ", [U, HashStr]),
+                    ?debug("id ~p, new hash ~p ", [ID, HashStr]),
                     case list_to_binary(HashStr) of
                         Hash ->
-                            ?debug("bcrypt hash matches for ~p~n", [U]),
+                            ?debug("bcrypt hash matches for ~p~n", [ID]),
                             {true, Hash, sha(Hash, P)};
                         _ ->
                             ?debug("bcrypt hash doesn't match for ~p~n"
-                                   "~p | ~p~n", [U, HashStr, Hash]),
+                                   "~p | ~p~n", [ID, HashStr, Hash]),
                             false
                     end
             end

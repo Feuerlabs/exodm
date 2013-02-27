@@ -34,8 +34,8 @@ ping() ->
 
 %% Notification from device to server
 notification(Module, Method, Elems) ->
-    {did, DID} = exodm_db_session:get_user(),
-    AID = exodm_db_session:get_aid(),
+    {did, AID, DID} = exodm_db_session:get_user(),
+    %% AID = exodm_db_session:get_aid(),
     Yang = <<(to_binary(Module))/binary, ".yang">>,
     exodm_rpc_handler:notification(
       Method, Elems, [{yang, Yang},
@@ -44,12 +44,12 @@ notification(Module, Method, Elems) ->
 
 %% RPC from device to server
 rpc(Module, Method, Elems) ->
-    {did, DID} = exodm_db_session:get_user(),
-    AID = exodm_db_session:get_aid(),
+    {did, AID, DID} = exodm_db_session:get_user(),
     Yang = <<(to_binary(Module))/binary, ".yang">>,
     Env = [{yang, Yang},
 	   {'device-id', exodm_db:decode_id(DID)},
-	   {aid, exodm_db:account_id_key(AID)}],
+	   {aid, exodm_db:account_id_key(AID)},
+	   {output, internal}],
     exodm_rpc_handler:notification(Method, Elems, Env, AID, DID).
 
 queue_notification(Module, Type, Env0, Method, Elems) when

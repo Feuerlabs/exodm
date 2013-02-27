@@ -86,7 +86,7 @@ add_session_(A, SC0, #conf{id = Id,
 			   docroot = Docroot,
 			   sconf = Sconfs0} = Conf) ->
     SC = expand_sconf(SC0, A),
-    Sconfs = Sconfs0 ++ [SC],
+    Sconfs = Sconfs0 ++ SC,
     {ok, SCy, GCy, ChildSpecs} =
         yaws_api:embedded_start_conf(Docroot, Sconfs, GconfList, Id),
     case yaws_api:setconf(GCy, SCy) of
@@ -176,23 +176,30 @@ find_sconfs() ->
 		    {ok, SC} when is_list(SC) ->
 			Conf = expand_sconf(SC, A),
 			io:fwrite("Conf (~p): ~p~n", [A, Conf]),
-			[Conf | Acc];
+			Conf ++ Acc;
 		    _ ->
 			Acc
 		end
 	end, [], As)).
 
+expand_sconf([], _) ->
+    [];
+expand_sconf([{sconf, L}|T], A) ->
+    [expand_sconf_(L, A)|expand_sconf(T, A)];
 expand_sconf(L, A) when is_list(L) ->
+    [expand_sconf_(L, A)].
+
+expand_sconf_(L, A) when is_list(L) ->
     case is_string(L) of
 	true ->
 	    Envs = [{K, env_value(K, A)} || K <- ["PRIV_DIR", "LIB_DIR"]],
 	    expand_env(Envs, L);
 	false ->
-	    [expand_sconf(X, A) || X <- L]
+	    [expand_sconf_(X, A) || X <- L]
     end;
-expand_sconf(T, A) when is_tuple(T) ->
-    list_to_tuple([expand_sconf(X, A) || X <- tuple_to_list(T)]);
-expand_sconf(X, _) ->
+expand_sconf_(T, A) when is_tuple(T) ->
+    list_to_tuple([expand_sconf_(X, A) || X <- tuple_to_list(T)]);
+expand_sconf_(X, _) ->
     X.
 
 is_string(L) ->

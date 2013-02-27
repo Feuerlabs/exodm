@@ -33,6 +33,10 @@ request_timeout({_, Env, {request, _, {call, M, Req, _}}}) ->
     ok.
 
 bert_rpc(Pid, M, F, As, Req, Env, AID, DID) ->
+    try
+	dbg:tracer(),
+	dbg:tpl(bert_rpc_exec,x),
+	dbg:p(all,[c]),
     Result = (catch nice_bert_rpc:call(Pid, M, F, [remove_yang_info(As)])),
     ?debug("RPC Result = ~p~n", [Result]),
     case Result of
@@ -43,6 +47,10 @@ bert_rpc(Pid, M, F, As, Req, Env, AID, DID) ->
 	    ok;
 	_Other ->
 	    error
+    end
+    after
+	dbg:ctpl(bert_rpc_exec),
+	dbg:stop()
     end.
 
 remove_yang_info([As]) when is_list(As) ->

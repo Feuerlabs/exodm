@@ -44,6 +44,7 @@
 -define(DEV_DB_SERVER_KEY,      <<"server-key">>).
 -define(DEV_DB_SESSION_TIMEOUT, <<"session-timeout">>).
 -define(DEV_DB_GROUPS,          <<"groups">>).
+-define(DEV_DB_PASSWORD,        <<"password">>).
 
 %% Users
 -define(USER_DB_NAME,     <<"name">>).

@@ -23,7 +23,8 @@
 -export([new/2,
 	 delete/1, 
 	 update/2, 
-	 lookup/1, 
+	 lookup/1,
+	 lookup_name/1,
 	 lookup_by_name/1, 
 	 exist/1,
 	 is_empty/1]).
@@ -158,19 +159,30 @@ create_exodm_account_(_Db) ->
 		 {ok, AIDVal::binary()}.
 
 new(Name, Options) when is_binary(Name), is_list(Options) ->
-    exodm_db:in_transaction(
-      fun(_) ->
-              case lookup_by_name(Name) of
-		  false ->
-                      {ok, AIDVal} = new1(Name, Options),
-                      publish(add, Name),
-                      publish(add, AIDVal),
-                      ok;
-                  _Other -> error('object-exists')
-              end
-      end);
+    case valid_name(Name) of
+	true ->
+	    exodm_db:in_transaction(
+	      fun(_) ->
+		      case lookup_by_name(Name) of
+			  false ->
+			      {ok, AIDVal} = new1(Name, Options),
+			      publish(add, Name),
+			      publish(add, AIDVal),
+			      ok;
+			  _Other -> error('object-exists')
+		      end
+	      end);
+	false ->
+	    error('illegal-name')
+    end;
 new(Name, Options) when is_list(Name) ->
     new(to_binary(Name), Options).
+
+valid_name(<<C,_/binary>>) ->
+    not lists:member(C, exodm_db:delimiters());
+valid_name(_) ->
+    false.
+
 
 new1(AcctName, Options) ->
     case lists:keyfind(?USER_OPT_NAME, 1, Options) of
@@ -308,6 +320,15 @@ lookup_by_name(AName) when is_binary(AName) ->
                       false
               end
       end).
+
+lookup_name(AID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    case read(AID, ?ACC_DB_NAME) of
+	[] ->
+	    {error, not_found};
+	[{_,_,Name}]  ->
+	    {ok, Name}
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc

@@ -29,19 +29,34 @@
 	 %% 		      ]}
 	 %% 		    ]}]},
 	 {yaws_sconf, [
-		       {id, "EXODM_RPC"},
-		       {appmods, [{"exodm", exodm_rpc_yaws_appmod}]},
-		       {xtra_docroots, ["/exodm/rpc","$PRIV_DIR/www"]},
-		       {port, 8000},
-		       {auth, [{mod, exodm_rpc_yaws_auth},
-			       {realm, "exodm@feuerlabs.com"},
-			       {dir, "/exodm"}]},
-		       {listen, {0,0,0,0}},
-		       {ssl, [{keyfile, "$PRIV_DIR/keys/server.key"},
-			      {certfile, "$PRIV_DIR/keys/server.crt"},
-			      {password, "Exosense"}]}
-		      ]},
-
+		       {sconf, [
+				{id, "EXODM_RPC"},
+				{appmods, [{"exodm", exodm_rpc_yaws_appmod}]},
+				{xtra_docroots, ["/exodm/rpc","$PRIV_DIR/www"]},
+				{port, 8000},
+				{auth, [{mod, exodm_rpc_yaws_auth},
+					{realm, "exodm@feuerlabs.com"},
+					{dir, "/exodm"}]},
+				{listen, {0,0,0,0}},
+				{ssl, [{keyfile, "$PRIV_DIR/keys/server.key"},
+				       {certfile, "$PRIV_DIR/keys/server.crt"},
+				       {password, "Exosense"}]}
+			       ]},
+		       {sconf, [
+				{id, "EXOPORT_RPC"},
+				{appmods, [{"/", exodm_rpc_yaws_appmod}]},
+				{xtra_docroots, ["/exoport",
+						 "$PRIV_DIR/exoport/www"]},
+				{port, 8010},
+				{auth, [{mod, exodm_rpc_yaws_auth},
+					{realm, "exodm@feuerlabs.com"},
+					{dir, "/exoport"}]},
+				{listen, {0,0,0,0}},
+				{ssl, [{keyfile, "$PRIV_DIR/keys/server.key"},
+				       {certfile, "$PRIV_DIR/keys/server.crt"},
+				       {password, "Exosense"}]}
+			       ]}
+		       ]},
 	 {jobs, [
 		 {queues, [
 			   {exodm_rpc_from_web, standard_rate, 100},

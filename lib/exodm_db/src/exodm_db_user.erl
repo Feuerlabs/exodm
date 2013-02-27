@@ -72,24 +72,36 @@ publish(Event, Data) when Event==add; Event==delete ->
 		 {error, Reason::term()}.
 
 new(UName, Options) ->
-    exodm_db:in_transaction(
-      fun(_) ->
-              case exist(UName) of  %% FIXME! checked twice, also in new_
-		  true ->
- 		      ?debug("found ~p",[UName]),
-		      error('object-exists');
-		  false ->
-                      case new_(UName, Options) of
-                          {ok, UserName} ->
-                              lager:debug("user ~p created", [UserName]),
-                              publish(add, UserName),
-                              ok;
-                          Other ->
-                              lager:debug("new result ~p returned", [Other]),
-                              Other
-                      end
-              end
-     end).
+    case valid_name(UName) of
+	true ->
+	    exodm_db:in_transaction(
+	      fun(_) ->
+		      case exist(UName) of  %% FIXME! checked twice, also in new_
+			  true ->
+			      ?debug("found ~p",[UName]),
+			      error('object-exists');
+			  false ->
+			      case new_(UName, Options) of
+				  {ok, UserName} ->
+				      lager:debug("user ~p created", [UserName]),
+				      publish(add, UserName),
+				      ok;
+				  Other ->
+				      lager:debug(
+					"new result ~p returned", [Other]),
+				      Other
+			      end
+		      end
+	      end);
+	false ->
+	    error(invalid_name)
+    end.
+
+valid_name(<<C,_/binary>>) ->
+    not lists:member(C, exodm_db:delimiters());
+valid_name(_) ->
+    false.
+
 
 new_(UName, Options) ->
     lager:debug("uname ~p, options ~p~n", [UName, Options]),

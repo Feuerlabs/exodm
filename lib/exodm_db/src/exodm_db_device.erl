@@ -305,15 +305,15 @@ remove_keys(L) ->
 convert_attr({K,V}) ->
     {K, decode_value(K, V)}.
 
-lookup_attr(AID, DID, Attr) when is_atom(Attr) ->
+lookup_attr(AID, DID, Attr) when is_atom(Attr); is_binary(Attr) ->
     lookup_attr_(table(AID), DID, Attr).
 
-lookup_attr_(Tab, DID, Attr) when is_atom(Attr) ->
+lookup_attr_(Tab, DID, Attr) when is_atom(Attr); is_binary(Attr) ->
     case read_value(Tab, exodm_db:encode_id(DID), to_binary(Attr)) of
 	false -> [];
 	Value -> [{Attr,Value}]
     end.
-	     
+
 
 lookup_groups(AID, DID0) ->
     Tab = table(AID),
@@ -484,6 +484,11 @@ encode_value(?DEV_DB_TIMESTAMP, L) when is_number(L) ->
     exodm_db:uint_to_bin(L);
 encode_value(?DEV_DB_SESSION_TIMEOUT, T) ->
     list_to_binary(integer_to_list(T));
+encode_value(?DEV_DB_PASSWORD, P0) ->
+    P = to_binary(P0),
+    {ok, Salt} = bcrypt:gen_salt(),
+    {ok, Hash} = bcrypt:hashpw(P, Salt),
+    to_binary(Hash);
 encode_value(_, V) ->
     to_binary(V).
 

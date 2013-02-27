@@ -117,7 +117,9 @@ exodm_test_() ->
 			       		 ?my_t(test_notification(Cfg2)),
 			       		 ?my_t(device_json_rpc1(Cfg2)),
 			       		 ?my_t(push_config_set1(Cfg2)),
-					 ?my_t(upstream_rpc(Cfg2))
+					 ?my_t(upstream_rpc(Cfg2)),
+					 ?my_t(upstream_http_rpc(Cfg2)),
+					 ?my_t(upstream_http_rpc2(Cfg2))
 			       		]
 			       	end}
 			      ]
@@ -161,6 +163,9 @@ populate(Cfg) ->
     ok = ?rpc(exodm_db_device_type, new,
 	      [AID2, <<"type1">>,
 	       [{'protocol', <<"exodm_bert">>}]]),
+    ok = ?rpc(exodm_db_device_type, new,
+	      [AID2, <<"htype">>,
+	       [{'protocol', <<"exoport_http">>}]]),
     ok = ?rpc(exodm_db_device, new,
 	      [AID2, DID1 = <<"x00000001">>,
 	       [
@@ -191,9 +196,20 @@ populate(Cfg) ->
 		{msisdn,"070100000003"},
 		{groups, [GID1]}
 	       ]]),
+    ok = ?rpc(exodm_db_device, new,
+	      [AID2, DID4 = <<"hclient">>,
+	       [
+		{'device-type', <<"htype">>},
+		{'password', <<"password">>}
+	       ]]),
+    ok = ?rpc(exodm_db_device, new,
+	      [AID2, DID5 = <<"hclient2">>,
+	       [
+		{'device-type', <<"htype">>}  % no password
+	       ]]),
     ?debugFmt("AID1 = ~p; AID2 = ~p;~n"
-	      "DID1 = ~p; DID2 = ~p; DID3 = ~p~n",
-	      [AID1, AID2, DID1, DID2, DID3]),
+	      "DID1 = ~p; DID2 = ~p; DID3 = ~p; DID4 = ~p; DID5 = ~p~n",
+	      [AID1, AID2, DID1, DID2, DID3, DID4, DID5]),
     ok.
 
 list_users(Cfg) ->
@@ -371,7 +387,9 @@ add_config_set_member_scr() ->
 					     <<"x00000003">>]),
 			exodm_db_config:add_config_set_members(
 			  AID, <<"test2">>, [<<"x00000001">>,
-					     <<"x00000002">>])
+					     <<"x00000002">>,
+					     <<"hclient">>,
+					     <<"hclient2">>])
 		end)
       end).
 
@@ -568,6 +586,9 @@ json_list_device_types(_Cfg) ->
 				      {struct, [{"name", "devtype_1"},
 						{"protocol", "ga_ck3"}
 					       ]},
+				      {struct, [{"name", "htype"},
+						{"protocol", "exoport_http"}
+					       ]},
 				      {struct, [{"name", "type1"},
 						{"protocol", "exodm_bert"}
 					       ]}
@@ -620,9 +641,9 @@ json_list_devices(_Cfg) ->
 					  {"previous", ""}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"devices",
-				    {array, [{struct,[{"dev-id","x00000001"}|_]},
-					     {struct,[{"dev-id","x00000002"}|_]},
-					     {struct,[{"dev-id","x00000003"}|_]}
+				    {array, [{struct,[{"dev-id","hclient"}|_]},
+					     {struct,[{"dev-id","hclient2"}|_]},
+					     {struct,[{"dev-id","x00000001"}|_]}
 					     ]}
 				   }]}},
 	      {"id", 1},
@@ -1107,6 +1128,30 @@ upstream_rpc(Cfg) ->
     {reply, [{evens,[2,4,6,8]}], []} = Reply,
     ok.
 
+upstream_http_rpc(Cfg) ->
+    prep_list_evens(Cfg),
+    {ok, Reply} = post_json_rpc({8010, "*" ++ ?b2l(?ACC2) ++ "*hclient",
+				 "password", "/exoport"},
+				"test:list-even", 1,
+				{struct, [{limit,9}]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct, [{"evens", {array, [2,4,6,8]}}]}},
+	      {"id", 1},
+	      {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
+upstream_http_rpc2(Cfg) ->
+    prep_list_evens(Cfg),
+    {ok, Reply} = post_json_rpc({8010, "*" ++ ?b2l(?ACC2) ++ "*hclient2",
+				 none, "/exoport"},
+				"test:list-even", 1,
+				{struct, [{limit,9}]}),
+    io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
+    {struct, [{"result", {struct, [{"evens", {array, [2,4,6,8]}}]}},
+	      {"id", 1},
+	      {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
 push_config_set_meth(Args) ->
     push_config_set1 ! {self(), got_push_request, Args},
     receive
@@ -1125,8 +1170,11 @@ ok({ok, Res}) ->
     Res.
 
 post_json_rpc({Port, User, Pwd, Path}, Method, ID, Params) ->
-    URL = lists:concat(["https://", User, ":", Pwd, "@localhost:",
-			integer_to_list(Port), Path]),
+    Auth = if Pwd == none -> [User,":none"];
+	      true -> [User, ":", Pwd]
+	   end,
+    URL = lists:flatten(["https://", Auth, "@localhost:",
+			 integer_to_list(Port), Path]),
     Body = json2:encode({struct, [{"jsonrpc", "2.0"},
 				  {"method", Method},
 				  {"id", ID},

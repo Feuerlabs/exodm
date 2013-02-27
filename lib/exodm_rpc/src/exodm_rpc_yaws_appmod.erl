@@ -12,6 +12,9 @@ out(#arg{req = #http_request{
 out(#arg{req = #http_request{
 	   path = {abs_path, "/exodm/test_callback2"}}} = A) ->
     yaws_rpc:handler_session(A, {?MODULE, test_callback2});
+out(#arg{req = #http_request{
+	   path = {abs_path, "/exoport"}}} = A) ->
+    exodm_rpc_handler:exoport_handler_session(A);
 out(#arg{req = #http_request{method = 'POST'},
          pathinfo = "/rpc"} = A) ->
     ?debug("~p: Redirected request:~n~s~n", [?MODULE, pp_arg(A)]),

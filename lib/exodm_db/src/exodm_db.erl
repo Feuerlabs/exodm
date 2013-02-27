@@ -46,6 +46,9 @@
 	 escape_key/1,
 	 encode_id/1,
 	 decode_id/1,
+	 enc_ext_key/2,
+	 dec_ext_key/1,
+	 delimiters/0,
 	 id_key_to_integer/1,
 	 to_hex/1]).
 
@@ -569,6 +572,62 @@ decode_id_(<<C, Rest/binary>>) ->
     <<C, (decode_id_(Rest))/binary>>;
 decode_id_(<<>>) ->
     <<>>.
+
+enc_ext_key(AID, ID0) ->
+    case exodm_db_account:lookup_name(AID) of
+	{ok, AName} ->
+	    ID = decode_id(ID0),
+	    Del = pick_delimiter(<<AName/binary, ID/binary>>),
+	    <<Del, AName/binary, Del, ID/binary>>;
+	{error, not_found} ->
+	    error(unknown_account)
+    end.
+
+pick_delimiter(Bin) ->
+    Dels = delimiters(),
+    case Dels -- binary_to_list(Bin) of
+	[D|_] ->
+	    D;
+	[] ->
+	    %% WTF!
+	    error(cannot_pick_delimiter)
+    end.
+
+delimiters() ->
+    "*=#_-/&+!%^:;.,()[]{}'`<>\\\$".
+
+
+dec_ext_key(<<Sep, ID/binary>>) ->
+    case split(Sep, ID) of
+	[AcctName, DID] ->
+	    case exodm_db_account:lookup_by_name(AcctName) of
+	        false->
+		    error;
+		AID ->
+		    {AID, exodm_db:encode_id(DID)}
+	    end;
+	_ ->
+	    error
+    end;
+dec_ext_key(Key) ->
+    try
+	AID = exodm_db_session:get_aid(),
+	{exodm_db:account_id_key(AID), exodm_db:encode_id(Key)}
+    catch
+	error:_ ->
+	    error
+    end.
+
+split(Sep, Bin) ->
+    split(Sep, Bin, <<>>).
+
+split(C, <<C, Rest/binary>>, Acc) ->
+    [Acc, Rest];
+split(C, <<H, T/binary>>, Acc) ->
+    split(C, T, <<Acc/binary, H>>);
+split(_, <<>>, _) ->
+    [].
+
 
 bin_to_float(<<F:64/float>>) ->
     F.
