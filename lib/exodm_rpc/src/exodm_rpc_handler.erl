@@ -11,7 +11,7 @@
 -export([find_device_session/2, find_device_session/3]).
 -export([add_device_session/2, add_device_session/3]).
 -export([rm_device_session/2, rm_device_session/3]).
--export([std_specs/0]).
+%% -export([std_specs/0]).
 -export([request_timeout/6]).
 
 -include_lib("lager/include/log.hrl").
@@ -536,15 +536,16 @@ is_exodm_method(Method, AID) ->
 	    find_method_spec_(Mod, [<<"exodm">>], MethodBin, <<"exodm">>);
 	[Mod, MethodBin] ->
 	    ?debug("Mod = ~p; MethodBin = ~p~n", [Mod, MethodBin]),
-	    YangSpecs = annotate_specs(
-			  std_specs() ++ exodm_db_account:system_specs(AID)),
+	    SystemSpecs = exodm_db_account:system_specs(AID),
+	    ?debug("SystemSpecs = ~p~n", [SystemSpecs]),
+	    YangSpecs = annotate_specs(SystemSpecs),
 	    find_method_spec_(Mod, YangSpecs, MethodBin, <<"exodm">>)
     end.
 
-std_specs() ->
-    %% FIXME: "exodm" should be retired and replaced by "exosense"
-    %% (by name, mainly; the two specs shall be merged into one)
-    [<<"exodm">>, <<"exosense">>].
+%% std_specs() ->
+%%     %% FIXME: "exodm" should be retired and replaced by "exosense"
+%%     %% (by name, mainly; the two specs shall be merged into one)
+%%     [<<"exodm">>, <<"exosense">>].
 
 json_get_device_id({struct, L}) ->
     case lists:keyfind("device-id", 1, L) of
@@ -565,8 +566,14 @@ json_get_device_id({struct, L}) ->
 	    end
     end.
 
-annotate_specs(Specs) ->
-    [{<<>>, <<S/binary, ".yang">>} || S <- Specs].
+annotate_specs([S|Specs]) when is_binary(S) ->
+    [{<<>>, <<S/binary, ".yang">>}|annotate_specs(Specs)];
+annotate_specs([{_CfgSet, _S} = Spec|Specs]) ->
+    [Spec|annotate_specs(Specs)];
+annotate_specs([{_CfgSet, _S, _URL} = Spec|Specs]) ->
+    [Spec|annotate_specs(Specs)];
+annotate_specs([]) ->
+    [].
 
 find_method_spec(Method, AID, DevID) ->
     ?debug("find_method_spec(~p, ~p)~n", [Method, DevID]),

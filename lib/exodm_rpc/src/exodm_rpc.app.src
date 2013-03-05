@@ -80,7 +80,9 @@
 				     ]}
 			   ]}
 			 ]}
-		       ]}
+		       ]},
+	 {push_servers,
+	  [{ios_push_server, {exodm_rpc_push_ios,start_link,[]}}]}
          %% {bert_servers, [{exodm_rpc,
          %%                    [
 	 %% 		     {port, 9900}

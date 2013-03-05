@@ -51,4 +51,14 @@ base_children() ->
 		     exodm_rpc_from_device,
 		     exodm_rpc_from_device]},
       permanent, 5000, worker, [exodm_rpc_dispatcher]}
-    ].
+    ] ++ push_servers().
+
+
+push_servers() ->
+    [push_server_spec(S) ||
+	S <- lists:flatten(
+		[S1 || {_, S1} <- setup:find_env_vars(push_servers)])].
+
+push_server_spec({Name, {M,_,_} = MFA}) ->
+    {Name, MFA, permanent, 5000, worker, [M]}.
+

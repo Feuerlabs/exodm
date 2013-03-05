@@ -252,7 +252,8 @@ is_exodm_method(Method, AID) ->
     end.
 
 std_specs() ->
-    [<<"exodm">>].
+    %% [{CfgSet, Yang, Protocol}]
+    [{<<>>, <<"exodm.yang">>, <<"exodm">>}].
 
 json_get_device_id({struct, L}) ->
     case lists:keyfind("device-id", 1, L) of
