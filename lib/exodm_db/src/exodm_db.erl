@@ -40,7 +40,7 @@
 -export([all_children/1, all_children/2]).
 -export([insert_alias/4]).
 -export([add_table/2,
-	 ix_alias/1, ix_name/1, ix_aid/1]).
+	 ix_alias/1, ix_name/1, ix_appid/1]).
 
 -export([valid_id_string/1,
 	 escape_key/1,
@@ -65,6 +65,8 @@
 	 get_system_version/0]).
 
 -import(lists, [reverse/1]).
+
+-include("exodm_db.hrl").
 %%
 %% fixme: bitmap version is actually not that fast as I tought
 %% break even is plenty of tests.
@@ -777,30 +779,30 @@ add_table(Name, Indexes) ->
 	   end,
     kvdb_conf:add_table(Name, Opts).
 
-index_def(alias) ->
-    {alias, each, {exodm_db, ix_alias}};
-index_def(name) ->
-    {name, each, {exodm_db, ix_name}};
-index_def(aid) ->
-    {aid, each, {exodm_db, ix_aid}};
-index_def(Other) ->
-    Other.
+index_def(alias) ->  {alias, each, {exodm_db, ix_alias}};
+index_def(name ) ->  {name , each, {exodm_db, ix_name}};
+index_def(appid) ->  {appid, each, {exodm_db, ix_appid}};
+index_def(Other) ->  Other.
 
+-define(ENC(ID), <<"=", (ID)/binary>>).
 
 ix_alias({K, _, V}) ->
     ix_list(K, V, <<"=__alias">>, <<"=alias">>).
 
 ix_name({K, _, V}) ->
-    ix_leaf(K,V,<<"=name">>).
+    ix_leaf(K,V, ?ENC(?ACC_DB_NAME)).
 
-ix_aid({K, _, V}) ->
-    ix_leaf(K,V,<<"__aid">>).
+ix_appid({K, _, _V}) ->
+    case lists:reverse(kvdb_conf:raw_split_key(K)) of
+	[Leaf, <<"=appids">>|_] ->
+	    [exodm_db:decode_id(Leaf)];
+	_ ->
+	    []
+    end.
 
 ix_leaf(K, V, Match) ->
     case lists:reverse(kvdb_conf:raw_split_key(K)) of
 	[Match, _] ->
-	    %% NOTE: only "top-level" matches are indexed
-	    io:fwrite("ix_leaf (~p): ~p~n", [K, V]),
 	    [V];
 	_ ->
 	    []

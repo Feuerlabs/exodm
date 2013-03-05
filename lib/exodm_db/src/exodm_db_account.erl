@@ -37,7 +37,12 @@
 	 list_users_with_roles/3,
 	 list_groups/1,
 	 list_groups/2,
-	 system_specs/1]).
+	 system_specs/1,
+	 add_system_spec/3,
+	 remove_system_spec/2]).
+-export([add_app_id/2,
+	 remove_app_id/2,
+	 list_app_ids/3]).
 -export([add_users/4,
 	 remove_users/4,
 	 user_exists/2]).
@@ -47,7 +52,7 @@
          rpc_role_list/0,
          rpc_roles/2,
          rpc_permission/2]).
--export([register_protocol/2, 
+-export([register_protocol/2,
 	 is_protocol_registered/2]).
 -export([incr_request_id/1,
 	 incr_transaction_id/1]).
@@ -87,7 +92,7 @@ table() ->
 init() ->
     exodm_db:in_transaction(
       fun(_) ->
-	      exodm_db:add_table(?TAB, [name])
+	      exodm_db:add_table(?TAB, [name,appid])
       end).
 
 
@@ -306,17 +311,23 @@ lookup_(Key) ->
 			    AID::binary() | false.
 
 lookup_by_name(AName) when is_binary(AName) ->
+    lookup_by_index(name, AName).
+
+lookup_by_appid(AppID) when is_binary(AppID) ->
+    lookup_by_index(appid, AppID).
+
+lookup_by_index(IxName, IxValue) when is_atom(IxName), is_binary(IxValue) ->
     exodm_db:in_transaction(
       fun(_) ->
               ?debug("accounts ~p", [list_account_keys()]),
-              case kvdb:index_get(kvdb_conf, ?TAB, name, AName) of
+              case kvdb:index_get(kvdb_conf, ?TAB, IxName, IxValue) of
                   [{Key, _, _}] ->
                       %% e.g. [{<<"a00000001*name">>,[],<<"getaround">>}]
                       [ID, _] = exodm_db:split_key(Key),
                       ?debug("found ~p", [ID]),
                       ID;
-                  [] -> 
-                      ?debug("did not find ~p", [AName]),
+                  [] ->
+                      ?debug("did not find ~p", [IxName]),
                       false
               end
       end).
@@ -329,6 +340,8 @@ lookup_name(AID0) ->
 	[{_,_,Name}]  ->
 	    {ok, Name}
     end.
+
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -428,6 +441,72 @@ list_account_keys() ->
     lists:reverse(fold_accounts(fun(AID, Acc) ->
 					[AID|Acc]
 				end, [])).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Associate an App ID with account
+%%
+%% The App ID must be unique across all accounts.
+%% @end
+%%--------------------------------------------------------------------
+-spec add_app_id(AID::binary(), AppID::binary()) -> ok.
+
+add_app_id(AID0, AppID) when is_binary(AID0), is_binary(AppID) ->
+    AID = exodm_db:account_id_key(AID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      case lookup_by_appid(AppID) of
+		  false ->
+		      case exist(AID) of
+			  true ->
+			      AppIDEnc = exodm_db:encode_id(AppID),
+			      K = kvdb_conf:join_key(
+				    [AID, ?ACC_DB_APPIDS, AppIDEnc]),
+			      kvdb_conf:write(table(), {K, [], <<>>});
+			  false ->
+			      error('object-not-found')
+		      end;
+		  AID ->
+		      ok;
+		  _ ->
+		      error('exists')
+	      end
+      end).
+
+remove_app_id(AID0, AppID0) ->
+    AID = exodm_db:account_id_key(AID0),
+    AppID = exodm_db:account_id_key(AppID0),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      K = kvdb_conf:join_key([AID, ?ACC_DB_APPIDS, AppID]),
+	      kvdb_conf:delete(table(), K)
+      end).
+
+-spec list_app_ids(AID::binary(),
+		   N::integer(),
+		   Prev::binary()) ->
+			  list(UName::binary()) |
+			  {error, Reason::term()}.
+%%--------------------------------------------------------------------
+%% @doc
+%% List N number of App IDs registered with account AID starting after Prev
+%%
+%% @end
+%%--------------------------------------------------------------------
+list_app_ids(AID, N, Prev) when is_binary(AID) ->
+    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_APPIDS, 
+                                   exodm_db:to_binary(Prev)]),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_next(
+		table(),
+		N, FullPrev,
+		fun(Key) ->
+			lists:last(kvdb_conf:split_key(Key))
+		end)
+      end).
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -580,9 +659,7 @@ list_groups(AID, Limit) when is_binary(AID) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec system_specs(AID0::term()) ->
-			  list().
-%% Why not binary??
+-spec system_specs(AID0::binary()) -> [binary()].
 system_specs(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:in_transaction(
@@ -590,9 +667,47 @@ system_specs(AID0) ->
 	      Set = kvdb_conf:fold_children(
 		      ?TAB,
 		      fun(K, Acc) ->
-			      [lists:last(exodm_db:split_key(K))|Acc]
-		      end, [], exodm_db:join_key(AID, ?ACC_DB_SYSTEM_SPECS)),
-	      lists:usort(Set ++ exodm_rpc:std_specs())
+			      Y = exodm_db:decode_id(
+				    lists:last(exodm_db:split_key(K))),
+			      case kvdb_conf:read(table(), K) of
+				  {ok, {_, _, Protocol}} ->
+				      [{<<>>, Y, Protocol}|Acc]
+			      end
+		      end, [],
+		      exodm_db:join_key(AID, ?ACC_DB_SYSTEM_SPECS)),
+	      lists:ukeysort(2, Set ++ exodm_rpc:std_specs())
+      end).
+
+add_system_spec(AID, Yang, Protocol) ->
+    case exodm_rpc_protocol:module(Protocol) of
+	undefined -> error({unknown_protocol, Protocol});
+	_ ->
+	    add_system_spec_(AID, Yang, Protocol)
+    end.
+
+add_system_spec_(AID0, Yang0, Protocol) ->
+    AID = exodm_db:account_id_key(AID0),
+    Yang = exodm_db:encode_id(Yang0),
+    Tab = table(),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      K = exodm_db:join_key([AID, ?ACC_DB_SYSTEM_SPECS, Yang]),
+	      case kvdb_conf:read(Tab, K) of
+		  {ok, _} ->
+		      error(exists);
+		  {error, _} ->
+		      kvdb_conf:write(Tab, {K, [], Protocol})
+	      end
+      end).
+
+remove_system_spec(AID0, Yang0) ->
+    AID = exodm_db:account_id_key(AID0),
+    Yang = exodm_db:encode_id(Yang0),
+    Tab = table(),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      K = exodm_db:join_key([AID, ?ACC_DB_SYSTEM_SPECS, Yang]),
+	      kvdb_conf:delete(Tab, K)
       end).
 
 %%--------------------------------------------------------------------

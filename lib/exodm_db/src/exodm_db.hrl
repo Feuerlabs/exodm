@@ -10,6 +10,7 @@
 -define(ACC_DB_ID,           <<"id">>). %% Dummy field, used when returning data
 -define(ACC_DB_LAST_REQ,     <<"__last_req_id">>).
 -define(ACC_DB_LAST_TID,     <<"__last_tid">>).
+-define(ACC_DB_APPIDS,       <<"appids">>).
 -define(ACC_DB_NAME,         <<"name">>).
 -define(ACC_DB_ADMINS,       <<"admins">>).
 -define(ACC_DB_ROLES,        <<"roles">>).
@@ -45,6 +46,7 @@
 -define(DEV_DB_SESSION_TIMEOUT, <<"session-timeout">>).
 -define(DEV_DB_GROUPS,          <<"groups">>).
 -define(DEV_DB_PASSWORD,        <<"password">>).
+-define(DEV_DB_REQ_URLS,        <<"request-urls">>).
 
 %% Users
 -define(USER_DB_NAME,     <<"name">>).
