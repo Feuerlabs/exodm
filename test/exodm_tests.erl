@@ -438,14 +438,20 @@ client_ping(Cfg) ->
 
 set_access(Cfg) ->
     set_access([{redirect, [{{test,echo,1},
-			     {?MODULE,test_echo,1}}]}], Cfg).
+			     {?MODULE,test_echo,1}}]},
+		{accept, ?MODULE, test_echo, 1}], Cfg).
 
 set_access(Filter, _Cfg) ->
+    dbg:tracer(),
+    dbg:tpl(bert_rpc_exec, x),
+    dbg:p(all,[c]),
     {ok, {Host, Port}} = application:get_env(exoport, exodm_address),
     {ok, Sn} = bert_rpc_exec:get_session(
 		 Host, Port, [tcp], [{auto_connect,false}], 10000),
     _A = gen_server:call(Sn, get_access),
     ok = gen_server:call(Sn, {set_access, Filter}),
+    dbg:ctpl(bert_rpc_exec),
+    dbg:stop(),
     ok.
 
 test_echo(Args) ->
@@ -559,22 +565,24 @@ json_create_device_type(_Cfg) ->
     ok.
 
 json_update_device_type(_Cfg) ->
+    ID = ?LINE,
     {ok, Reply} = post_json_rpc(json_server(),
-				"exodm:update-device-type", 1,
+				"exodm:update-device-type", ID,
 				{struct, [
 					  {"name", "devtype_1"},
 					  {"protocol", "ga_ck3"}
 					 ]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"result","ok"}]}},
-	      {"id", 1},
+	      {"id", ID},
 	      {"jsonrpc", "2.0"}]} = Reply,
     ok.
 
 
 json_list_device_types(_Cfg) ->
+    ID = ?LINE,
     {ok, Reply} = post_json_rpc(json_server(),
-				"exodm:list-device-types", 1,
+				"exodm:list-device-types", ID,
 				{struct, [
 					  {"n", 3},
 					  {"previous", ""}
@@ -594,7 +602,7 @@ json_list_device_types(_Cfg) ->
 					       ]}
 				     ]}}
 				  ]}},
-	      {"id", 1},
+	      {"id", ID},
 	      {"jsonrpc", "2.0"}
 	     ]} = Reply,
     ok.
@@ -1044,6 +1052,11 @@ device_json_rpc1(Cfg) ->
 		       end
 	       end),
     ask_http_reset(Cfg),
+    dbg:tracer(),
+    dbg:tpl(bert_rpc_exec,x),
+    dbg:p(all,[c]),
+    Fetched =
+    try
     {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"test:echo", "2",
 				{struct, [{"device-id", "x00000001"},
@@ -1056,7 +1069,11 @@ device_json_rpc1(Cfg) ->
 				   {"final",false}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
-    Fetched = fetch_json(Cfg),
+    fetch_json(Cfg)
+	after
+	    dbg:ctpl(bert_rpc_exec),
+	    dbg:stop()
+	end,
     Notification = {struct, [{"jsonrpc","2.0"},
 			     {"method","test:echo-callback"},
 			     {"params", {struct,[{"message","hello"}]}}]},
@@ -1089,7 +1106,8 @@ get_value(_, [], Def) ->
 
 push_config_set1(Cfg) ->
     set_access([{redirect, [{{exoport_config, push_config_set, 1},
-			     {?MODULE, push_config_set_meth, 1}}]}], Cfg),
+			     {?MODULE, push_config_set_meth, 1}}]},
+		{accept, ?MODULE, push_config_set_meth, 1}], Cfg),
     spawn_link(fun() ->
 		       register(push_config_set1, self()),
 		       receive
@@ -1130,25 +1148,27 @@ upstream_rpc(Cfg) ->
 
 upstream_http_rpc(Cfg) ->
     prep_list_evens(Cfg),
+    ID = ?LINE,
     {ok, Reply} = post_json_rpc({8010, "*" ++ ?b2l(?ACC2) ++ "*hclient",
 				 "password", "/exoport"},
-				"test:list-even", 1,
+				"test:list-even", ID,
 				{struct, [{limit,9}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"evens", {array, [2,4,6,8]}}]}},
-	      {"id", 1},
+	      {"id", ID},
 	      {"jsonrpc", "2.0"}]} = Reply,
     ok.
 
 upstream_http_rpc2(Cfg) ->
     prep_list_evens(Cfg),
+    ID = ?LINE,
     {ok, Reply} = post_json_rpc({8010, "*" ++ ?b2l(?ACC2) ++ "*hclient2",
 				 none, "/exoport"},
-				"test:list-even", 1,
+				"test:list-even", ID,
 				{struct, [{limit,9}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"evens", {array, [2,4,6,8]}}]}},
-	      {"id", 1},
+	      {"id", ID},
 	      {"jsonrpc", "2.0"}]} = Reply,
     ok.
 
@@ -1187,7 +1207,9 @@ post_json_rpc({Port, User, Pwd, Path}, Method, ID, Params) ->
 			 Body, 3000),
     %% io:fwrite(user, "HTTP request Res = ~p~n", [Res]),
     {ok, {{200,_OK},_Hdrs,JSON}} = Res,
+    io:fwrite(user, "Got JSON = ~s~n", [JSON]),
     {ok, ok(json2:decode_string(?b2l(JSON)))}.
+
 
 %% Helpers
 
