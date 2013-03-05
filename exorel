@@ -151,6 +151,7 @@ current([]) ->
 current([Vsn]) ->
     case file:list_dir(rel_lib_dir()) of
 	{ok, Fs} ->
+	    io:fwrite("current: Fs = ~p~n", [Fs]),
 	    case [F || F <- Fs -- "exodm", vsn_matches(Vsn, F)] of
 		[ActualVsn] ->
 		    current_(ActualVsn);

@@ -26,6 +26,8 @@ else
 # Restore
     cd $CALLER_DIR
 
+    echo "CALLER_DIR=$CALLER_DIR"
+
 ## Now set RUNNER_SCRIPT_DIR with symbolic links resolved
     RUNNER_SCRIPT_DIR=$CALLER_DIR/$TARGET_DIR
 
@@ -72,8 +74,8 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         start|attach|console|stop)
-            shift
             CMD="$EXODM $1"
+            shift
             echo "USE_DIR=$USE_DIR"
             echo "CMD = $CMD"
             cd $USE_DIR
