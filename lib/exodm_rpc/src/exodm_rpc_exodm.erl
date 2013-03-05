@@ -256,6 +256,16 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_CONFIG_SET_MEMBERS,
 	  _Env) ->
     list_config_set_members(AID, Name, N, Prev);
 
+json_rpc_(AID, {call, ?EXODM, ?RPC_ADD_NOTIFICATION_URLS,
+		[{'device-id', DID, _},
+		 {'urls', URLs, _}]}, _Env) ->
+    add_notification_urls(AID, DID, URLs);
+
+json_rpc_(AID, {call, ?EXODM, ?RPC_REMOVE_NOTIFICATION_URLS,
+		[{'device-id', DID, _},
+		 {'config-sets', ConfigSets, _}]}, _Env) ->
+    del_notification_urls(AID, DID, ConfigSets);
+
 json_rpc_(AID, {call, ?EXODM, ?RPC_PUSH_CONFIG_SET,
 	   [{'name', Cfg, _}|_Tail]} = _RPC, Env) ->
     push_config_set(AID, Cfg, Env);
@@ -586,6 +596,26 @@ list_config_set_members(AID, Name, N, Prev) ->
 	  end),
     ?debug("config set members = ~p~n", [Res]),
     {ok, [{'config-set-members', {array, Res}}]}.
+
+add_notification_urls(AID, DID, URLs) ->
+    Res = exodm_db:in_transaction(
+	    fun(_) ->
+		    [exodm_db_device:add_request_url(AID, DID, CS, URL)
+		     || {CS, URL} <- URLs],
+		    ok
+	    end),
+    ?debug("add-notification-urls = ~p~n", [Res]),
+    {ok, result_code(ok)}.
+
+del_notification_urls(AID, DID, ConfigSets) ->
+    Res = exodm_db:in_transaction(
+	    fun(_) ->
+		    [exodm_db_device:delete_request_url(AID, DID, CS)
+		     || CS <- ConfigSets],
+		    ok
+	    end),
+    ?debug("delete-notification-urls = ~p~n", [Res]),
+    {ok, result_code(ok)}.
 
 push_config_set(AID, Cfg, Env0) ->
     TID = proplists:get_value(transaction_id, Env0),

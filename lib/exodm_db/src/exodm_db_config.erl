@@ -64,7 +64,7 @@ new_config_set(AID, Opts) ->
     Values = proplists:get_value(values, Opts, []),
     exodm_db:transaction(
       fun(_) ->
-	      case exists(Tab, NameKey) of
+	      case exist_(Tab, NameKey) of
 		  true ->
 		      error(exists);
 		  false ->
@@ -87,7 +87,7 @@ update_config_set(AID, Name0, Opts) ->
         {ok, _YangSpec} ->
             exodm_db:transaction(
               fun(_) ->
-                      case exists(Tab, NameKey) of
+                      case exist_(Tab, NameKey) of
                           true ->
 			      CT = kvdb_conf:read_tree(Tab, NameKey),
 %                              validate_config(
@@ -130,7 +130,7 @@ read_config_set(AID, Name) ->
     NameKey = exodm_db:encode_id(Name),
     exodm_db:transaction(
       fun(_) ->
-	      case exists(Tab, NameKey) of
+	      case exist_(Tab, NameKey) of
 		  true ->
 		      [{name, exodm_db:decode_id(NameKey)}]
 			  ++ read(Tab, NameKey, <<"yang">>, yang)
@@ -303,7 +303,7 @@ add_config_set_members(AID0, Name0, DIDs) ->
     Key = exodm_db:join_key(Name, <<"members">>),
     exodm_db:in_transaction(
       fun(_) ->
-	      case exists(Tab, Name) of
+	      case exist_(Tab, Name) of
 		  true ->
 		      lists:foreach(
 			fun(DID0) ->
@@ -339,7 +339,7 @@ delete_config_set_members(AID0, Name0, DIDs) ->
     Key = exodm_db:join_key(Name, <<"members">>),
     exodm_db:in_transaction(
       fun(_) ->
-	      case exists(Tab, Name) of
+	      case exist_(Tab, Name) of
 		  true ->
 		      lists:foreach(
 			fun(DID0) ->
@@ -386,8 +386,13 @@ list_config_set_members(AID, Name0) ->
 		  end, [], Key))
       end).
 
+exist(AID, Name) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exist_(table(AID), Name)
+      end).
 
-exists(Tab, Name) ->
+exist_(Tab, Name) ->
     Key = exodm_db:join_key([exodm_db:encode_id(Name), <<"name">>]),
     case exodm_db:read(Tab, Key) of
 	{error, not_found} ->

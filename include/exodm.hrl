@@ -48,6 +48,8 @@
 -define(RPC_ADD_CONFIG_SET_MEMBERS, <<"add-config-set-members">>).
 -define(RPC_REMOVE_CONFIG_SET_MEMBERS, <<"remove-config-set-members">>).
 -define(RPC_PUSH_CONFIG_SET, <<"push-config-set">>).
+-define(RPC_ADD_NOTIFICATION_URLS, <<"add-notification-urls">>).
+-define(RPC_REMOVE_NOTIFICATION_URLS, <<"remove-notification-urls">>).
 
 -define(RPC_CREATE_YANG_MODULE, <<"create-yang-module">>).
 -define(RPC_DELETE_YANG_MODULE, <<"delete-yang-module">>).
@@ -118,6 +120,10 @@
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
          {?RPC_PUSH_CONFIG_SET, 
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
+	 {?RPC_ADD_NOTIFICATION_URLS,
+	  [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
+	 {?RPC_REMOVE_NOTIFICATION_URLS,
+	  [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
 
          {?RPC_CREATE_YANG_MODULE, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_DELETE_YANG_MODULE, [?ROOT, ?INIT_ADMIN, ?ADMIN]},

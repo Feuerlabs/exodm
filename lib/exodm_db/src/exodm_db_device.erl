@@ -23,6 +23,8 @@
 -export([table/1]).
 -export([client_auth_config/2]).
 
+-export([add_request_url/4, delete_request_url/3]).
+
 -export([transform/0]).
 -export([code_change/2]).
 
@@ -138,6 +140,55 @@ update_(AID0, DID0, DeleteOther, Options) ->
 	    insert_(Tab, AID, DID, Options)
     end.
 
+%% This function stores a device-specific request URL that shadows a given
+%% config spec
+add_request_url(AID0, DID0, CS0, URL) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      AID = exodm_db:account_id_key(AID0),
+	      DID = exodm_db:encode_id(DID0),
+	      CS = exodm_db:encode_id(CS0),
+	      Tab = table(AID),
+	      case exist(AID, DID) of
+		  true ->
+		      CfgKey = exodm_db:join_key([DID, ?DEV_DB_CONFIG_SET, CS]),
+		      case kvdb_conf:read(Tab, CfgKey) of
+			  {ok, _} ->
+			      Key = kvdb_conf:join_key(
+				      [DID, ?DEV_DB_REQ_URLS, CS]),
+			      kvdb_conf:write(Tab, {Key, [], URL});
+			  {error,_} ->
+			      error(unknown_config_set)
+		      end;
+		  false ->
+		      error(unknown_device)
+	      end
+      end).
+
+delete_request_url(AID0, DID0, CS0) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      AID = exodm_db:account_id_key(AID0),
+	      DID = exodm_db:encode_id(DID0),
+	      CS = exodm_db:encode_id(CS0),
+	      Tab = table(AID),
+	      case exist(AID, DID) of
+		  true ->
+		      CfgKey = exodm_db:join_key([DID, ?DEV_DB_CONFIG_SET, CS]),
+		      case kvdb_conf:read(Tab, CfgKey) of
+			  {ok, _} ->
+			      Key = kvdb_conf:join_key(
+				      [DID, ?DEV_DB_REQ_URLS, CS]),
+			      kvdb_conf:delete(Tab, Key);
+			  {error,_} ->
+			      error(unknown_config_set)
+		      end;
+		  false ->
+		      error(unknown_device)
+	      end
+      end).
+
+
 insert_device_type(_Tab, _AID, _DID, undefined) ->
     ok;
 insert_device_type(Tab, AID, DID, DevType) ->
@@ -192,7 +243,9 @@ remove_config_set_(AID0, DID0, CfgName) ->
     case exist(AID, DID) of
 	true ->
 	    kvdb_conf:delete(Tab, kvdb_conf:join_key(
-				    [DID, ?DEV_DB_CONFIG_SET, CfgName]));
+				    [DID, ?DEV_DB_CONFIG_SET, CfgName])),
+	    kvdb_conf:delete(Tab, kvdb_conf:join_key(
+				    [DID, ?DEV_DB_REQ_URLS, CfgName]));
 	false->
 	    ok
     end.
@@ -341,13 +394,22 @@ lookup_group_notifications(AID0, DID0) ->
 	lists:flatmap(
 	  fun(CS) ->
 		  CSTab = exodm_db_config:table(AID),
-		  case kvdb_conf:read(CSTab, kvdb_conf:join_key(CS,<<"url">>)) of
-		      {ok, {_, _, URL}} ->
-			  [URL];
-		      _ ->
-			  []
-		  end
+		  get_notification_url(AID, DID, CSTab, CS)
 	  end, list_config_sets(AID, DID)).
+
+get_notification_url(AID, DID, CSTab, CS) ->
+    case kvdb_conf:read(table(AID), kvdb_conf:join_key(
+				      [DID, ?DEV_DB_REQ_URLS, CS])) of
+	{ok, {_, _, URL}} -> [URL];
+	{error, _} ->
+	    case kvdb_conf:read(CSTab, kvdb_conf:join_key(CS,<<"url">>)) of
+		{ok, {_, _, URL}} ->
+		    [URL];
+		_ ->
+		    []
+	    end
+    end.
+
 
 %% find last known position or {0,0,0} if not found
 lookup_position(AID, DID0) ->
