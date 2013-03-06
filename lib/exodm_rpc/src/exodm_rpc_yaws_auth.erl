@@ -23,7 +23,7 @@ auth(#arg{headers = Hdrs} = Arg, _RequestBody) ->
             try 
 		case find_account(User, Req) of
 		    {user, Aid, UserID} when is_binary(Aid) ->
-			?debug("find_account(~p, ~p) -> ~p~n",
+			?debug("find_account(~p, Req) -> ~p~n",
 			       [User, {user,Aid,UserID}]),
 			case exodm_db_session:authenticate(Aid, UserID, Pwd) of
 			    true -> {true, User};
