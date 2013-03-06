@@ -353,10 +353,16 @@ lookup_name(AID0) ->
 		   Exists::boolean().
 
 exist(AID0) when is_binary(AID0) ->
-    AID = exodm_db:account_id_key(AID0),
-    case read(AID, ?ACC_DB_NAME) of
-	[] -> false;
-	[_] -> true
+    try exodm_db:account_id_key(AID0) of
+	AID ->
+	    case read(AID, ?ACC_DB_NAME) of
+		[] -> false;
+		[_] -> true
+	    end
+    catch
+	error:_ ->
+	    %% E.g. if called with a regular account name
+	    false
     end.
 
 %%--------------------------------------------------------------------
