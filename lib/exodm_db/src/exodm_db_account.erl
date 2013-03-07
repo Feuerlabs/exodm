@@ -337,7 +337,7 @@ lookup_name(AID0) ->
     case read(AID, ?ACC_DB_NAME) of
 	[] ->
 	    {error, not_found};
-	[{_,_,Name}]  ->
+	[{_, Name}]  ->
 	    {ok, Name}
     end.
 

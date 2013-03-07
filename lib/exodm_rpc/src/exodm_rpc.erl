@@ -54,6 +54,8 @@ rpc(Module, Method, Elems) ->
 
 queue_notification(Module, Type, Env0, Method, Elems) when
       Type == notify; Type == reverse_request ->
+    ?debug("queue_notification(~p, ~p, ~p, ~p, ~p)~n",
+	   [Module, Type, Env0, Method, Elems]),
     User = exodm_db_session:get_user(),
     AID = exodm_db_session:get_aid(),
     ?debug("aid ~p, user ~p", [AID, User]),

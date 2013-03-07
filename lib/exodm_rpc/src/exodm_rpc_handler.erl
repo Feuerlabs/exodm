@@ -641,12 +641,15 @@ validate_request(Method, _Module, {struct, InputArgs},
 
 
 queue_message(Db, AID, Tab, Env, {call, _, _, Attrs} = Msg) ->
+    ?debug("queue_message(AID=~p, Msg = ~p)~n", [AID, Msg]),
     queue_message_(Db, AID, Tab, Attrs, Env, Msg);
 queue_message(Db, AID, Tab, Env, {Type,_Meth,Elems} = Msg)
   when Type==notify; Type==reverse_request ->
+    ?debug("queue_message(AID=~p, Msg = ~p)~n", [AID, Msg]),
     queue_message_(Db, AID, Tab, Elems, Env, Msg).
 
 queue_message_(Db, AID, Tab, Attrs, Env0, Msg) ->
+    ?debug("AID = ~p, Attrs = ~p, Env0 = ~p~n", [AID, Attrs, Env0]),
     TimerID = make_ref(),
     Env = [{'$timer_id', TimerID}|Env0],
     AllAttrs = Attrs ++ Env,

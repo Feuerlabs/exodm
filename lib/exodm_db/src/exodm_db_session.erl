@@ -349,18 +349,26 @@ handle_call({make_user_active, A, U, Db}, _, St) ->
                           %% Check that the user has access to account
                           case exodm_db_user:list_accounts(U) of
                               [] ->
+                                  ?debug("No accounts for user ~s~n", [U]),
+                                  ?debug("User record: ~p~n", [exodm_db_user:lookup(U)]),
                                   {reply, false, St};
                               AList ->
                                   case lists:member(A, AList) of
                                       true ->
                                           case first_auth_(U, no_password) of
                                               false ->
+                                                  ?debug(
+                                                     "first_auth_(~s, "
+                                                     "no_password) -> false~n",
+                                                     [U]),
                                                   {reply, false, St};
                                               {true, Hash, undefined} ->
                                                   create_session(A, U, Hash, undefined),
                                                   {reply, true, St}
                                           end;
                                       false ->
+                                          ?debug("Account ~s not member of ~p~n",
+                                                 [A, AList]),
                                           {reply, false, St}
                                   end
                           end

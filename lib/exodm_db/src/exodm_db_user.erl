@@ -422,7 +422,7 @@ list_accounts_(UID)  ->
 		  false -> Acc;
 		  AID -> [{I, exodm_db:decode_id(AID)} | Acc]
     	      end
-      end, [], exodm_db:join_key(UID, ?USER_ROLE)).
+      end, [], exodm_db:join_key(exodm_db:encode_id(UID), ?USER_ROLE)).
 
 %%--------------------------------------------------------------------
 %% @doc
