@@ -11,6 +11,7 @@
                   stdlib,
 		  gproc,
 		  exodm_db,
+		  exodm_http,
 		  exodm_rpc
                  ]},
   {env,	[]}

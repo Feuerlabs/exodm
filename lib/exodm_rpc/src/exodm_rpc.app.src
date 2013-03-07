@@ -8,7 +8,8 @@
                   kernel,
                   stdlib,
 		  bert,
-		  exodm_db
+		  exodm_db,
+		  exodm_http
                  ]},
   {mod, { exodm_rpc_app, []}},
   %% {start_phases, [{init, []}]},
