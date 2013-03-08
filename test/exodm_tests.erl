@@ -442,16 +442,11 @@ set_access(Cfg) ->
 		{accept, ?MODULE, test_echo, 1}], Cfg).
 
 set_access(Filter, _Cfg) ->
-    dbg:tracer(),
-    dbg:tpl(bert_rpc_exec, x),
-    dbg:p(all,[c]),
     {ok, {Host, Port}} = application:get_env(exoport, exodm_address),
     {ok, Sn} = bert_rpc_exec:get_session(
 		 Host, Port, [tcp], [{auto_connect,false}], 10000),
     _A = gen_server:call(Sn, get_access),
     ok = gen_server:call(Sn, {set_access, Filter}),
-    dbg:ctpl(bert_rpc_exec),
-    dbg:stop(),
     ok.
 
 test_echo(Args) ->
@@ -1052,11 +1047,6 @@ device_json_rpc1(Cfg) ->
 		       end
 	       end),
     ask_http_reset(Cfg),
-    dbg:tracer(),
-    dbg:tpl(bert_rpc_exec,x),
-    dbg:p(all,[c]),
-    Fetched =
-    try
     {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"test:echo", "2",
 				{struct, [{"device-id", "x00000001"},
@@ -1069,11 +1059,7 @@ device_json_rpc1(Cfg) ->
 				   {"final",false}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
-    fetch_json(Cfg)
-	after
-	    dbg:ctpl(bert_rpc_exec),
-	    dbg:stop()
-	end,
+    Fetched = fetch_json(Cfg),
     Notification = {struct, [{"jsonrpc","2.0"},
 			     {"method","test:echo-callback"},
 			     {"params", {struct,[{"message","hello"}]}}]},

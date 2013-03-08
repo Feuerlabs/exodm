@@ -8,8 +8,8 @@
 dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
     ?debug("~p:dispatch(~p, ~p, ..., ~p)~n", [?MODULE, Req, Env, Pid]),
     case Req of
-	{call, M, 'push-config-set', [{'name', Cfg},
-				      {'reference', Ref}]} ->
+	{call, M, <<"push-config-set">>, [{'name', Cfg, _},
+					  {'reference', Ref, _}]} ->
 	    exodm_db:in_transaction(
 	      fun(_Db) ->
 		      case exodm_db_config:get_cached(AID, Cfg, Ref, DID) of
@@ -29,7 +29,7 @@ dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
 		     Req, Env, AID, DID)
     end.
 
-request_timeout({_, Env, {request, _, {call, M, Req, _}}}) ->
+request_timeout({_, _Env, {request, _, {call, _M, _Req, _}}}) ->
     ok.
 
 bert_rpc(Pid, M, F, As, Req, Env, AID, DID) ->

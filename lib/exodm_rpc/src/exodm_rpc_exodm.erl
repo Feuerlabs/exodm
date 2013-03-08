@@ -83,7 +83,7 @@ json_rpc(RPC = {_, ?EXODM, Rpc, InputList}, Env) ->
         {false, IsRoot} ->
             %% Other rpcs needs account
             case find_account(InputList) of
-                udefined -> 
+                undefined -> 
                     ?debug("no account", []),
                     {ok, result_code(?ACCOUNT_NOT_SPECIFIED)};
                 AID -> 
@@ -625,12 +625,11 @@ push_config_set(AID, Cfg, Env0) ->
 	      case exodm_db_config:list_config_set_members(AID, Cfg) of
 		  [_|_] = Devices ->
 		      {ok, Yang} = exodm_db_config:get_yang_spec(AID, Cfg),
-		      Module = filename:basename(Yang, ".yang"),
 		      {ok, Ref} = exodm_db_config:cache_values(AID, Cfg),
-		      RPC = {call, binary_to_atom(Module, latin1),
-			     'push-config-set',
-			     [{'name', Cfg},
-			      {'reference', Ref}]},
+		      RPC = {call, <<"exodm">>,
+			     <<"push-config-set">>,
+			     [{'name', Cfg, []},
+			      {'reference', Ref, []}]},
 		      Env = [{aid, AID}, {user, User},
 			     {'transaction-id', TID},
 			     {yang, <<"exodm.yang">>}|Env0],
