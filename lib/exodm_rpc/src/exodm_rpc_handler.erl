@@ -39,6 +39,7 @@ add_device_session(AID, DID, Protocol) ->
 add_device_session(ExtID, Protocol) ->
     %% Normalize ExtID first
     ?debug("extid ~p, protocol ~p", [ExtID, Protocol]),
+    rm_device_session(ExtID, Protocol), % to allow for repeated reg operations
     gproc:reg({p,l,{exodm_rpc, active_device, ExtID, Protocol}},
 	      os:timestamp()).
 
@@ -96,7 +97,8 @@ handler_session(Arg) ->
 			  {ssl,is_ssl(Arg#arg.clisock)},
 			  {client,json_rpc}],
 		  Arg2=Arg#arg{state = Env0 },
-		  yaws_rpc:handler_session(Arg2, {?MODULE, web_rpc})
+		  yaws_rpc:handler_session(
+		    maybe_multipart(Arg2), {?MODULE, web_rpc})
 	      catch
 		  error:E ->
 		      Trace = erlang:get_stacktrace(),
@@ -105,6 +107,48 @@ handler_session(Arg) ->
 		      error({E, Trace})
 	      end
       end).
+
+maybe_multipart(#arg{headers = #headers{content_type = "multipart" ++ _},
+		     state = Env} = A) ->
+    ?debug("Multipart POST~n", []),
+    Parts = parse_multipart(yaws_api:parse_multipart_post(A)),
+    case lists:keytake(jsonrpc, 1, Parts) of
+	false ->
+	    error(no_jsonrpc);
+	{value, {_, JSON}, NewEnv} ->
+	    A#arg{clidata = JSON, state = Env ++ NewEnv}
+    end;
+maybe_multipart(A) ->
+    A.
+
+
+parse_multipart({result, Result}) ->
+    parse_multipart_result(Result, []).
+
+parse_multipart_result([{head, {"file", Opts}},{body, Body}|Rest], Acc) ->
+    {_, Filename} = lists:keyfind("filename", 1, Opts),
+    {_, "application/octet-stream"} = lists:keyfind(content_type, 1, Opts),
+    parse_multipart_result(Rest, [{file, {list_to_binary(Filename),
+					  list_to_binary(Body)}}|Acc]);
+parse_multipart_result([{head, {"jsonrpc", _}}, {body, JSON}|Rest], Acc) ->
+    parse_multipart_result(Rest, [{jsonrpc, list_to_binary(JSON)}|Acc]);
+parse_multipart_result([], Acc) ->
+    get_jsonrpc(Acc) ++ get_files(Acc).
+
+get_jsonrpc(Acc) ->
+    case lists:keyfind(jsonrpc, 1, Acc) of
+	false -> [];
+	{_, _} = Found ->
+	    [Found]
+    end.
+
+get_files(Acc) ->
+    case proplists:get_all_values(file, Acc) of
+	[] ->
+	    [];
+	[_|_] = Fs ->
+	    [{files, Fs}]
+    end.
 
 exoport_handler_session(#arg{req = #http_request{method = 'GET'}} = Arg) ->
     jobs:run(
@@ -296,8 +340,8 @@ exoport_rpc(St, Req, Session) ->
 	    {false, error_response({Err, Data})}
     end.
 
-exoport_rpc_(_Db, _InitEnv, {call, "exoport:get-messages", Args0} = Req) ->
-    ?debug("exoport_rpc_(); get() -> ~p~n", [get()]),
+exoport_rpc_(_Db, _InitEnv, {call, "exoport:get-messages", Args0}) ->
+    ?debug("Args0 = ~p~n", [Args0]),
     {did, AID, DID} = exodm_db_session:get_user(),
     ExtID = exodm_db:enc_ext_key(AID, DID),
     Args = case Args0 of
@@ -317,9 +361,9 @@ exoport_rpc_(_Db, _InitEnv, {call, "exoport:get-messages", Args0} = Req) ->
     Msgs = exoport_rpc_exoport_http:recv(ExtID, N, Timeout),
     {true, {response, {struct, [{"result", "ok"},
 				{"messages", Msgs}]}}};
-exoport_rpc_(_Db, InitEnv, {call, FullMethod, {struct, Args}} = Req) ->
+exoport_rpc_(_Db, InitEnv, {call, FullMethod, {struct, Args}}) ->
     try
-	?debug("exoport_rpc_(); get() -> ~p~n", [get()]),
+	?debug("FullMethod = ~p, Args = ~p~n", [Args]),
 	{did, AID, DID} = exodm_db_session:get_user(),
 	[Mod, Method] = re:split(FullMethod, <<":">>, [{return,binary}]),
 	?debug("Mod = ~p, Method = ~p~n", [Mod, Method]),
@@ -736,7 +780,10 @@ pp_data(Data) when is_list(Data) ->
 	    lists:flatten(io_lib:fwrite("~p", [Data]))
     end;
 pp_data({Other, Data}) ->
-    lists:flatten(io_lib:fwrite("Unknown error: ~p; ~p~n", [Other, Data])).
+    lists:flatten(io_lib:fwrite("Unknown error: ~p; ~p~n", [Other, Data]));
+pp_data(Unknown) ->
+    lists:flatten(io_lib:fwrite("Unknown error: ~p~n", [Unknown])).
+
 
 
 convert_error(undef, Data) ->

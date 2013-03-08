@@ -276,9 +276,9 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_PUSH_CONFIG_SET,
 json_rpc_(AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
 	   [{repository, ?USER_REPOSITORY, _},
 	    {name, N, _},
-	    {'yang-module', Y, _}|_Tail]} = _RPC, _Env) ->
+	    {'yang-module', Y, _}|_Tail]} = _RPC, Env) ->
     ?debug("aid ~p, n ~p", [AID, N]),
-    create_yang_module(AID, N, Y);
+    create_yang_module(AID, N, yang_data(Y, Env));
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
 	   [{repository, ?USER_REPOSITORY, _},
@@ -311,7 +311,7 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
     case has_root_env(Env) of
 	true ->
 	    exodm_db_session:set_trusted_proc(),
-	    Res = create_yang_module(system, N, Y),
+	    Res = create_yang_module(system, N, yang_data(Y, Env)),
 	    exodm_db_session:unset_trusted_proc(),
 	    Res;
 	false ->
@@ -647,7 +647,17 @@ push_config_set(AID, Cfg, Env0) ->
 		      {ok, result_code(ok)}
 	      end
       end).
-    
+
+yang_data(<<"file:", Filename/binary>>, Env) ->
+    case lists:keyfind(Filename, 1, proplists:get_value(files, Env, [])) of
+	{_, Data} ->
+	    Data;
+	false ->
+	    error(?OBJECT_NOT_FOUND)
+    end;
+yang_data(Y, _) ->
+    Y.
+
 
 create_yang_module(system, N, Y) ->
     Res =  exodm_db_yang:write_system(N, Y),
