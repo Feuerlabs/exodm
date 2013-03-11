@@ -302,18 +302,35 @@ derive_root_dir(D) ->
 	    %% io:fwrite("found \"rel\" and \"lib\"~n", []),
 	    D;
 	false ->
-	    {ok, Fs} = file:list_dir(D),
-	    case ["releases", "bin", "erts", "ctl", "exorel"] -- Fs of
-		[] ->
-		    %% io:fwrite("found \"releases\", etc.~n", []),
-		    filename:dirname(
-		      filename:dirname(
-			filename:dirname(D)));
-		_ ->
-		    abort("Cannot recognize directory~n", [])
+	    case is_exodm_dev_repos(D) of
+		true -> D;
+		false ->
+		    {ok, Fs} = file:list_dir(D),
+		    case ["releases", "bin", "erts", "ctl", "exorel"] -- Fs of
+			[] ->
+			    %% io:fwrite("found \"releases\", etc.~n", []),
+			    filename:dirname(
+			      filename:dirname(
+				filename:dirname(D)));
+			_ ->
+			    abort("Cannot recognize directory~n", [])
+		    end;
+		Other ->
+		    abort("is_dir(~p) -> ~p~n", [_X, Other])
+	    end
+    end.
+
+is_exodm_dev_repos(D) ->
+    case filename:basename(D) of
+	"exodm" ->
+	    case file:list_dir(D) of
+		{ok, Fs} ->
+		    [] == [".git", "make_node", "exorel", "rebar.config"] -- Fs;
+		{error, _} ->
+		    abort("Cannot read CWD~n", [])
 	    end;
-	Other ->
-	    abort("is_dir(~p) -> ~p~n", [_X, Other])
+	_ ->
+	    false
     end.
 
 rel_dir(Env)  -> filename:join(root_dir(Env), "rel").
