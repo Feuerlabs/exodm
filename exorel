@@ -8,26 +8,40 @@
 
 main([]) -> help();
 main(["help"]) -> help();
-main([F|Args] = _A) ->
+main([F|Args0] = _A) ->
     %% this insanity with 're' is because my terminal sometimes passes
     %% a non-space space character appended to the command.
+    {Env, Args} = parse_opts(Args0),
     try list_to_existing_atom(
 	   re:replace(F, "[^a-z_]", "", [global,{return,list}])) of
-	tar      -> tar(Args);
-	git_vsn  -> git_vsn(Args);
-	nodes    -> nodes(Args);
-	versions -> versions(Args);
-	current  -> current(Args);
-	last_build -> last_build(Args);
+	tar      -> tar(Args, Env);
+	git_vsn  -> git_vsn(Args, Env);
+	nodes    -> nodes(Args, Env);
+	versions -> versions(Args, Env);
+	current  -> current(Args, Env);
+	last_build -> last_build(Args, Env);
 	_ -> help()
     catch
 	_:_ ->
 	    help()
     end.
 
+parse_opts(Args) ->
+    parse_opts(Args, [], []).
+
+parse_opts(["-root", D|Args], Env, Opts) ->
+    parse_opts(Args, [{root, D}|Env], Opts);
+parse_opts([X|Args], Env, Opts) ->
+    parse_opts(Args, Env, [X|Opts]);
+parse_opts([], Env, Opts) ->
+    {lists:reverse(Env), lists:reverse(Opts)}.
+
+
 help() ->
     io:fwrite(
-"Usage: ~s Cmd [Opts]~n"
+"Usage: ~s Cmd [Opts] [Arg]~n"
+"General options:~n"
+"  -root D    : Root directory of the exodm installation.~n"
 "Valid commands and options:~n"
 "  git_vsn    : prints the git version of the repos top directory.~n"
 "  nodes      : prints the names of the currently defined nodes.~n"
@@ -39,9 +53,9 @@ help() ->
       [filename:basename(escript:script_name())]),
     halt(1).
 
-tar([V]) ->
+tar([V], Env) ->
     Base = "exodm_" ++ V,
-    Top = filename:join(Dir = rel_lib_dir(), Base),
+    Top = filename:join(Dir = rel_lib_dir(Env), Base),
     Target0 = filename:join(Dir, Base ++ ".tgz"),
     Target = filename:absname(Target0),
     case filelib:is_regular(Target0) of
@@ -53,14 +67,11 @@ tar([V]) ->
 	    io:fwrite("~s ->~n  ~s~n", [Cmd, Res]),
 	    NewDir = filename:join([TmpDir, rel_path(), Base]),
 	    io:fwrite("NewDir = ~s~n", [NewDir]),
-	    Res1 = os:cmd(Cmd1 = "(cd " ++ root_dir() ++ "; "
+	    Res1 = os:cmd(Cmd1 = "(cd " ++ root_dir(Env) ++ "; "
 			  "cp exorel make_node " ++ NewDir ++ "/)"),
 	    io:fwrite("~s ->~n  ~s~n", [Cmd1, Res1]),
-%%	    TmpTop = filename:join(TmpDir, Base),
 	    {ok,_} = beam_lib:strip_release(NewDir),
 	    make_tar(TmpDir, "*", Target),
-	    %% TarRes = os:cmd(TarCmd = "tar czf " ++ Target ++ " " ++ TmpTop),
-	    %% io:fwrite("~s ->~n~s~n", [TarCmd, TarRes]),
 	    os:cmd("rm -rf " ++ TmpDir),
 	    io:fwrite("Stripped archive in ~s~n", [Target0]);
 	true ->
@@ -88,15 +99,15 @@ make_temp_dir() ->
     ok = filelib:ensure_dir(filename:join([D, rel_path(), "foo"])),
     D.
 
-git_vsn([V]) -> io:fwrite("~s~n", [V]);
-git_vsn(Opts) ->
+git_vsn([V], _Env) -> io:fwrite("~s~n", [V]);
+git_vsn(Opts, Env) ->
     case os:getenv("EXO_VSN") of
 	[_|_] = Vsn ->
 	    io:fwrite("~s~n", [Vsn]);
 	_ ->
 	    Cwd = cwd(),
 	    Dir = case Opts of
-		      [] -> root_dir();
+		      [] -> root_dir(Env);
 		      ["-d",D|_] -> D
 		  end,
 	    ok = file:set_cwd(Dir),
@@ -106,16 +117,16 @@ git_vsn(Opts) ->
 	    io:fwrite("~s~n", [re:replace(Res,"\\n","",[{return,list}])])
     end.
 
-nodes([]) ->
-    case file:list_dir(Dir = filename:join(root_dir(), "nodes")) of
+nodes([], Env) ->
+    case file:list_dir(Dir = filename:join(root_dir(Env), "nodes")) of
 	{ok, Fs} ->
 	    list_files(Fs, Dir, []);
 	_ ->
 	    nothing
     end.
 
-versions([]) ->
-    case file:list_dir(Dir = rel_lib_dir()) of
+versions([], Env) ->
+    case file:list_dir(Dir = rel_lib_dir(Env)) of
 	{ok, Fs} ->
 	    list_files(Fs, Dir, ["exodm"]);
 	_ ->
@@ -133,35 +144,34 @@ list_files(Fs0, Dir, Exclude) ->
     end.
 
 
-current([]) ->
-    case file:read_link(filename:join(rel_dir(), ?TARGET)) of
+current([], Env) ->
+    case file:read_link(filename:join(rel_dir(Env), ?TARGET)) of
 	{ok, Vsn} ->
 	    io:fwrite("~s~n", [vsn_part(Vsn)]);
 	{error, enoent} ->
-	    case file:list_dir(rel_lib_dir()) of
+	    case file:list_dir(rel_lib_dir(Env)) of
 		{ok, []} -> nothing;
 		{ok, Fs} ->
 		    [Latest|_] = sort_vsns(Fs),
-		    make_current(Latest),
+		    make_current(Latest, Env),
 		    io:fwrite("~s~n", [vsn_part(Latest)]);
 		_ ->
 		    nothing
 	    end
     end;
-current([Vsn]) ->
-    case file:list_dir(rel_lib_dir()) of
+current([Vsn], Env) ->
+    case file:list_dir(rel_lib_dir(Env)) of
 	{ok, Fs} ->
-	    io:fwrite("current: Fs = ~p~n", [Fs]),
 	    case [F || F <- Fs -- "exodm", vsn_matches(Vsn, F)] of
 		[ActualVsn] ->
-		    current_(ActualVsn);
+		    current_(ActualVsn, Env);
 		[] ->
 		    io:fwrite("error: no such version~n", []),
 		    halt(1);
 		[_|_] = Multiple ->
 		    case lists:member(Actual = "exodm_" ++ Vsn, Multiple) of
 			true ->
-			    current_(Actual);
+			    current_(Actual, Env);
 			false ->
 			    io:fwrite("error: ambiguous~n", []),
 			    halt(1)
@@ -172,9 +182,9 @@ current([Vsn]) ->
 	    halt(1)
     end.
 
-current_(ActualVsn) ->
-    file:delete(filename:join(rel_dir(), ?TARGET)),
-    make_current(filename:join(rel_lib_dir(), ActualVsn)),
+current_(ActualVsn, Env) ->
+    file:delete(filename:join(rel_dir(Env), ?TARGET)),
+    make_current(filename:join(rel_lib_dir(Env), ActualVsn), Env),
     io:fwrite("~s~n", [vsn_part(ActualVsn)]).
 
 
@@ -184,8 +194,8 @@ vsn_part(F) ->
 	_ -> Base
     end.
 
-last_build(_) ->
-    case file:consult(filename:join(rel_dir(), "reltool.config")) of
+last_build([], Env) ->
+    case file:consult(filename:join(rel_dir(Env), "reltool.config")) of
 	{ok, Terms} ->
 	    case [Sys || {sys, Sys} <- Terms] of
 		[Items|_] ->
@@ -204,10 +214,10 @@ vsn_matches(V, FullV) ->
 	nomatch   -> false
     end.
 
-make_current(F) ->
+make_current(F, Env) ->
     Cwd = cwd(),
-    RelD = rel_dir(),
-    LibD = rel_lib_dir(),
+    RelD = rel_dir(Env),
+    LibD = rel_lib_dir(Env),
     Base = filename:basename(F),
     _CwdRes1 = file:set_cwd(RelD),
     Res = file:make_symlink(Source1 = filename:join("lib", Base), ?TARGET),
@@ -254,12 +264,39 @@ maybe_copy_vm_args(Cwd, Base, Source) ->
 	    io:fwrite("WARNING: cannot find ~s~n", [F])
     end.
 
-root_dir() ->
-    root_dir(filename:dirname(escript:script_name())).
+root_dir(Env) ->
+    case lists:keyfind(root, 1, Env) of
+	false ->
+	    root_dir_(filename:dirname(escript:script_name()));
+	{_, Root} ->
+	    Root
+    end.
 
-root_dir(".") ->
-    root_dir(cwd());
-root_dir(D) ->
+root_dir_(".") ->
+    root_dir_(cwd());
+root_dir_(D) ->
+    case get_root_from_exodm_env() of
+	{ok, R} -> R;
+	error   -> derive_root_dir(D)
+    end.
+
+get_root_from_exodm_env() ->
+    case file:read_file(".exodm_env") of
+	{ok, Bin} ->
+	    case re:run(Bin, <<"EXODM_DIR=(.+)">>,
+			[{capture,all_but_first,list}]) of
+		{match, [Root]} ->
+		    {ok, Root};
+		_Other ->
+		    io:fwrite(
+		      "*error* cannot read EXODM_DIR in .exodm_env~n", []),
+		    error
+	    end;
+	_ ->
+	    error
+    end.
+
+derive_root_dir(D) ->
     case filelib:is_dir(_X = filename:join([D, "rel", "lib"])) of
 	true ->
 	    %% io:fwrite("found \"rel\" and \"lib\"~n", []),
@@ -279,11 +316,10 @@ root_dir(D) ->
 	    abort("is_dir(~p) -> ~p~n", [_X, Other])
     end.
 
-rel_dir()  -> filename:join(root_dir(), "rel").
-%% rel_dir(D) -> filename:join(root_dir(D), "rel").
+rel_dir(Env)  -> filename:join(root_dir(Env), "rel").
 
-rel_lib_dir()  -> filename:join(rel_dir(), "lib").
-%% rel_lib_dir(D) -> filename:join(rel_dir(D), "lib").
+rel_lib_dir(Env)  -> filename:join(rel_dir(Env), "lib").
+
 
 %% modified version of setup:sort_vsns/2
 sort_vsns(Rels) ->
