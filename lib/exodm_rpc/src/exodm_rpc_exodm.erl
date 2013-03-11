@@ -10,7 +10,7 @@
 -export([json_rpc/2,
 	 exodm_admin/1]).
 -include_lib("lager/include/log.hrl").
--include_lib("exodm/include/exodm.hrl").
+-include("exodm.hrl").
 
 -define(USER_REPOSITORY, <<"user">>).
 -define(SYSTEM_REPOSITORY, <<"system">>).

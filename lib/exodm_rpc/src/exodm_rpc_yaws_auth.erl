@@ -4,7 +4,7 @@
 
 -include_lib("yaws/include/yaws_api.hrl").
 -include_lib("lager/include/log.hrl").
--include_lib("exodm/include/exodm.hrl").
+-include("exodm.hrl").
 
 auth(#arg{headers = Hdrs} = Arg, _RequestBody) ->
     io:requests([{put_chars,

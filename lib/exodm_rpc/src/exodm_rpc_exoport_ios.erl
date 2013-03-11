@@ -3,7 +3,7 @@
 -export([json_rpc/2]).
 
 -include_lib("lager/include/log.hrl").
--include_lib("exodm/include/exodm.hrl").
+-include("exodm.hrl").
 
 json_rpc({call, _Mod, 'device-register', Args}, Env) ->
     DevID0 = get_opt('device-id', Args, Env),

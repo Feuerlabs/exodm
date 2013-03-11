@@ -8,7 +8,7 @@
 -module(exodm_db_account).
 
 -include_lib("lager/include/log.hrl").
--include_lib("exodm/include/exodm.hrl").
+-include("exodm.hrl").
 -include("exodm_db.hrl").
 
 %% Gproc 
