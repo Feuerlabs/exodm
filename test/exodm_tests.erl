@@ -66,6 +66,9 @@ exodm_test_() ->
 		     ?my_t(list_users(Config)),
 		     ?my_t(store_yang(Config)),
 		     ?my_t(add_config_set_member(Config)),
+		     %% plugin tests
+		     ?my_t(plugin_login_logout(Config)),
+		     ?my_t(plugin_get_account(Config)),
 		     {setup,
 		      fun() -> start_http_client(Config) end,
 		      fun(Cfg1) -> stop_http_client(Cfg1) end,
@@ -393,6 +396,23 @@ add_config_set_member_scr() ->
 		end)
       end).
 
+user(?ACC1) -> ?ACC1ADM;
+user(?ACC2) -> ?ACC2ADM.
+
+call_plugin_scr(Acct, Fun, Args) ->
+    User = user(Acct),
+    codegen:exprs(
+      fun() ->
+	      true = exodm_plugin:login({'$var', Acct}, {'$var', User}),
+	      apply(exodm_plugin, {'$var', Fun}, {'$var', Args})
+      end).
+
+plugin_login_logout(Cfg) ->
+    ok = rscript(Cfg, call_plugin_scr(?ACC1, logout, [])).
+
+plugin_get_account(Cfg) ->
+    <<"a00000002">> = rscript(Cfg, call_plugin_scr(?ACC1, get_account, [])).
+
 %%% ==================================== Client BERT RPC Setup
 
 start_rpc_client(Cfg) ->
@@ -466,8 +486,9 @@ test_notification(Cfg) ->
 
 notification_(Cfg) ->
     ask_http_reset(Cfg),
-    exoport:rpc(exodm_rpc, notification, [test, 'echo-callback',
-					  [{message, "howdy"}]]),
+    RPCRes = exoport:rpc(exodm_rpc, notification, [test, 'echo-callback',
+						   [{message, "howdy"}]]),
+    io:fwrite(user, "notification() -> ~p~n", [RPCRes]),
     Fetched = fetch_json(Cfg),
     Rep = {struct, [{"jsonrpc","2.0"},
 		    {"method","test:echo-callback"},
