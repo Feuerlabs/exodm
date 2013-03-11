@@ -60,7 +60,8 @@ make_node(#state{target = T, rel = R, vm_args = As}) when T=/=undefined, R=/=und
     Lnk = filename:join([T, "rel", "exodm"]),
     filelib:ensure_dir(Lnk),
     file:make_symlink(abs_target(R), Lnk),
-    _CpR = file:copy(filename:join(R, "ctl"), filename:join(T, "ctl")),
+    _CpR = file:copy(filename:join(R, "ctl"), TCtl = filename:join(T, "ctl")),
+    set_x_bit(TCtl),
     write_env(R, T).
 
 abs_target(R) ->
@@ -76,6 +77,10 @@ abs_target(R) ->
 	{error,_} ->
 	    F
     end.
+
+set_x_bit(F) ->
+    file:change_mode(F, 8#00744).
+
 
 write_env(R, T) ->
     io:fwrite("write_env(~p, ~p)~n", [R, T]),
