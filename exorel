@@ -302,7 +302,7 @@ derive_root_dir(D) ->
 	true ->
 	    fulldir(D);
 	false ->
-	    case find_exodm_dev_repos(D) of
+	    case find_exodm_dev_repos(fulldir(D)) of
 		{true, D1} ->
 		    D1;
 		false ->
