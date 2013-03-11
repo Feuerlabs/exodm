@@ -12,7 +12,7 @@ ESL="$(PWD)/rel/plugins"
 all: compile
 
 tar:
-	./exorel tar `./exorel current`
+	./exorel tar `./exorel current` -root $(PWD)
 
 compile:
 	$(REBAR) get-deps
@@ -28,7 +28,7 @@ generate:
 	rm -f ./rel/exodm
 	rm -f rel/exodm rel/lib/exodm
 	(cd rel && $(PREBAR) generate -f skip_deps=true)
-	./exorel current `./exorel last_build`
+	./exorel current `./exorel last_build` -root $(PWD)
 
 dev:
 	./devsetup -target false
