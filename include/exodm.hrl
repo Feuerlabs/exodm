@@ -72,10 +72,10 @@
 -define(RPC_LIST_DEVICE_GROUPS, <<"list-device-groups">>).
 -define(RPC_LIST_DEVICE_GROUP_MEMBERS, <<"list-device-group-members">>).
 
--define(RPC_PROVISION_DEVICE, <<"provision-device">>).
+-define(RPC_PROVISION_DEVICE, <<"create-device">>).
 -define(RPC_LOOKUP_DEVICE, <<"lookup-device">>).
 -define(RPC_UPDATE_DEVICE, <<"update-device">>).
--define(RPC_DEPROVISION_DEVICES, <<"deprovision-devices">>).
+-define(RPC_DEPROVISION_DEVICES, <<"delete-devices">>).
 -define(RPC_LIST_DEVICES, <<"list-devices">>).
 
 -define(RPC_CREATE_PACKAGE, <<"create-package">>).

@@ -83,12 +83,12 @@ exodm_test_() ->
 			       ?my_t(json_list_device_types(Cfg1)),
 			       ?my_t(json_delete_device_type(Cfg1)),
 			       ?my_t(json_delete_nonempty_device_type(Cfg1)),
-			       ?my_t(json_provision_device(Cfg1)),
+			       ?my_t(json_create_device(Cfg1)),
 			       ?my_t(json_list_devices(Cfg1)),
 			       ?my_t(json_list_devices2(Cfg1)),
 			       ?my_t(json_list_device_type_members(Cfg1)),
 			       ?my_t(json_lookup_device(Cfg1)),
-			       ?my_t(json_deprovision_device(Cfg1)),
+			       ?my_t(json_delete_device(Cfg1)),
 			       ?my_t(json_lookup_device2(Cfg1)),
 			       ?my_t(json_lookup_bad_device(Cfg1)),
 			       ?my_t(json_create_config_set(Cfg1)),
@@ -652,9 +652,9 @@ json_delete_nonempty_device_type(_Cfg) ->
     ok.
 
 
-json_provision_device(_Cfg) ->
+json_create_device(_Cfg) ->
     {ok, Reply} = post_json_rpc(json_server(),
-				"exodm:provision-device", 1,
+				"exodm:create-device", 1,
 				{struct,[{"device-id", "y00000001"},
 					 %% {"protocol", "exodm_bert"},
 					 {"device-type", "type1"},
@@ -732,9 +732,9 @@ json_lookup_device(_Cfg) ->
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
 
-json_deprovision_device(_Cfg) ->
+json_delete_device(_Cfg) ->
     {ok, Reply} = post_json_rpc(json_server(),
-				"exodm:deprovision-devices", 1,
+				"exodm:delete-devices", 1,
 				{struct,[{"device-id",
 					  {array, ["y00000001"]}}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
