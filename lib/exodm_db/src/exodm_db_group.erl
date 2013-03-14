@@ -36,8 +36,7 @@ init(AID) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      Tab = table(AID),
-	      kvdb_conf:add_table(Tab, []),
-	      exodm_db:write(Tab, <<"__last_gid">>, <<0:32>>)
+	      kvdb_conf:add_table(Tab, [])
       end).
 
 table(AID0) ->
@@ -47,173 +46,159 @@ table(AID0) ->
 %% FIXME option validation
 new(AID0, Options) ->
     AID = exodm_db:account_id_key(AID0),
-    exodm_db:in_transaction(
-      fun(_) ->
-	      new(AID, new_group_id(AID), Options)
-      end).
+    case binary_opt(name, Options) of
+	<<>> -> {error, {required, name}};
+	Name ->
+	    exodm_db:in_transaction(
+	      fun(_) ->
+		      new(AID, Name, Options)
+	      end)
+    end.
 
-new_group_id(AID) ->
-    exodm_db:update_counter(table(AID), <<"__last_gid">>, 1).
-
-new(AID, GID0, Options) ->
-    Tab = table(AID),
-    GID = exodm_db:group_id_key(GID0),
-    case read(Tab, GID, name) of
-	[] ->
-	    Name = binary_opt(name, Options),
-	    insert(Tab, GID, name,     Name),
-	    insert(Tab, GID, url,      binary_opt(url,  Options)),
-	    {ok, gid_value(GID)};
+new(AID, Name, Options) ->
+    {Tab, GID} = tab_and_gid(AID, Name),
+    case kvdb_conf:read(Tab, GID) of
+	{error, not_found} ->
+	    kvdb_conf:write(Tab, {GID, [], <<>>}),
+	    kvdb_conf:write(
+	      Tab, {kvdb_conf:join_key(GID, <<"url">>), [],
+		    binary_opt(url,  Options)}),
+	    {ok, exodm_db:decode_id(GID)};
 	[_] ->
 	    {error, exists}
     end.
 
 %% FIXME validate every item BEFORE insert!
-update(AID0, GID0, Options) ->
+update(AID0, Name, Options) ->
     AID = exodm_db:account_id_key(AID0),
-    GID = exodm_db:group_id_key(GID0),
     exodm_db:in_transaction(
       fun(_) ->
-	      update_(AID, GID, Options)
+	      update_(AID, Name, Options)
       end).
 
-update_(AID, GID, Options) ->
-    Tab = table(AID),
-    case read(Tab, GID, name) of
-	[] ->
+update_(AID, Name, Options) ->
+    {Tab, GID} = tab_and_gid(AID, Name),
+    case kvdb_conf:read(Tab, GID) of
+	{error, not_found} ->
 	    {error, not_found};
-	[{_, Name0}] ->
+	{ok, _} ->
 	    lists:foreach(
 	      fun
-		  ({name,Value}) ->
-		      case to_binary(Value) of
-			  Name0 -> ok;
-			  NewName ->
-			      insert(Tab,GID,name,NewName)
-		      end;
-		  ({url,Value}) ->
-		      insert(Tab,GID,url,to_binary(Value))
+		  ({Key,Value}) ->
+		      insert(Tab,GID,to_binary(Key),to_binary(Value))
 	      end, Options)
     end.
 
-delete(AID0, GID0) ->
-    ?debug("~p:delete(~p, ~p)~n", [?MODULE, AID0, GID0]),
-    AID = exodm_db:account_id_key(AID0),
-    GID = exodm_db:group_id_key(GID0),
+delete(AID, Name) ->
+    ?debug("~p:delete(~p, ~p)~n", [?MODULE, AID, Name]),
     exodm_db:in_transaction(
       fun(_) ->
-	      delete_(AID, GID)
+	      delete_(AID, Name)
       end).
 
-delete_(AID, GID) ->
-    Tab = table(AID),
-    case exist(AID, GID) of
-	true ->
+delete_(AID, Name) ->
+    {Tab, GID} = tab_and_gid(AID, Name),
+    case kvdb_conf:read(Tab, GID) of
+	{ok, _} ->
 	    kvdb_conf:delete_all(Tab, GID);
-	false ->
+	{error, not_found} ->
 	    {error, not_found}
     end.
 
-lookup(AID0, GID0) ->
-    AID = exodm_db:account_id_key(AID0),
-    GID = exodm_db:group_id_key(GID0),
-    Tab = table(AID),
+lookup(AID, Name) ->
+    {Tab, GID} = tab_and_gid(AID, Name),
     exodm_db:in_transaction(
       fun(_) ->
-	      [{id,gid_value(GID)}] ++
-		  read(Tab, GID, name) ++
-		  read(Tab, GID, url)
+	      case kvdb_conf:read(Tab, GID) of
+		  {ok, _} ->
+		      Dec = exodm_db:decode_id(GID),
+		      [{id, Dec}, {name, Dec}] ++ read(Tab, GID, url);
+		  {error, not_found} ->
+		      []
+	      end
       end).
 
-lookup(AID0, GID0, Attr) when Attr==name; Attr==url ->
-    AID = exodm_db:account_id_key(AID0),
-    GID = exodm_db:group_id_key(GID0),
-    Tab = table(AID),
+lookup(AID, Name, Attr) when Attr==name; Attr==url ->
+    {Tab, GID} = tab_and_gid(AID, Name),
     read(Tab, GID, Attr).
 
-exist(AID, GID0) ->
-    Tab = table(AID),
-    GID = exodm_db:group_id_key(GID0),
-    case read(Tab,GID,name) of
-	[] -> false;
-	[_] -> true
+exist(AID, Name) ->
+    {Tab, GID} = tab_and_gid(AID, Name),
+    case kvdb_conf:read(Tab, GID) of
+	{error, not_found} -> false;
+	{ok, _} -> true
     end.
 
 list_group_keys(AID, Limit) ->
     list_group_keys(AID, Limit, 0).
 
 list_group_keys(AID, Limit, Prev0) when is_integer(Limit), Limit > 0 ->
-    %% The __last_gid is a non-group object in this table, and will always
-    %% lie before all group IDs (which are of the form "g........").
-    Prev = erlang:max(exodm_db:group_id_key(Prev0), <<"__last_gid">>),
-    exodm_db:list_next(table(AID), Limit, Prev, fun(K) -> K end).
+    {Tab, Prev} = tab_and_gid(AID, Prev0),
+    exodm_db:list_next(Tab, Limit, Prev, fun(K) -> K end).
 
 list_groups(AID, Limit, Prev0) when is_integer(Limit), Limit > 0 ->
-        %% The __last_gid is a non-group object in this table, and will always
-    %% lie before all group IDs (which are of the form "g........").
-    Prev = erlang:max(exodm_db:group_id_key(Prev0), <<"__last_gid">>),
-    exodm_db:list_next(table(AID), Limit, Prev,
+    {Tab, Prev} = tab_and_gid(AID, Prev0),
+    exodm_db:list_next(Tab, Limit, Prev,
 		       fun(Key) ->
 			       [Grp] = kvdb_conf:split_key(Key),
-			       exodm_db_group:lookup(AID, Grp)
+			       exodm_db:read_all(Tab, Grp)
 		       end).
 
-add_members_to_groups(AID0, GIDs, DIDs) ->
+add_members_to_groups(AID0, Groups, DIDs) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:in_transaction(
       fun(_) ->
 	      lists:foreach(
-		fun(GID) ->
+		fun(Grp) ->
 			lists:foreach(
 			  fun(DID) ->
-				  add_device(AID, GID, DID)
+				  add_device(AID, Grp, DID)
 			  end, DIDs)
-		end, GIDs)
+		end, Groups)
       end).
 
-remove_members_from_groups(AID0, GIDs, DIDs) ->
+remove_members_from_groups(AID0, Groups, DIDs) ->
     AID = exodm_db:account_id_key(AID0),
     exodm_db:in_transaction(
       fun(_) ->
 	      lists:foreach(
-		fun(GID) ->
+		fun(Grp) ->
 			lists:foreach(
 			  fun(DID) ->
-				  remove_device(AID, GID, DID)
+				  remove_device(AID, Grp, DID)
 			  end, DIDs)
-		end, GIDs)
+		end, Groups)
       end).
 
-add_device(AID0, GID0, DID) ->
-    ?debug("~p:add_device(~p, ~p, ~p)~n", [?MODULE, AID0, GID0, DID]),
-    {Tab, GID} = tab_and_gid(AID0, GID0),
+add_device(AID, Grp, DID) ->
+    ?debug("~p:add_device(~p, ~p, ~p)~n", [?MODULE, AID, Grp, DID]),
+    {Tab, GID} = tab_and_gid(AID, Grp),
     Key = exodm_db:join_key([GID, <<"devices">>, DID]),
     kvdb_conf:write(Tab, {Key, [], <<>>}),
-    exodm_db_device:do_add_group(AID0, DID, GID).
+    exodm_db_device:do_add_group(AID, DID, GID).
 
-remove_device(AID0, GID0, DID) ->
-    {Tab, GID} = tab_and_gid(AID0, GID0),
+remove_device(AID, Grp, DID) ->
+    {Tab, GID} = tab_and_gid(AID, Grp),
     Key = exodm_db:join_key([GID, <<"devices">>, DID]),
     kvdb_conf:delete(Tab, Key),
-    exodm_db_device:do_remove_group(AID0, DID, GID).
+    exodm_db_device:do_remove_group(AID, DID, GID).
 
-device_is_deleted(AID0, DID0, GIDs) ->
+device_is_deleted(AID0, DID0, Groups) ->
     AID = exodm_db:account_id_key(AID0),
-    %% Tab = table(AID),
     DID = exodm_db:encode_id(DID0),
     exodm_db:in_transaction(
       fun(_) ->
 	      lists:foreach(
 		fun(GID) ->
 			remove_device(AID, GID, DID)
-		end, GIDs)
+		end, Groups)
       end).
 
 list_devices(AID, GID) ->
     list_devices(AID, GID, 30, <<>>).
 
-list_devices(AID0, GID0, Limit, Prev0) when is_integer(Limit), Limit > 0 ->
-    {Tab, GID} = tab_and_gid(AID0, GID0),
+list_devices(AID, Grp, Limit, Prev0) when is_integer(Limit), Limit > 0 ->
+    {Tab, GID} = tab_and_gid(AID, Grp),
     F = fun(K) -> lists:last(kvdb_conf:split_key(K)) end,
     case to_binary(Prev0) of
 	<<>> ->
@@ -232,7 +217,7 @@ insert(Tab, GID, Item, Value) ->
 
 tab_and_gid(AID0, GID0) ->
     Tab = table(exodm_db:account_id_key(AID0)),
-    GID = exodm_db:group_id_key(GID0),
+    GID = exodm_db:encode_id(GID0),
     {Tab, GID}.
 
 read(Tab, GID,Item) ->
@@ -241,6 +226,3 @@ read(Tab, GID,Item) ->
 	{ok,{_,_,Value}} -> [{Item,Value}];
 	{error,not_found} -> []
     end.
-
-gid_value(GID) ->
-    <<(exodm_db:group_id_num(GID)):32>>.

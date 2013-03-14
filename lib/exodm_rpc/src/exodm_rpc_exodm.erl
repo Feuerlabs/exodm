@@ -787,7 +787,7 @@ list_device_type_members(AID, Name, N, Prev) ->
 create_device_group(AID, GName, URL) ->    
     {ok, GID} = exodm_db_group:new(AID, [{name, GName},
 					 {url, URL}]),
-    {ok, result_code(ok) ++ [{gid, to_uint32(exodm_db:group_id_value(GID))}]}.    
+    {ok, result_code(ok) ++ [{gid, GID}]}.    
 update_device_group(AID, GID, Values) ->
     Values2 = lists:map(fun({'notification-url',U, _}) -> {url,U};
 			   ({K,V,_}) -> {K,V}
@@ -807,7 +807,7 @@ delete_device_group(AID, GID) ->
     
 list_device_groups(AID, N, Prev0, Tail) ->
     lager:debug("aid ~p",[AID]),
-    Prev = erlang:max(exodm_db:group_id_key(Prev0), <<"__last_gid">>),
+    Prev = exodm_db:encode_id(Prev0),
     {Tab,FullPrev,F} =
 	case lists:keyfind('device-id', 1, Tail) of
 	    {'device-id', DID, _} ->
@@ -836,7 +836,7 @@ list_device_groups(AID, N, Prev0, Tail) ->
     {ok, [{'device-groups',
 	   {array, [
 		    {struct,
-		     [{gid, to_uint32(exodm_db:group_id_value(G))},
+		     [{gid, G},
 		      {name, Nm},
 		      {'notification-url', U}]} ||
 		       [{id,G},{name,Nm},{url,U}|_] <- Res]}}]}.

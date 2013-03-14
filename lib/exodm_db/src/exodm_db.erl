@@ -53,6 +53,7 @@
 	 to_hex/1]).
 
 -export([read/1, read/2,
+	 read_all/2,
 	 write/2, write/3,
 	 update_counter/2,
 	 update_counter/3,
@@ -67,6 +68,8 @@
 -import(lists, [reverse/1]).
 
 -include("exodm_db.hrl").
+-include_lib("kvdb/include/kvdb_conf.hrl").
+
 %%
 %% fixme: bitmap version is actually not that fast as I tought
 %% break even is plenty of tests.
@@ -754,6 +757,15 @@ read(Key) ->
 
 read(Tab, Key) ->
     kvdb_conf:read(Tab, Key).
+
+read_all(Tab, Key) ->
+    case kvdb_conf:read_tree(Tab, Key) of
+	#conf_tree{} = CT ->
+	    [{K, V} || {K,_,V} <- kvdb_conf:flatten_tree(
+				    CT#conf_tree{root = <<>>})];
+	[] ->
+	    []
+    end.
 
 update_counter(Key, Incr) ->
     update_counter(<<"data">>, Key, Incr).

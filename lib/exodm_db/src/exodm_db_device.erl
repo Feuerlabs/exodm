@@ -574,7 +574,7 @@ insert_groups(AID, Tab, DID, Groups) ->
 
 
 insert_group_(AID, Tab, DID, GID) ->
-    K = exodm_db:join_key([DID, ?DEV_DB_GROUPS, exodm_db:group_id_key(GID)]),
+    K = exodm_db:join_key([DID, ?DEV_DB_GROUPS, exodm_db:encode_id(GID)]),
     exodm_db_group:add_device(AID, GID, DID),
     kvdb_conf:write(Tab, {K, [], <<>>}).
 
@@ -595,7 +595,7 @@ add_groups(AID, DID0, Groups) ->
 add_groups_(Tab, AID, DID, Groups) ->
     lists:foreach(
       fun(GID0) ->
-	      GID = exodm_db:group_id_key(GID0),
+	      GID = exodm_db:encode_id(GID0),
 	      Key = kvdb_conf:join_key([DID, ?DEV_DB_GROUPS, GID]),
 	      kvdb_conf:write(Tab, {Key, [], <<>>}),
 	      exodm_db_group:add_device(AID, GID, DID)
@@ -605,7 +605,7 @@ do_add_group(AID0, DID0, GID0) ->
     ?debug("~p:do_add_group(AID=~p, DID=~p, GID=~p)~n", [?MODULE,AID0,DID0,GID0]),
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
-    GID = exodm_db:group_id_key(GID0),
+    GID = exodm_db:encode_id(GID0),
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->
@@ -636,7 +636,7 @@ remove_groups(AID, DID0, Groups) ->
 remove_groups_(Tab, AID, DID, Groups) ->
     lists:foreach(
       fun(GID0) ->
-	      GID = exodm_db:group_id_key(GID0),
+	      GID = exodm_db:encode_id(GID0),
 	      Key = kvdb_conf:join_key([DID,?DEV_DB_GROUPS,GID]),
 	      kvdb_conf:delete(Tab, Key),
 	      exodm_db_group:remove_device(AID, GID, DID)
@@ -645,7 +645,7 @@ remove_groups_(Tab, AID, DID, Groups) ->
 do_remove_group(AID0, DID0, GID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
-    GID = exodm_db:group_id_key(GID0),
+    GID = exodm_db:encode_id(GID0),
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_) ->
