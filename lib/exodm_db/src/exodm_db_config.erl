@@ -241,7 +241,12 @@ switch(AID0, Name0, Area) when Area == <<"pending">>;
       fun(_Db) ->
 	      case read_config_set_values(AID, Name, OrigArea) of
 		  {ok, CT} ->
-		      delete_config_set_values(AID, Name, Area),
+		      if Area == <<"pending">> ->
+			      delete_config_set_values(AID, Name, Area);
+			 true ->
+			      %% Don't wipe installed; keep old values.
+			      ok
+		      end,
 		      delete_config_set_values(AID, Name, OrigArea),
 		      Root = exodm_db:join_key(Name, Area),
 		      kvdb_conf:write_tree(Tab, Root, CT);
