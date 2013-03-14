@@ -70,7 +70,7 @@ insert_(Tab, AID, DID, Options) ->
       Tab, AID, DID, proplists:get_value('device-type', Options)),
     _ = [insert_attr(Tab, DID, K, V) ||
 	    {K,V} <- Options,
-	    not lists:member(K, ['device-id','gid', 'device-type',
+	    not lists:member(K, ['device-id','group-id', 'device-type',
 				 'server-key', 'device-key',
 				 'protocol', 'groups'])],
     ok.
@@ -329,7 +329,7 @@ lookup(AID, DID) ->
 lookup_(Tab,Key) ->
     case kvdb_conf:read(Tab, kvdb_conf:join_key(Key, ?DEV_DB_DEVICE_ID)) of
 	{ok, {_, _, _}} ->
-	    [{'dev-id', exodm_db:decode_id(Key)} |
+	    [{'device-id', exodm_db:decode_id(Key)} |
 	     lookup_attr_(Tab,Key,'device-type') ++
 		 lookup_attrs(Tab, Key)];
 	{error, _} ->
@@ -665,7 +665,7 @@ read_value(Tab, Key, Item) when is_binary(Item) ->
     end.
     
 attr_key(Key, <<"did">>        ) -> [Key, ?DEV_DB_DEVICE_ID];
-attr_key(Key, <<"dev-id">>     ) -> [Key, ?DEV_DB_DEVICE_ID];
+attr_key(Key, <<"device-id">>     ) -> [Key, ?DEV_DB_DEVICE_ID];
 attr_key(Key, A) -> [Key, A].
 
 

@@ -155,18 +155,18 @@ populate(Cfg) ->
     AID1 = ?rpc(exodm_db_account, lookup_by_name, [?ACC1]),
     AID2 = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
     io:fwrite(user, "AID1 = ~p; AID2 = ~p~n", [AID1, AID2]),
-    GID1 = list_to_binary(?GID1),
-    GID2 = list_to_binary(?GID2),
-    {ok, GID1} = ?rpc(exodm_db_group,new,
-		       [
-			AID2, [{name, ?GID1},
-			       {url, ?URL1}]
-		       ]),
-    {ok, GID2} = ?rpc(exodm_db_group,new,
-		       [
-			AID2, [{name, ?GID2},
-			       {url, ?URL2}]
-    		     ]),
+    %% GID1 = list_to_binary(?GID1),
+    %% GID2 = list_to_binary(?GID2),
+    ok = ?rpc(exodm_db_group,new,
+	      [
+	       AID2, [{name, ?GID1},
+		      {url, ?URL1}]
+	      ]),
+    ok = ?rpc(exodm_db_group,new,
+	      [
+	       AID2, [{name, ?GID2},
+		      {url, ?URL2}]
+	      ]),
     ok = ?rpc(exodm_db_device_type, new,
 	      [AID1, <<"type1">>,
 	       [{'protocol', <<"exodm_bert">>}]]),
@@ -655,7 +655,7 @@ json_delete_nonempty_device_type(_Cfg) ->
 json_provision_device(_Cfg) ->
     {ok, Reply} = post_json_rpc(json_server(),
 				"exodm:provision-device", 1,
-				{struct,[{"dev-id", "y00000001"},
+				{struct,[{"device-id", "y00000001"},
 					 %% {"protocol", "exodm_bert"},
 					 {"device-type", "type1"},
 					 {"server-key", 3},
@@ -673,9 +673,9 @@ json_list_devices(_Cfg) ->
 					  {"previous", ""}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"devices",
-				    {array, [{struct,[{"dev-id","hclient"}|_]},
-					     {struct,[{"dev-id","hclient2"}|_]},
-					     {struct,[{"dev-id","x00000001"}|_]}
+				    {array, [{struct,[{"device-id","hclient"}|_]},
+					     {struct,[{"device-id","hclient2"}|_]},
+					     {struct,[{"device-id","x00000001"}|_]}
 					     ]}
 				   }]}},
 	      {"id", 1},
@@ -689,7 +689,7 @@ json_list_devices2(_Cfg) ->
 					  {"previous", "x00000003"}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct, [{"devices",
-				    {array, [{struct,[{"dev-id","y00000001"}|_]}
+				    {array, [{struct,[{"device-id","y00000001"}|_]}
 					     ]}
 				   }]}},
 	      {"id", 1},
@@ -716,13 +716,13 @@ json_list_device_type_members(_Cfg) ->
 json_lookup_device(_Cfg) ->
     {ok, Reply} = post_json_rpc(json_server(),
 				"exodm:lookup-device", "1",
-				{struct,[{"dev-id", "y00000001"}]}),
+				{struct,[{"device-id", "y00000001"}]}),
     io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
     %% lookup-device doesn't return the server- and device-key attributes
     {struct, [{"result",
 	       {struct,[{"result", "ok"},
 			{"devices",
-			 {array, [{struct, [{"dev-id", "y00000001"},
+			 {array, [{struct, [{"device-id", "y00000001"},
 					    {"device-type", "type1"},
 					    {"session-timeout", 0}
 					    %% {"protocol", "exodm_bert"}
@@ -735,7 +735,7 @@ json_lookup_device(_Cfg) ->
 json_deprovision_device(_Cfg) ->
     {ok, Reply} = post_json_rpc(json_server(),
 				"exodm:deprovision-devices", 1,
-				{struct,[{"dev-id",
+				{struct,[{"device-id",
 					  {array, ["y00000001"]}}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result", {struct,[{"result","ok"}]}},
@@ -746,7 +746,7 @@ json_deprovision_device(_Cfg) ->
 json_lookup_device2(_Cfg) ->
     {ok, Reply} = post_json_rpc(json_server(),
 				"exodm:lookup-device", "1",
-				{struct,[{"dev-id", "y00000001"}]}),
+				{struct,[{"device-id", "y00000001"}]}),
     io:fwrite(user, "~p: lookup-device (deleted) -> ~p~n", [?LINE, Reply]),
     %% lookup-device doesn't return the server- and device-key attributes
     {struct, [{"result",
@@ -760,7 +760,7 @@ json_lookup_device2(_Cfg) ->
 json_lookup_bad_device(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:lookup-device", "1",
-				{struct,[{"dev-id", "---------"}]}),
+				{struct,[{"device-id", "---------"}]}),
     io:fwrite(user, "~p: lookup-device -> ~p~n", [?LINE, Reply]),
     %% lookup-device doesn't return the server- and device-key attributes
     {struct, [{"result",
@@ -848,7 +848,7 @@ json_add_config_set_members(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:add-config-set-members", "1",
 				{struct,[{"name", {array, ["test_cfg_2"]}},
-					 {"dev-id", {array, ["x00000001",
+					 {"device-id", {array, ["x00000001",
 							     "x00000002"]}}
 					]}),
     io:fwrite(user, "~p: add-config-set-members -> ~p~n", [?LINE, Reply]),
@@ -877,7 +877,7 @@ json_remove_config_set_members(_Cfg) ->
     {ok, Reply} = post_json_rpc(json_server(),
 				"exodm:remove-config-set-members", 1,
 				{struct,[{"name", {array, ["test_cfg_2"]}},
-					 {"dev-id", {array, ["x00000001",
+					 {"device-id", {array, ["x00000001",
 							     "x00000002"]}}
 					]}),
     io:fwrite(user, "~p: remove-config-set-members -> ~p~n", [?LINE, Reply]),
@@ -921,7 +921,7 @@ json_create_device_group(_Cfg) ->
 					 {"notification-url",?URL1}
 					]}),
     io:fwrite(user, "~p: create-device-group -> ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct,[{"result", "ok"},{"gid",?GID3}]}},
+    {struct, [{"result", {struct,[{"result", "ok"}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
     ok.
@@ -935,14 +935,11 @@ json_list_device_groups(_Cfg) ->
     io:fwrite(user, "~p: list-device-groups -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
 	       {struct,[{"device-groups",
-			 {array, [{struct, [{"gid",?GID1},
-					    {"name", ?GID1},
+			 {array, [{struct, [{"group-id",?GID1},
 					    {"notification-url",_}]},
-				  {struct, [{"gid",?GID3},
-					    {"name", ?GID3},
+				  {struct, [{"group-id",?GID3},
 					    {"notification-url",_}]},
-				  {struct, [{"gid",?GID2},
-					    {"name", ?GID2},
+				  {struct, [{"group-id",?GID2},
 					    {"notification-url",_}]}
 				 ]}}
 			]}},
@@ -960,11 +957,9 @@ json_list_device_groups_dev(_Cfg) ->
     io:fwrite(user, "~p: list-device-groups -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
 	       {struct,[{"device-groups",
-			 {array, [{struct, [{"gid",?GID1},
-					    {"name", "feuerlabs"},
+			 {array, [{struct, [{"group-id",?GID1},
 					    {"notification-url",_}]},
-				  {struct, [{"gid",?GID2},
-					    {"name", "travelping"},
+				  {struct, [{"group-id",?GID2},
 					    {"notification-url",_}]}
 				 ]}}
 			]}},
@@ -977,8 +972,8 @@ json_list_device_groups_dev(_Cfg) ->
 json_add_device_group_members(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:add-device-group-members", "1",
-				{struct,[{"device-groups", {array, [?GID3]}},
-					 {"dev-id", {array, ["x00000001",
+				{struct,[{"group-id", {array, [?GID3]}},
+					 {"device-id", {array, ["x00000001",
 							     "x00000002"]}}
 					]}),
     io:fwrite(user, "~p: add-device-group-members -> ~p~n", [?LINE, Reply]),
@@ -991,7 +986,7 @@ json_add_device_group_members(_Cfg) ->
 json_list_device_group_members(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:list-device-group-members", "1",
-				{struct,[{"gid", ?GID3},
+				{struct,[{"group-id", ?GID3},
 					 {"n", 2},
 					 {"previous", ""}]}),
     io:fwrite(user, "~p: list-device-group-members -> ~p~n", [?LINE, Reply]),
@@ -1007,8 +1002,8 @@ json_list_device_group_members(_Cfg) ->
 json_remove_device_group_members(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:remove-device-group-members", "1",
-				{struct,[{"device-groups", {array, [?GID3]}},
-					 {"dev-id", {array, ["x00000001",
+				{struct,[{"group-id", {array, [?GID3]}},
+					 {"device-id", {array, ["x00000001",
 							     "x00000002"]}}
 					]}),
     io:fwrite(user, "~p: remove-device-group-members -> ~p~n", [?LINE, Reply]),
@@ -1020,7 +1015,7 @@ json_remove_device_group_members(_Cfg) ->
 json_list_device_group_members2(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:list-device-group-members", "1",
-				{struct,[{"gid", ?GID3},
+				{struct,[{"group-id", ?GID3},
 					 {"n", 2},
 					 {"previous", ""}]}),
     io:fwrite(user, "~p: list-device-group-members -> ~p~n", [?LINE, Reply]),
@@ -1036,7 +1031,7 @@ json_list_device_group_members2(_Cfg) ->
 json_delete_device_group(_Cfg) ->
     {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
 				"exodm:delete-device-group", "1",
-				{struct, [{"gid",?GID3}]}),
+				{struct, [{"group-id",?GID3}]}),
     io:fwrite(user, "~p: delete-device-group -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
 	       {struct, [{"result", "ok"}]}},

@@ -63,7 +63,7 @@ new(AID, Name, Options) ->
 	    kvdb_conf:write(
 	      Tab, {kvdb_conf:join_key(GID, <<"url">>), [],
 		    binary_opt(url,  Options)}),
-	    {ok, exodm_db:decode_id(GID)};
+	    ok;
 	[_] ->
 	    {error, exists}
     end.
@@ -112,7 +112,7 @@ lookup(AID, Name) ->
 	      case kvdb_conf:read(Tab, GID) of
 		  {ok, _} ->
 		      Dec = exodm_db:decode_id(GID),
-		      [{id, Dec}, {name, Dec}] ++ read(Tab, GID, url);
+		      [{'group-id', Dec}] ++ read(Tab, GID, url);
 		  {error, not_found} ->
 		      []
 	      end

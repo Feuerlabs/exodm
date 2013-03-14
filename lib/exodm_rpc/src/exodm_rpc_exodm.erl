@@ -247,12 +247,12 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_CONFIG_SETS,
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_ADD_CONFIG_SET_MEMBERS,
 	   [{'name', CfgDataList, _},
-	    {'dev-id', DevIdList, _}|_Tail]} = _RPC, _Env) ->
+	    {'device-id', DevIdList, _}|_Tail]} = _RPC, _Env) ->
     add_config_set_members(AID, CfgDataList, DevIdList);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_REMOVE_CONFIG_SET_MEMBERS,
 	   [{'name', Names, _},
-	    {'dev-id', DIDs, _}|_Tail]} = _RPC, _Env) ->
+	    {'device-id', DIDs, _}|_Tail]} = _RPC, _Env) ->
     remove_config_set_members(AID, Names, DIDs);
         
 json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_CONFIG_SET_MEMBERS,
@@ -396,11 +396,11 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_CREATE_DEVICE_GROUP,
     create_device_group(AID, GName, URL);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_UPDATE_DEVICE_GROUP,
-	   [{'gid', GID, _}|Values] = _Cfg} = _RPC, _Env) ->
+	   [{'group-id', GID, _}|Values] = _Cfg} = _RPC, _Env) ->
     update_device_group(AID, GID, Values);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_DEVICE_GROUP,
-	   [{'gid', GID, _}|_Tail] = _Cfg} = _RPC, _Env) ->
+	   [{'group-id', GID, _}|_Tail] = _Cfg} = _RPC, _Env) ->
     delete_device_group(AID, GID);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_GROUPS,
@@ -409,43 +409,42 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_GROUPS,
     list_device_groups(AID, N, Prev, Tail);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_ADD_DEVICE_GROUP_MEMBERS,
-	   [{'device-groups', GIDs, _},
-	    {'dev-id', DIDs, _}|_Tail] = _Cfg}, _Env) ->
+	   [{'group-id', GIDs, _},
+	    {'device-id', DIDs, _}|_Tail] = _Cfg}, _Env) ->
     add_device_group_members(AID, GIDs, DIDs);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_REMOVE_DEVICE_GROUP_MEMBERS,
-	   [{'device-groups', GIDs, _},
-	    {'dev-id', DIDs, _}|_Tail] = _Cfg}, _Env) ->
+	   [{'group-id', GIDs, _},
+	    {'device-id', DIDs, _}|_Tail] = _Cfg}, _Env) ->
     remove_device_group_members(AID, GIDs, DIDs);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_GROUP_MEMBERS,
-	   [{'gid', GID, _}, 
+	   [{'group-id', GID, _}, 
 	    {'n', N, _}, 
 	    {'previous', Prev, _}|_Tail] = _Params}, _Env) ->
     list_device_group_members(AID, GID, N, Prev);
 
 %% Device
 json_rpc_(AID, {call, _, ?RPC_PROVISION_DEVICE,
-	   [{'dev-id', I, _},
+	   [{'device-id', I, _},
 	    {'device-type', T, _} |
 	    Opts]} = _RPC, _Env) ->
     provision_device(AID, I, [{'device-type', T}|kvl(Opts)]);
 
 json_rpc_(AID, {call, _, ?RPC_PROVISION_DEVICE,
-	   [{DevId, DID, _}|Opts] = _Cfg} = _RPC, _Env)
-  when DevId=='dev-id'; DevId=='device-id' ->
+	   [{'device-id', DID, _}|Opts] = _Cfg} = _RPC, _Env) ->
     provision_device(AID, DID, kvl(Opts));
 
 json_rpc_(AID, {call, _, ?RPC_LOOKUP_DEVICE,
-	   [{'dev-id', I, _}|_Tail]}, _Env) ->
+	   [{'device-id', I, _}|_Tail]}, _Env) ->
     lookup_device(AID, I);
     
 json_rpc_(AID, {call, _, ?RPC_UPDATE_DEVICE,
-	   [{'dev-id', I, _} | Opts]}, _Env) ->
+	   [{'device-id', I, _} | Opts]}, _Env) ->
     update_device(AID, I, Opts);
 
 json_rpc_(AID, {call, _, ?RPC_DEPROVISION_DEVICES,
-	   [{'dev-id', DevIdList, _}|_Tail]}, _Env) ->
+	   [{'device-id', DevIdList, _}|_Tail]}, _Env) ->
     deprovision_devices(AID, DevIdList);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICES,
@@ -785,9 +784,9 @@ list_device_type_members(AID, Name, N, Prev) ->
     {ok, [{'device-type-members', {array, Res}}]}.
 
 create_device_group(AID, GName, URL) ->    
-    {ok, GID} = exodm_db_group:new(AID, [{name, GName},
-					 {url, URL}]),
-    {ok, result_code(ok) ++ [{gid, GID}]}.    
+    ok = exodm_db_group:new(AID, [{name, GName},
+				  {url, URL}]),
+    {ok, result_code(ok)}.
 update_device_group(AID, GID, Values) ->
     Values2 = lists:map(fun({'notification-url',U, _}) -> {url,U};
 			   ({K,V,_}) -> {K,V}
@@ -836,10 +835,9 @@ list_device_groups(AID, N, Prev0, Tail) ->
     {ok, [{'device-groups',
 	   {array, [
 		    {struct,
-		     [{gid, G},
-		      {name, Nm},
+		     [{'group-id', G},
 		      {'notification-url', U}]} ||
-		       [{id,G},{name,Nm},{url,U}|_] <- Res]}}]}.
+		       [{'group-id',G},{url,U}|_] <- Res]}}]}.
 
 add_device_group_members(AID, GIDs, DIDs) ->
     {ok, ?catch_result(exodm_db_group:add_members_to_groups(AID, GIDs, DIDs))}.
