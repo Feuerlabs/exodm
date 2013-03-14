@@ -42,6 +42,7 @@
 
 -define(RPC_CREATE_CONFIG_SET, <<"create-config-set">>).
 -define(RPC_UPDATE_CONFIG_SET, <<"update-config-set">>). 
+-define(RPC_READ_CONFIG_SET_DATA, <<"read-config-set-data">>). 
 -define(RPC_DELETE_CONFIG_SET, <<"delete-config-set">>).
 -define(RPC_LIST_CONFIG_SETS, <<"list-config-sets">>).
 -define(RPC_LIST_CONFIG_SET_MEMBERS, <<"list-config-set-members">>).
@@ -107,6 +108,8 @@
          {?RPC_CREATE_CONFIG_SET, 
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
          {?RPC_UPDATE_CONFIG_SET, 
+          [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
+         {?RPC_READ_CONFIG_SET_DATA,
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
          {?RPC_DELETE_CONFIG_SET, 
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},

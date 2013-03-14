@@ -13,6 +13,9 @@
     update_config_set/3,           %% (AID, Name, Options)
     read_config_set/2,             %% (AID, Name)
     read_config_set_values/2,      %% (AID, Name)
+    read_config_set_values/3,      %% (AID, Name, Area)
+    delete_config_set_values/2,    %% (AID, Name, Area)
+    delete_config_set_values/3,    %% (AID, Name, Area)
     get_yang_spec/2,               %% (AID, Name)
     get_url/2,                     %% (AID, Name)
     delete_config_set/2,           %% (AID, Name)
@@ -27,7 +30,10 @@
     cache_values/2,                %% (AID, Name)
     map_device_to_cached_values/4, %% (AID, Name)
     get_cached/4,
-    switch_to_active/2             %% (AID, Name)
+    remove_cached/4,
+    switch/3,                      %% (AID, Name, pending | installed)
+    switch_to_pending/2,           %% (AID, Name)
+    switch_to_installed/2          %% (AID, Name)
    ]).
 -export([table/1]).
 
@@ -161,13 +167,37 @@ get_url(AID, Name) ->
     end.
 
 read_config_set_values(AID, Name) ->
+    read_config_set_values(AID, Name, <<"staged">>).
+
+read_config_set_values(AID, Name, Area) when Area == <<"staged">>;
+					     Area == <<"pending">>;
+					     Area == <<"installed">> ->
     Tab = table(AID),
-    NameKey = exodm_db:join_key(exodm_db:encode_id(Name), <<"values">>),
+    NameKey = exodm_db:join_key(exodm_db:encode_id(Name), Area),
     exodm_db:transaction(
       fun(_) ->
 	      case kvdb_conf:read_tree(Tab, NameKey) of
 		  #conf_tree{} = CT ->
 		      {ok, CT};
+		  [] ->
+		      {error, not_found}
+	      end
+      end).
+
+delete_config_set_values(AID, Name) ->
+    delete_config_set_values(AID, Name, <<"staged">>).
+
+delete_config_set_values(AID, Name, Area) when Area == <<"staged">>;
+					     Area == <<"pending">>;
+					     Area == <<"installed">> ->
+    Tab = table(AID),
+    NameKey = exodm_db:join_key(exodm_db:encode_id(Name), Area),
+    exodm_db:transaction(
+      fun(_) ->
+	      case kvdb_conf:read_tree(Tab, NameKey) of
+		  #conf_tree{} ->
+		      kvdb_conf:delete_tree(Tab, NameKey),
+		      ok;
 		  [] ->
 		      {error, not_found}
 	      end
@@ -183,7 +213,7 @@ cache_values(AID0, Name0) ->
 	      case read_config_set_values(AID, Name) of
 		  {ok, CT} ->
 		      ?debug("read CT = ~p~n", [CT]),
-		      Key = exodm_db:join_key(Name, <<"values">>),
+		      Key = exodm_db:join_key(Name, <<"staged">>),
 		      {ok, Last} = kvdb_conf:last_list_pos(Cache, Key),
 		      ?debug("Last = ~p~n", [Last]),
 		      Ref = Last+1,
@@ -194,18 +224,26 @@ cache_values(AID0, Name0) ->
 	      end
       end).
 
-switch_to_active(AID0, Name0) ->
+switch_to_pending(AID, Name) -> switch(AID, Name, <<"pending">>).
+switch_to_installed(AID, Name) -> switch(AID, Name, <<"installed">>).
+
+switch(AID0, Name0, Area) when Area == <<"pending">>;
+			       Area == <<"installed">> ->
     ?debug("switch_to_active(~p, ~p)~n", [AID0, Name0]),
+    OrigArea = case Area of
+		   <<"pending">> -> <<"staged">>;
+		   <<"installed">> -> <<"pending">>
+	       end,
     AID = exodm_db:account_id_key(AID0),
     Name = exodm_db:encode_id(Name0),
     Tab = table(AID),
     exodm_db:in_transaction(
       fun(_Db) ->
-	      case read_config_set_values(AID, Name) of
+	      case read_config_set_values(AID, Name, OrigArea) of
 		  {ok, CT} ->
-		      kvdb_conf:delete_tree(
-			Tab, exodm_db:join_key(Name, <<"values">>)),
-		      Root = exodm_db:join_key(Name, <<"active">>),
+		      delete_config_set_values(AID, Name, Area),
+		      delete_config_set_values(AID, Name, OrigArea),
+		      Root = exodm_db:join_key(Name, Area),
 		      kvdb_conf:write_tree(Tab, Root, CT);
 		  {error, not_found} = Err ->
 		      error(Err)
@@ -218,7 +256,7 @@ map_device_to_cached_values(AID0, Name0, Ref, DID) ->
     Cache = cache(AID),
     exodm_db:in_transaction(
       fun(_Db) ->
-	      Key = exodm_db:join_key(Name, <<"values">>),
+	      Key = exodm_db:join_key(Name, <<"staged">>),
 	      RefKey = exodm_db:list_key(Key, Ref),
 	      case kvdb_conf:read(Cache, RefKey) of
 		  {ok, _} ->
@@ -238,20 +276,10 @@ get_cached(AID0, Name0, Ref, DID) ->
     Cache = cache(AID),
     exodm_db:in_transaction(
       fun(_Db) ->
-	      Key = exodm_db:join_key(Name, <<"values">>),
+	      Key = exodm_db:join_key(Name, <<"staged">>),
 	      RefKey = exodm_db:list_key(Key, Ref),
 	      case kvdb_conf:read(Cache, RefKey) of
 		  {ok, {_, _, #conf_tree{} = CT}} ->
-		      ?debug("get_cached: CT = ~p~n", [CT]),
-		      DIDKey = exodm_db:join_key(
-				 [RefKey, <<"did">>, DID]),
-		      kvdb_conf:delete(Cache, DIDKey),
-		      case kvdb_conf:first_child(
-			     Cache, exodm_db:join_key(Key, <<"did">>)) of
-			  {ok, _} -> ok;
-			  done ->
-			      kvdb_conf:delete_tree(Cache, RefKey)
-		      end,
 		      ?debug("Fetched CT = ~p~n", [CT]),
 		      Root = kvdb_conf:unescape_key(Key),
 		      {ok, CT#conf_tree{root = Root}};
@@ -259,6 +287,36 @@ get_cached(AID0, Name0, Ref, DID) ->
 		      Error
 	      end
       end).
+
+remove_cached(AID0, Name0, Ref, DID) ->
+    ?debug("remove_cached(~p, ~p, ~p, ~p)~n", [AID0,Name0,Ref,DID]),
+    AID = exodm_db:account_id_key(AID0),
+    Name = exodm_db:encode_id(Name0),
+    Cache = cache(AID),
+    exodm_db:in_transaction(
+      fun(_Db) ->
+	      Key = exodm_db:join_key(Name, <<"staged">>),
+	      RefKey = exodm_db:list_key(Key, Ref),
+	      case kvdb_conf:read(Cache, RefKey) of
+		  {ok, {_, _, #conf_tree{} = CT}} ->
+		      ?debug("get_cached: CT = ~p~n", [CT]),
+		      DIDKey = exodm_db:join_key(
+				 [RefKey, <<"did">>, DID]),
+		      kvdb_conf:delete(Cache, DIDKey),
+		      Empty =
+			  case kvdb_conf:first_child(
+				 Cache, exodm_db:join_key(Key, <<"did">>)) of
+			      {ok, _} -> false;
+			      done ->
+				  kvdb_conf:delete_tree(Cache, RefKey),
+				  true
+			  end,
+		      {ok, Empty};
+		  {error, _} = Error ->
+		      Error
+	      end
+      end).
+
 
 
 
@@ -413,25 +471,25 @@ write(Tab, Key, Value) ->
     exodm_db:write(Tab, Key, Value).
 
 %% This doesn't actually produce a tree, but a *flattened* tree consisting
-%% only of the objects under <<"values">>.
+%% only of the objects under <<"staged">>.
 value_tree(_, []) ->
     [];
 value_tree(Root, Values) ->
     kvdb_conf:flatten_tree(
       #conf_tree{root = Root,
-		 tree = [{<<"values">>, to_tree_(Values)}]}).
+		 tree = [{<<"staged">>, to_tree_(Values)}]}).
 
 update_value_tree(Values, #conf_tree{root = Root, tree = T}) ->
     ?debug("update_value_tree(~p, T = ~p)~n", [Values, T]),
-    Vs = case lists:keyfind(<<"values">>, 1, T) of
+    Vs = case lists:keyfind(<<"staged">>, 1, T) of
 	     {_, X} -> X;
 	     false -> []
 	 end,
     NewVs = update_tree_(Values, Vs),
     ?debug("NewVs = ~p ~n", [NewVs]),
     kvdb_conf:flatten_tree(#conf_tree{root = Root,
-				      tree = [{<<"values">>, NewVs}]}).
-    %% T1 = lists:keyreplace(<<"values">>, 1, T, {<<"values">>, NewVs}),
+				      tree = [{<<"staged">>, NewVs}]}).
+    %% T1 = lists:keyreplace(<<"staged">>, 1, T, {<<"staged">>, NewVs}),
     %% Tree#conf_tree{tree = T1}.
 
 update_tree_({struct, Elems}, Tree) ->
@@ -554,94 +612,6 @@ to_node_({K0,V}) ->
 	_ ->
 	    {K, [], V}
     end.
-
-
-
-%% write_values(Tab, Name, Values) ->
-%%     Key = exodm_db:join_key([Name, <<"values">>]),
-%%     write_values_(Tab, Key, Values).
-
-%% write_values_(Tab, Key, {struct, Elems}) ->
-%%     lists:foreach(
-%%       fun({K,{array,_} = A}) ->
-%% 	      Key1 = exodm_db:join_key(Key, to_id(K)),
-%% 	      write_values_(Tab, Key1, A);
-%% 	 ({K, {struct,_} = S}) ->
-%% 	      Key1 = exodm_db:join_key(Key, to_id(K)),
-%% 	      write_values_(Tab, Key1, S);
-%% 	 ({K,V}) ->
-%% 	      Key1 = exodm_db:join_key(Key, to_id(K)),
-%% 	      write(Tab, Key1, V)
-%%       end, Elems);
-%% write_values_(Tab, Key, {array, Elems}) ->
-%%     lists:foldl(
-%%       fun({array,__} = A, I) ->
-%% 	      Key1 = exodm_db:list_key(Key, I),
-%% 	      write_values_(Tab, Key1, A),
-%% 	      I+1;
-%% 	 ({struct,_} = S, I) ->
-%% 	      Key1 = exodm_db:list_key(Key, I),
-%% 	      write_values_(Tab, Key1, S),
-%% 	      I+1;
-%% 	 ({K, V}, I) ->
-%% 	      Key1 = exodm_db:join_key(
-%% 		       exodm_db:list_key(Key, I), to_id(K)),
-%% 	      write(Tab, Key1, V),
-%% 	      I+1
-%%       end, 1, Elems).
-
-
-%% tree_to_values({Key, As, <<>>, L}) when is_list(L) ->
-%%     {decode_id(Key), As, tree_to_values(L)};
-%% tree_to_values({Key, As, V}) ->
-%%     Dec = decode_id(Key),
-%%     {Dec, As, V};
-%% tree_to_values([H|T]) ->
-%%     Key = element(1, H),
-%%     case is_list_key(exodm_db:decode_id(Key)) of
-%% 	{true, Base, I1} ->
-%% 	    {L1, L2} = pick_list(T, Base, [setelement(1, H, I1)]),
-%% 	    [{Base, [], [tree_to_values(X) || X <- L1]} |
-%% 	     [tree_to_values(X) || X <- L2]];
-%% 	false ->
-%% 	    [tree_to_values(H)|tree_to_values(T)]
-%%     end;
-%% tree_to_values([]) ->
-%%     [].
-
-
-%% pick_list([H|T], Base, Acc) ->
-%%     K = exodm_db:decode_id(element(1,H)),
-%%     case is_list_key(K) of
-%% 	{true, Base, I} ->
-%% 	    pick_list(T, Base, [setelement(1, H, I)|Acc]);
-%% 	false ->
-%% 	    {lists:reverse(Acc), T}
-%%     end;
-%% pick_list([], _, Acc) ->
-%%     {lists:reverse(Acc), []}.
-
-%% decode_id(I) when is_integer(I) ->
-%%     I;
-%% decode_id(B) when is_binary(B) ->
-%%     exodm_db:decode_id(B).
-
-%% is_list_key(I) when is_integer(I) -> false;
-%% is_list_key(K) ->
-%%     case re:run(K, <<"\\[">>, [global]) of
-%% 	{match, Ps} ->
-%% 	    {P,_} = lists:last(lists:flatten(Ps)),
-%% 	    Sz = byte_size(K),
-%% 	    N = Sz - P -2,
-%% 	    case K of
-%% 		<<Base:P/binary, "[", Ib:N/binary, "]">> ->
-%% 		    {true, Base, exodm_db:id_key_to_integer(Ib)};
-%% 		_ ->
-%% 		    false
-%% 	    end;
-%% 	_ ->
-%% 	    false
-%%     end.
 
 to_binary(X) when is_atom(X) -> atom_to_binary(X, latin1);
 to_binary(X) when is_binary(X) -> X;

@@ -14,12 +14,15 @@ dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
 	      fun(_Db) ->
 		      case exodm_db_config:get_cached(AID, Cfg, Ref, DID) of
 			  {ok, Values} ->
-			      bert_rpc(
-				Pid, exoport_config, push_config_set,
-				[[{module, M},
-				  {name, Cfg},
-				  {yang, <<"exodm.yang">>},
-				  {values, Values}]], Req, Env, AID, DID);
+			      case bert_rpc(
+				     Pid, exoport_config, push_config_set,
+				     [[{module, M},
+				       {name, Cfg},
+				       {yang, <<"exodm.yang">>},
+				       {values, Values}]], Req, Env, AID, DID) of
+				  ok ->
+				      remove_cached(AID, Cfg, Ref, DID)
+			      end;
 			  _ ->
 			      error
 		      end
@@ -27,6 +30,17 @@ dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
 	{call, M, F, As} ->
 	    bert_rpc(Pid, M, F, As,
 		     Req, Env, AID, DID)
+    end.
+
+remove_cached(AID, Cfg, Ref, DID) ->
+    case exodm_db_config:remove_cached(AID, Cfg, Ref, DID) of
+	{ok, true} ->
+	    exodm_db_config:switch_to_installed(AID, Cfg),
+	    ok;
+	{ok, false} ->
+	    ok;
+	Other ->
+	    Other
     end.
 
 request_timeout({_, _Env, {request, _, {call, _M, _Req, _}}}) ->

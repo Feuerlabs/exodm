@@ -150,6 +150,7 @@ populate(Cfg) ->
 		       ]]),
     AID1 = ?rpc(exodm_db_account, lookup_by_name, [?ACC1]),
     AID2 = ?rpc(exodm_db_account, lookup_by_name, [?ACC2]),
+    io:fwrite(user, "AID1 = ~p; AID2 = ~p~n", [AID1, AID2]),
     {ok, GID1} = ?rpc(exodm_db_group,new,
 		      [
 		       AID2, [{name, <<"feuerlabs">>},

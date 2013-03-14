@@ -11,6 +11,7 @@
 	 exodm_admin/1]).
 -include_lib("lager/include/log.hrl").
 -include("exodm.hrl").
+-include_lib("kvdb/include/kvdb_conf.hrl").
 
 -define(USER_REPOSITORY, <<"user">>).
 -define(SYSTEM_REPOSITORY, <<"system">>).
@@ -229,6 +230,11 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_CREATE_CONFIG_SET,
 json_rpc_(AID, {call, ?EXODM, ?RPC_UPDATE_CONFIG_SET,
 	   [{'name', Name, _}|Attrs]} = _RPC, _Env) ->
     update_config_set(AID, Name, Attrs);
+
+json_rpc_(AID, {call, ?EXODM, ?RPC_READ_CONFIG_SET_DATA,
+		[{'name', Name, _}, {'area', Area, _} | _] = _Attrs} = _RPC,
+	  _Env) ->
+    read_config_set_data(AID, Name, Area);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_CONFIG_SET,
 	   [{'name', Name, _}|_Tail]} = _RPC, _Env) ->
@@ -521,6 +527,16 @@ update_config_set(AID, Name, Attrs) ->
 	    {error, Error}
     end.
 
+read_config_set_data(AID, Name, Area) ->
+    case exodm_db_config:read_config_set_values(AID, Name, Area) of
+	{ok, #conf_tree{} = CT} ->
+	    Values = [{K,V} || {K,_,V} <- kvdb_conf:flatten_tree(
+					    CT#conf_tree{root = <<>>})],
+	    {ok, [{'values', {struct, Values}}]};
+	Other ->
+	    Other
+    end.
+
 delete_config_set(AID, Name) ->
     case exodm_db_config:delete_config_set(AID, Name) of
 	ok ->
@@ -624,7 +640,7 @@ push_config_set(AID, Cfg, Env0) ->
       fun(Db) ->
 	      case exodm_db_config:list_config_set_members(AID, Cfg) of
 		  [_|_] = Devices ->
-		      {ok, Yang} = exodm_db_config:get_yang_spec(AID, Cfg),
+		      {ok, _Yang} = exodm_db_config:get_yang_spec(AID, Cfg),
 		      {ok, Ref} = exodm_db_config:cache_values(AID, Cfg),
 		      RPC = {call, <<"exodm">>,
 			     <<"push-config-set">>,
@@ -639,7 +655,7 @@ push_config_set(AID, Cfg, Env0) ->
 		      _ = [exodm_rpc_handler:queue_message(
 			     Db, AID, to_device,
 			     [{'device-id', DID}|Env], RPC) || DID <- Devices],
-		      exodm_db_config:switch_to_active(AID, Cfg),
+		      exodm_db_config:switch_to_pending(AID, Cfg),
 		      {ok, result_code(ok)};
 		  [] ->
 		      %% Is this an error or ok?
