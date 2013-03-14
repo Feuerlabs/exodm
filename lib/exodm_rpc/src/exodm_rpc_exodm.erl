@@ -533,7 +533,7 @@ read_config_set_data(AID, Name, Area) ->
 					    CT#conf_tree{root = <<>>})],
 	    {ok, [{'values', {struct, Values}}]};
 	Other ->
-	    Other
+	    {ok, result_code(?OBJECT_NOT_FOUND)}
     end.
 
 delete_config_set(AID, Name) ->
