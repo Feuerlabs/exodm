@@ -57,9 +57,6 @@ make_node(#state{target = T, rel = R, vm_args = As}) when T=/=undefined, R=/=und
 	{error,_} = E ->
 	    error({could_not_consult, [SysConfigF, E]})
     end,
-    Lnk = filename:join([T, "rel", "exodm"]),
-    filelib:ensure_dir(Lnk),
-    file:make_symlink(abs_target(R), Lnk),
     _CpR = file:copy(filename:join(R, "ctl"), TCtl = filename:join(T, "ctl")),
     set_x_bit(TCtl),
     write_env(R, T).
