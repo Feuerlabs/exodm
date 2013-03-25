@@ -24,6 +24,7 @@
 -record(st, {plugins = []}).
 
 start_link() ->
+    exodm_rpc_protocol:create_table(),
     gen_server:start_link({local,?MODULE}, ?MODULE, [], []).
 
 reload() ->
@@ -64,6 +65,8 @@ reload_(#st{plugins = Ps} = St) ->
 	      true = setup:patch_app(A, V, [D]),
 	      ReloadRes = setup:reload_app(A, V, [D]),
 	      ?debug("reload_app(~p, ~p, ~p) -> ~p~n", [A,V,[D], ReloadRes]),
+	      RegisterRes = register_protocol(A),
+	      ?debug("register_protocol(~p) -> ~p~n", [A, RegisterRes]),
 	      maybe_start(A)
       end, AllPlugins),
     {{ok, AppNames}, St#st{plugins = Ps}}.
@@ -82,6 +85,16 @@ app_names(Dirs) ->
 		end, Dirs)),
     io:fwrite("Plugin app names = ~p~n", [Names]),
     Names.
+
+register_protocol(App) ->
+    case application:get_env(App, exodm_protocol) of
+	{ok, {Module, Mode}} when Mode==queued;
+				  Mode==direct ->
+	    exodm_rpc_protocol:register_protocol(App, Module, Mode),
+	    ok;
+	Other ->
+	    {error, {unknown_protocol, Other}}
+    end.
 
 maybe_start(App) ->
     case application:get_key(App, mod) of

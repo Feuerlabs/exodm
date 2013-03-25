@@ -2,6 +2,7 @@
 
 -export([ping/0,
 	 await_exodm/0,
+	 reload/0,
 	 read_config_data/1,
 	 add_config_data_members/2,
 	 list_groups/0,
@@ -40,6 +41,11 @@ await_exodm_(TRef) ->
 		    await_exodm_(TRef)
 	    end
     end.
+
+-spec reload() -> {ok, [atom()]}.
+reload() ->
+    exodm_server:reload().
+
 
 -spec read_config_data(binary()) -> kvdb_conf:config_set().
 
