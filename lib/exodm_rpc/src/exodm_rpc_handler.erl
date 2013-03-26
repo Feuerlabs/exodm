@@ -547,7 +547,8 @@ get_tid(Attrs, Env, AID) ->
 	    <<I:32>> = exodm_db_account:incr_transaction_id(AID),
 	    [{'transaction-id', integer_to_list(I)}|Env];
 	Found ->
-	    [{'transaction-id', id_to_list(element(2,Found))}|Env]
+	    %% [{'transaction-id', id_to_list(element(2,Found))}|Env]
+	    [{'transaction-id', element(2,Found)}|Env]
     end.
 
 mod(Yang) ->
