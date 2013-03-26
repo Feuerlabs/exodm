@@ -88,9 +88,16 @@ app_names(Dirs) ->
 
 register_protocol(App) ->
     case application:get_env(App, exodm_protocol) of
-	{ok, {Module, Mode}} when Mode==queued;
+	{ok, {Module, Mode}} when is_atom(Module),
+				  Mode==queued;
 				  Mode==direct ->
 	    exodm_rpc_protocol:register_protocol(App, Module, Mode),
+	    ok;
+	{ok, {Protocol, Module, Mode}} when is_binary(Protocol),
+					    is_atom(Module),
+					    Mode == queued;
+					    Mode == direct ->
+	    exodm_rpc_protocol:register_protocol(Protocol, App, Module, Mode),
 	    ok;
 	Other ->
 	    {error, {unknown_protocol, Other}}

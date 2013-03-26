@@ -3,7 +3,7 @@
 -export([module/1,
 	 mode/1]).
 -export([create_table/0,
-	 register_protocol/3,
+	 register_protocol/3, register_protocol/4,
 	 remove_application/1]).
 
 -record(protocol, {name,
@@ -15,8 +15,18 @@ create_table() ->
     ets:new(?MODULE, [public, named_table, {keypos, 2},
 		      {read_concurrency, true}]).
 
-register_protocol(Application, Module, Mode) ->
+register_protocol(Application, Module, Mode)
+  when is_atom(Application),
+       is_atom(Module),
+       Mode == direct; Mode == queued ->
     Protocol = atom_to_binary(Application, latin1),  % hard-coded for now
+    register_protocol(Protocol, Application, Module, Mode).
+
+register_protocol(Protocol, Application, Module, Mode)
+  when is_binary(Protocol),
+       is_atom(Application),
+       is_atom(Module),
+       Mode == queued; Mode == direct ->
     case ets:insert_new(?MODULE, #protocol{name = Protocol,
 					   module = Module,
 					   mode = Mode,
@@ -24,7 +34,7 @@ register_protocol(Application, Module, Mode) ->
 	true ->
 	    ok;
 	false ->
-	    error({protocol_exists, Protocol})
+	    {error, {protocol_exists, [Protocol]}}
     end.
 
 remove_application(Application) ->
