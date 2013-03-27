@@ -22,11 +22,12 @@
          find_rpc/3, %% (AID, YangF, Method)
          specs/0,    %% () -> specs(get_aid())
          specs/1]).  %% (AID)
--export([init/0, 
+-export([init/0,
          init/1,
+         load_yang_specs/0,
          write_system/2
         ]).
--export([table/1, 
+-export([table/1,
          list_next/3]).
 
 -include_lib("lager/include/log.hrl").
@@ -50,6 +51,9 @@ needs_init() ->
 init_() ->
     add_table(tab_name(system)),
     add_table(tab_name(shared)),
+    load_yang_specs().
+
+load_yang_specs() ->
     exodm_db_session:set_trusted_proc(),
     YangDir = filename:join(code:priv_dir(exosense_specs), "yang"),
     YangFiles = ["ietf-inet-types.yang",
@@ -63,7 +67,7 @@ init_() ->
                  "exodm_config_set.yang",
                  "exodm_yang_module.yang",
                  "exodm_package.yang",
-                 "exodm.yang"], 
+                 "exodm.yang"],
 
     lists:foldl(
       fun(File, _Acc) ->

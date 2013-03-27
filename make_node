@@ -7,7 +7,7 @@
 
 -mode(compile).
 
--record(state, {target, rel, vm_args = []}).
+-record(state, {target, rel, vm_args = [], node_local = false}).
 
 main(Args) ->
     try begin
@@ -31,7 +31,8 @@ usage() ->
     %% allow IO time to to through
     receive after 500 -> ok end.
 
-make_node(#state{target = T, rel = R, vm_args = As}) when T=/=undefined, R=/=undefined ->
+make_node(#state{target = T, rel = R, vm_args = As,
+		 node_local = NodeLocal}) when T=/=undefined, R=/=undefined ->
     Vsn = read_start_erl_data(R),
     RelDir = filename:join([R, "releases", Vsn]),
     VmArgsF = filename:join(RelDir, "vm.args"),
@@ -59,33 +60,24 @@ make_node(#state{target = T, rel = R, vm_args = As}) when T=/=undefined, R=/=und
     end,
     _CpR = file:copy(filename:join(R, "ctl"), TCtl = filename:join(T, "ctl")),
     set_x_bit(TCtl),
-    write_env(R, T).
-
-abs_target(R) ->
-    F = filename:absname(R),
-    case file:read_link(F) of
-	{ok, Filename} ->
-	    case filename:pathtype(Filename) of
-		relative ->
-		    filename:join(filename:dirname(R), Filename);
-		absolute ->
-		    Filename
-	    end;
-	{error,_} ->
-	    F
-    end.
+    write_env(R, T, NodeLocal).
 
 set_x_bit(F) ->
     file:change_mode(F, 8#00744).
 
 
-write_env(R, T) ->
-    io:fwrite("write_env(~p, ~p)~n", [R, T]),
+write_env(R, T, NodeLocal) ->
     OutF = filename:join(T, ".exodm_env"),
     Rb = list_to_binary(R),
     Tb = list_to_binary(T),
-    Ex = filename:dirname(filename:dirname(Tb)),
-    Bin = <<"EXODM_DIR=",Ex/binary,"\n",
+    Ex = if NodeLocal -> filename:dirname(filename:dirname(Tb));
+	    true -> Tb
+	 end,
+    EXODM_DIR = case os:getenv("EXODM_DIR") of
+		    false -> Ex;
+		    DIR -> list_to_binary(DIR)
+		end,
+    Bin = <<"EXODM_DIR=",EXODM_DIR/binary,"\n",
 	    "EXODM_RELEASE_DIR=",Rb/binary,"\n">>,
     file:write_file(OutF, Bin).
 
@@ -126,6 +118,8 @@ args(["-target", T | Args], St) ->
     args(Args, St#state{target = filename:absname(T)});
 args(["-rel", R | Args], St) ->
     args(Args, St#state{rel = R});
+args(["-node_local", T | Args], St) ->
+    args(Args, St#state{node_local = mk_bool(T)});
 args(["--" | Args], St) ->
     VmArgs = vm_args(Args),
     St#state{vm_args = VmArgs};
@@ -139,6 +133,9 @@ vm_args(["-" ++ _ = Flag | Args]) ->
     [{Flag, Vals} | vm_args(Args1)];
 vm_args([]) ->
     [].
+
+mk_bool("true" ) -> true;
+mk_bool("false") -> false.
 
 get_vals(Args) ->
     get_vals(Args, []).

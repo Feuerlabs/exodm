@@ -875,6 +875,7 @@ make_backup(TarFname, Dir) ->
 
 transform_db() ->
     io:fwrite("exodm_db:transform_db()~n", []),
+    exodm_db_yang:load_yang_specs(),
     ok.
 
 finish_transform() ->

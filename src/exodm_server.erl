@@ -11,6 +11,7 @@
 -export([start_link/0]).
 
 -export([reload/0]).
+-export([transform_plugins/0]).
 
 -export([init/1,
 	 handle_call/3,
@@ -52,39 +53,66 @@ code_change(_, St, _) ->
     {ok, St}.
 
 
-reload_(#st{plugins = Ps} = St) ->
+reload_(#st{} = St) ->
+    {ok, AppNames} = load_plugins(),
+    {{ok, AppNames}, St#st{plugins = AppNames}}.
+
+transform_plugins() ->
+    AllPlugins = find_plugins(),
+    load_apps(AllPlugins),
+    setup:run_hooks(convert_plugin, [A || {A,_} <- AllPlugins]).
+
+find_plugins() ->
     ?debug("ERL_SETUP_LIBS = ~p~n", [os:getenv("ERL_SETUP_LIBS")]),
     LibDirs = setup:lib_dirs("ERL_SETUP_LIBS"),
     ?debug("LibDirs = ~p~n", [LibDirs]),
     AppNames = app_names(LibDirs),
     ?debug("AppNames = ~p~n", [AppNames]),
-    AllPlugins = [{A,setup:pick_vsn(A, setup:find_app(A, LibDirs), latest)} ||
-		     A <- AppNames],
+    [{A,setup:pick_vsn(A, setup:find_app(A, LibDirs), latest)} ||
+	A <- AppNames].
+
+
+load_plugins() ->
+    AllPlugins = find_plugins(),
+    load_apps(AllPlugins),
+    register_protocols(AllPlugins),
+    start_apps(AllPlugins),
+    {ok, [A || {A,_,_} <- AllPlugins]}.
+
+load_apps(AllPlugins) ->
     lists:foreach(
       fun({A,{V,D}}) ->
 	      true = setup:patch_app(A, V, [D]),
 	      ReloadRes = setup:reload_app(A, V, [D]),
-	      ?debug("reload_app(~p, ~p, ~p) -> ~p~n", [A,V,[D], ReloadRes]),
+	      ?debug("reload_app(~p, ~p, ~p) -> ~p~n", [A,V,[D], ReloadRes])
+      end, AllPlugins).
+
+register_protocols(AllPlugins) ->
+    lists:foreach(
+      fun({A, _}) ->
 	      RegisterRes = register_protocol(A),
-	      ?debug("register_protocol(~p) -> ~p~n", [A, RegisterRes]),
+	      ?debug("register_protocol(~p) -> ~p~n", [A, RegisterRes])
+      end, AllPlugins).
+
+start_apps(AllPlugins) ->
+    lists:foreach(
+      fun({A, _}) ->
 	      maybe_start(A)
-      end, AllPlugins),
-    {{ok, AppNames}, St#st{plugins = Ps}}.
+      end, AllPlugins).
+
 
 app_names(Dirs) ->
-    Names = lists:usort(
-	      lists:flatmap(
-		fun(D) ->
-			case lists:reverse(filename:split(D)) of
-			    ["ebin", A | _] ->
-				[AName|_] = re:split(A,"-",[{return,list}]),
-				[list_to_atom(AName)];
-			    _ ->
-				[]
-			end
-		end, Dirs)),
-    io:fwrite("Plugin app names = ~p~n", [Names]),
-    Names.
+    lists:usort(
+      lists:flatmap(
+	fun(D) ->
+		case lists:reverse(filename:split(D)) of
+		    ["ebin", A | _] ->
+			[AName|_] = re:split(A,"-",[{return,list}]),
+			[list_to_atom(AName)];
+		    _ ->
+			[]
+		end
+	end, Dirs)).
 
 register_protocol(App) ->
     case application:get_env(App, exodm_protocol) of

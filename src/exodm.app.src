@@ -14,5 +14,10 @@
 		  exodm_http,
 		  exodm_rpc
                  ]},
-  {env,	[]}
+  {env,	[
+	{'$setup_hooks',
+	 [
+	  {convert, [{250, [{exodm_server, transform_plugins, []}]}]}
+	 ]}
+	]}
  ]}.
