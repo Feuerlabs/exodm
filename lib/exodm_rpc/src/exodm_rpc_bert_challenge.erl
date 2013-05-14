@@ -9,7 +9,7 @@
 -define(dbg(F,A), ?debug("~p " ++ F, [self()|A])).
 
 authenticate(S, Role, Arg) ->
-    ?dbg("~p:authenticate(...)~n", [?MODULE]),
+    ?dbg("~p:authenticate(~p, ~p, ~p)~n", [?MODULE, S, Role, Arg]),
     jobs:ask(exodm_rpc_bert_sessions),
     try bert_challenge:authenticate(S, Role, Arg) of
 	{ok, St} ->
