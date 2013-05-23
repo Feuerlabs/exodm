@@ -327,7 +327,7 @@ lookup_by_index(IxName, IxValue) when is_atom(IxName), is_binary(IxValue) ->
                       ?debug("found ~p", [ID]),
                       ID;
                   [] ->
-                      ?debug("did not find ~p", [IxName]),
+                      ?debug("did not find ~p:~p", [IxName,IxValue]),
                       false
               end
       end).
