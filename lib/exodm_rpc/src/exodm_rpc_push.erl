@@ -2,6 +2,13 @@
 
 -compile(export_all).
 
+notify(AID, DID) ->
+    case exodm_db_device:lookup_attr(AID, DID, push_protocol) of
+	[] ->
+	    ok;
+	[{_, Protocol}] ->
+	    push(AID, DID, Protocol, messages)
+    end.
 
 add_active_channel(AID, DID) ->
     exodm_rpc_handler:add_device_session(AID, DID, push).
@@ -18,7 +25,7 @@ push(AID, DID, Protocol, Message) ->
 	    Mod = exodm_rpc_protocol:module(Protocol),
 	    case Mod:encode_push_message(AID, DID, Message) of
 		{ok, EncMsg} ->
-		    send_on_channel(Ch, AID, DID, Protocol, EncMsg);
+		    Mod:send(Ch, AID, DID, Protocol, EncMsg);
 		ignore ->
 		    ok;
 		error ->
@@ -50,6 +57,3 @@ open_on_demand(_) ->
 %% closing of channels as a Denial of Service attack.
 open_push_channel(_AID, _DID, _Protocol) ->
     error.
-
-send_on_channel(_Ch, _AID, _DID, _Protocol, _EncMsg) ->
-    ok.

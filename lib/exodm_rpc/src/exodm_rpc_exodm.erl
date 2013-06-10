@@ -452,6 +452,42 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICES,
 	    {previous, Prev, _}|_Tail] = _Cfg} = _RPC, _Env) ->
     list_devices(AID, N, Prev);
 
+%% Mblox access parameter configuration
+json_rpc_(AID, {call, ?EXODM, ?RPC_SET_MBLOX_PARAMETERS,
+		[{account, _Acct, _},
+		 {'originating-msisdn', OrigMsisdn, _},
+		 {'consumer-key', ConsumerKey, _},
+		 {'secret-key', SecretKey, _} | Rest]}, _Env) ->
+    Tree = [{'originating-msisdn', [], OrigMsisdn},
+	    {'consumer-key', [], ConsumerKey},
+	    {'secret-key', [], SecretKey} |
+	    case lists:keyfind('token', 1, Rest) of
+		{_, Token, _} -> [{'token', [], Token}];
+		false -> []
+	    end],
+    kvdb_conf:write_tree(acct, kvdb_conf:join_key(
+				 exodm_db:account_id_key(AID), <<"mblox">>),
+			 Tree),
+    {ok, result_code(ok)};
+
+json_rpc_(AID, {call, ?EXODM, ?RPC_GET_MBLOX_PARAMETERS,
+		[{account, _Acct, _}]}, _Env) ->
+    Key = kvdb_conf:join_key(
+	    exodm_db:account_id_key(AID), <<"mblox">>),
+    case kvdb_conf:read_tree(acct, Key) of
+	[] ->
+	    {ok, result_code(?OBJECT_NOT_FOUND)};
+	Tree ->
+	    {ok, [result_code(ok) | [ {K, V} || {K, _, V} <- Tree]]}
+    end;
+
+json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_MBLOX_PARAMETERS,
+		[{account, _Acct, _}]}, _Env) ->
+    K = kvdb_conf:join_key(
+	  exodm_db:account_id_key(AID), <<"mblox">>),
+    kvdb_conf:delete_tree(acct, K),
+    {ok, result_code(ok)};
+
 %% Failure case
 json_rpc_(AID, RPC, _ENV) ->
     ?info("~p:json_rpc_() aid ~p, unknown RPC: ~p\n", [ ?MODULE, AID, RPC ]),
@@ -532,7 +568,7 @@ read_config_set_data(AID, Name, Area) ->
 	    Values = [{K,V} || {K,_,V} <- kvdb_conf:flatten_tree(
 					    CT#conf_tree{root = <<>>})],
 	    {ok, [{'values', {struct, Values}}]};
-	Other ->
+	_Other ->
 	    {ok, result_code(?OBJECT_NOT_FOUND)}
     end.
 
@@ -911,8 +947,8 @@ is_root(root) -> true;
 is_root(_Other) -> ?debug("user ~p", [_Other]), false.
 
     
-to_uint32(<<I:32>>) -> I;
-to_uint32(I) when is_integer(I) -> I.
+%% to_uint32(<<I:32>>) -> I;
+%% to_uint32(I) when is_integer(I) -> I.
 
 kvl([{K,V}  |Opts]) -> [{K,V}|kvl(Opts)];
 kvl([{K,V,_}|Opts]) -> [{K,V}|kvl(Opts)];

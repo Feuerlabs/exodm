@@ -14,7 +14,7 @@
   {mod, { exodm_rpc_app, []}},
   %% {start_phases, [{init, []}]},
   {env, [
-	 %% {kvdb_databases, [{exodm_rpc_queues,
+	 %% {kvdxob_databases, [{exodm_rpc_queues,
 	 %% 		    [{file, "$DATA_DIR/$APP/exodm_rpc_queues.db"},
 	 %% 		     {backend, leveldb},
 	 %% 		     {schema, kvdb_schema_events},
@@ -83,7 +83,9 @@
 			 ]}
 		       ]},
 	 {push_servers,
-	  [{ios_push_server, {exodm_rpc_push_ios,start_link,[]}}]}
+	  [{ios_push_server, {exodm_rpc_push_ios,start_link,[]}},
+	   {http_push_server, {exodm_rpc_push_http, start_link, []}},
+	   {mblox_push_server, {exodm_rpc_push_mblox, start_link, []}}]}
          %% {bert_servers, [{exodm_rpc,
          %%                    [
 	 %% 		     {port, 9900}

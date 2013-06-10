@@ -94,7 +94,7 @@ add_session_(A, SC0, #conf{id = Id,
         yaws_api:embedded_start_conf(Docroot, Sconfs, GconfList, Id),
     case yaws_api:setconf(GCy, SCy) of
 	{error, need_restart} ->
-	    {stop, need_resart, Conf};
+	    {stop, need_restart, Conf};
 	_ ->
 	    {reply, ok, Conf#conf{gconf = GCy, sconf = SCy}}
     end.

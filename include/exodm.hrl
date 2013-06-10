@@ -22,6 +22,7 @@
 -define(VALIDATION_FAILED, 'validation-failed').
 -define(OBJECT_EXISTS, 'object-exists').
 -define(DEVICE_NOT_FOUND, 'device-not-found').
+-define(DEVICE_ERROR, 'device-error').
 -define(OBJECT_NOT_FOUND, 'object-not-found').
 -define(OBJECT_NOT_EMPTY, 'object-not-empty').
 -define(ACCOUNT_NOT_SPECIFIED, 'account-not-specified').
@@ -83,6 +84,10 @@
 -define(RPC_PUSH_PACKAGE, <<"push-package">>).
 -define(RPC_LIST_PACKAGES, <<"list-packages">>).
 -define(RPC_GET_PACKAGE_STATUS, <<"get-package-status">>).
+
+-define(RPC_SET_MBLOX_PARAMETERS, <<"set-mblox-parameters">>).
+-define(RPC_GET_MBLOX_PARAMETERS, <<"get-mblox-parameters">>).
+-define(RPC_DELETE_MBLOX_PARAMETERS, <<"delete-mblox-parameters">>).
 
 -define(ROOT_ACCESS_RPCS,
     [?RPC_CREATE_ACCOUNT, 

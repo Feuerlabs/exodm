@@ -74,7 +74,12 @@ device_sessions(ExtID) when is_binary(ExtID) ->
     [{A,B} || {A,B,_} <- lists:reverse(lists:keysort(3, Res))].
 
 find_device_session(AID, DID, Protocol) ->
-    find_device_session(exodm_db_device:enc_ext_key(AID, DID), Protocol).
+    case find_device_session(
+	   exodm_db_device:enc_ext_key(AID, DID), Protocol) of
+	error ->
+	    find_device_session(
+	      exodm_db_device:enc_ext_key(AID, <<"*">>), Protocol)
+    end.
 
 find_device_session(ExtID, Protocol) when is_binary(ExtID) ->
     case lists:keyfind(Protocol, 2, device_sessions(ExtID)) of
@@ -268,15 +273,22 @@ web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
 			[{'notification-url', URL} || URL =/= <<>>] ++
 			[{protocol, Protocol}|Env0],
 		    case validate_request(
-			   ShortMeth, Module, Request, Spec) of
-			{ok, Attrs, Meta} ->
+			   ShortMeth, Module, Request, Spec, AID) of
+			{ok, Attrs, RpcEnv} ->
 			    RPC = {call, Module, ShortMeth, Attrs},
 			    ?debug("request verified: ~p~n", [RPC]),
-			    Env2 = get_tid(Attrs, [{yang_meta, Meta}|Env1], AID),
-			    queue_message(
-			      Db, AID, to_device, Env2, RPC),
-			    Response = accept_response(Attrs ++ Env2, Spec),
-			    {true, {response, Response}};
+			    Env2 = RpcEnv ++ Env1,
+			    case exodm_rpc_protocol:mode(Protocol) of
+				queued ->
+				    queue_message(
+				      Db, AID, to_device, Env2, RPC),
+				    Response = accept_response(
+						 Attrs ++ Env2, Spec),
+				    {true, {response, Response}};
+				direct ->
+				    handle_direct_rpc(
+				      Protocol, Env2, RPC, Spec)
+			    end;
 			{error, Reason} ->
 			    ?debug("request NOT verified: ~p~n", [Reason]),
 			    Response = error_response(
@@ -302,12 +314,13 @@ web_rpc_system_(_Db, AID, Env0, {call, Method, Request}) ->
 		    {protocol, Protocol}]
 		++ [{'notification-url', URL} || URL =/= <<>>] ++ Env0,
 	    case validate_request(
-		   ShortMeth, Module, Request, Spec) of
-		{ok, Attrs, Meta} ->
-		    Env2 = get_tid(Attrs, [{yang_meta, Meta}|Env1], AID),
+		   ShortMeth, Module, Request, Spec, AID) of
+		{ok, Attrs, RpcEnv} ->
+		    Env2 = RpcEnv ++ Env1,
+		    %% Env2 = get_tid(Attrs, [{yang_meta, Meta}|Env1], AID),
 		    RPC1 = {call, Module, ShortMeth, Attrs},
 		    ?debug("request verified: ~p~n", [RPC1]),
-		    handle_exodm_rpc(Protocol, Env2, RPC1, Spec);
+		    handle_direct_rpc(Protocol, Env2, RPC1, Spec);
 		{error, Reason} ->
 		    ?debug("request NOT verified: ~p~n", [Reason]),
 		    Response = error_response(Reason),
@@ -403,9 +416,9 @@ check_if_device_exists(AID, DID) ->
 		   ["Device ", DID, "doesn't exist"]})
     end.
 
-handle_exodm_rpc(Protocol, Env, RPC, Spec) ->
+handle_direct_rpc(Protocol, Env, RPC, Spec) ->
     Mod = exodm_rpc_protocol:module(Protocol),
-    ?debug("handle_exodm_rpc(~p, ~p, ~p); Mod = ~p~n",
+    ?debug("handle_direct_rpc(~p, ~p, ~p); Mod = ~p~n",
 	   [Protocol, Env, RPC, Mod]),
     try Mod:json_rpc(RPC, Env) of
 	{ok, Result} = _OK when is_list(Result) ->
@@ -541,14 +554,14 @@ id_to_list(ID) when is_binary(ID) ->
     integer_to_list(
       list_to_integer(binary_to_list(ID))).
 
-get_tid(Attrs, Env, AID) ->
+get_tid(Attrs, AID) ->
     case keyfind(<<"transaction-id">>, Attrs) of
 	false ->
 	    <<I:32>> = exodm_db_account:incr_transaction_id(AID),
-	    [{'transaction-id', integer_to_list(I)}|Env];
+	    {new, integer_to_list(I)};
 	Found ->
 	    %% [{'transaction-id', id_to_list(element(2,Found))}|Env]
-	    [{'transaction-id', element(2,Found)}|Env]
+	    {found, element(2, Found)}
     end.
 
 mod(Yang) ->
@@ -674,15 +687,51 @@ get_default_module(AID, DID) ->
 
 
 validate_request(Method, _Module, {struct, InputArgs},
-		 {rpc, _, Method, Spec}) ->
+		 {rpc, _, Method, Spec}, AID) ->
     case lists:keyfind(input, 1, Spec) of
 	{input, _, _, Elems} ->
 	    ?debug("validating~nInputArgs = ~p~nElems = ~p~n",
 		   [InputArgs, Elems]),
-	    yang_json:validate_rpc_request(Elems, InputArgs);
+	    case yang_json:validate_rpc_request(Elems, InputArgs) of
+		{ok, Attrs, Meta} ->
+		    Env0 = [{yang_meta, Meta}],
+		    case get_tid(Attrs, AID) of
+			{new, TID} ->
+			    {ok, maybe_include_tid(Elems, Attrs, TID),
+			     [{'transaction-id', TID}|Env0]};
+			{found, TID} ->
+			    {ok, Attrs, [{'transaction-id', TID}|Env0]}
+		    end;
+		Other ->
+		    Other
+	    end;
 	false ->
 	    {error, {invalid_params, no_input_statement}}
     end.
+
+maybe_include_tid([{leaf, _, <<"transaction-id">>, I}|_], Attrs, Tid) ->
+    [{'transaction-id', Tid, I}|Attrs];
+maybe_include_tid([{Type, _, Key, _}|T], Attrs, Tid)
+  when Type==leaf; Type=='leaf-list'; Type==list; Type==anyxml ->
+    case Attrs of
+	[{Key,_,_} = Ha|Ta] ->
+	    [Ha | maybe_include_tid(T, Ta, Tid)];
+	[{K,_,_} = Ha|Ta] when is_atom(K) ->
+	    case atom_to_binary(K, latin1) of
+		Key ->
+		    [Ha | maybe_include_tid(T, Ta, Tid)];
+		_ ->
+		    maybe_include_tid(T, Attrs, Tid)
+	    end;
+	_ ->
+	    maybe_include_tid(T, Attrs, Tid)
+    end;
+maybe_include_tid([_|T], Attrs, Tid) ->
+    maybe_include_tid(T, Attrs, Tid);
+maybe_include_tid([], Attrs, _Tid) ->
+    Attrs.
+
+
 
 
 queue_message(Db, AID, Tab, Env, {call, _, _, Attrs} = Msg) ->

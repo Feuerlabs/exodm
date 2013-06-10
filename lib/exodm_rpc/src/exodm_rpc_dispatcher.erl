@@ -107,7 +107,8 @@ handle_info(_Msg, St) ->
 handle_call({check_queue, Q}, _From, St) ->
     {Res, St1} = check_queue_(Q, St),
     {reply, Res, St1};
-handle_call({attempt_dispatch, Q, Db, DoReply}, From, #st{queues = Qs} = St) ->
+handle_call({attempt_dispatch, Q, Db, DoReply},
+	    From, #st{queues = Qs} = St) ->
     case dict:find(Q, Qs) of
 	error ->
 	    {DbArg, Reply} = if DoReply -> {Db, [From]};
@@ -174,14 +175,16 @@ run_dispatcher(JobsQ, Db, Tab, Q, Reply) ->
 
 dispatch(Db, Tab, Q, JobsQ, Reply) ->
     ?debug("dispatch(~p, ~p)~n", [Tab, Q]),
+    Sessions = exodm_rpc_handler:device_sessions(Q),
     try
-	case exodm_rpc_handler:device_sessions(Q) of
-	    [_|_] = Sessions ->
-		pop_and_dispatch(Reply, Db, Tab, Q, JobsQ, Sessions);
-	    [] ->
-                ?debug("no sessions for ~p", [Q]),
-		done(Reply)
-	end
+	pop_and_dispatch(Reply, Db, Tab, Q, JobsQ, Sessions)
+	%% case exodm_rpc_handler:device_sessions(Q) of
+	%%     [_|_] = Sessions ->
+	%% 	pop_and_dispatch(Reply, Db, Tab, Q, JobsQ, Sessions);
+	%%     [] ->
+        %%         ?debug("no sessions for ~p", [Q]),
+	%% 	done(Reply)
+	%% end
     catch
 	error:Reason ->
 	    ?error("ERROR in ~p:dispatch(): ~p~n~p~n",
@@ -246,15 +249,17 @@ pop_and_dispatch_run_(Reply, Db, Tab, Q, Sessions) ->
 	    {AID, DID} = exodm_db_device:dec_ext_key(Q),
 	    %% FIXME: Since Q remains the same, we should only do this once.
 	    Protocol = exodm_db_device:protocol(AID, DID),
-	    case exodm_rpc_handler:find_device_session(Q, Protocol) of
-		{ok, Pid} ->
+	    case lists:keyfind(Protocol, 2, Sessions) of
+	    %% case exodm_rpc_handler:find_device_session(Q, Protocol) of
+		%% {ok, Pid} ->
+		{Pid, _} ->
 		    Mod = exodm_rpc_protocol:module(Protocol),
 		    ?debug("Calling ~p:dispatch(~p, ~p, ~p, ~p)~n",
 			   [Mod, Env, AID, DID, Pid]),
-		    case Mod:dispatch(Tab, Req, Env, AID,
-				      exodm_db:decode_id(DID), Pid) of
+		    try Mod:dispatch(Tab, Req, Env, AID,
+				     exodm_db:decode_id(DID), Pid) of
 			error ->
-			    done(Reply);
+			    retry(Db, Tab, QK, Entry, Reply);
 			_Result ->
 			    ?debug("Valid result (~p); deleting queue object~n",
 				   [_Result]),
@@ -262,17 +267,29 @@ pop_and_dispatch_run_(Reply, Db, Tab, Q, Sessions) ->
 			    ?debug("Delete (~p) -> ~p~n", [QK, _DeleteRes]),
 			    %% done(Reply),
 			    next
+		    catch
+			_:_ ->
+			    retry(Db, Tab, QK, Entry, Reply)
 		    end;
-		error ->
-		    ?error("No matching protocol session for ~p (~p)~n"
-			   "Entry now blocking queue~n",
+		false ->
+		    ?debug("No matching protocol session for ~p (~p).~n",
 			   [Entry, Sessions]),
+		    notify_device(AID, DID),
 		    done(Reply)
 	    end;
-	_ ->
+	Other ->
+	    ?error("PEEK(~p/~p) -> UNEXPECTED: ~p~n", [Tab, Q, Other]),
 	    done(Reply)
     end.
 
+notify_device(AID, DID) ->
+    exodm_rpc_push:notify(AID, DID).
+
+retry(Db, Table, QK, {_, _Env, _} = _Req, _Reply) ->
+    %% for now, simply delete the entry; try the next one
+    ?error("retry dispatch: For now, just delete ~p~n", [_Req]),
+    kvdb:queue_delete(Db, Table, QK),
+    next.
 
 set_user(Env, Db) ->
     {user, UID} = lists:keyfind(user, 1, Env),

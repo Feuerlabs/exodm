@@ -27,12 +27,7 @@ module test {
   rpc echo {
     description "Simple echo RPC";
     input {
-      leaf device-id {
-	type string {
-	  length "1..32";
-	}
-	description "Target device. Can also be a group,";
-      }
+      uses exo:std-request;
       leaf message {
 	type string;
       }
