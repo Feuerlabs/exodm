@@ -1015,6 +1015,7 @@ post_json_(rpc, Env, _AID, _DID, JSON) ->
     end.
 
 process_reply({ok, {{200,_OK},_Hdrs,JSON}}, Env) ->
+    ?debug("ok; JSON = ~p~n", [JSON]),
     case json2:decode_string(binary_to_list(JSON)) of
 	{ok, {struct, Elems} = Reply} ->
 	    case lists:keyfind("result", 1, Elems) of

@@ -9,7 +9,7 @@
 -define(dbg(F,A), ?debug("~p " ++ F, [self()|A])).
 
 authenticate(S, Role, Arg) ->
-    ?dbg("~p:authenticate(...)~n", [?MODULE]),
+    ?dbg("~p:authenticate(~p, ~p, ~p)~n", [?MODULE, S, Role, Arg]),
     jobs:ask(exodm_rpc_bert_sessions),
     try bert_challenge:authenticate(S, Role, Arg) of
 	{ok, St} ->
@@ -55,7 +55,7 @@ prune_device_sessions(ID, Protocol) ->
 prune_sessions_([{Pid, Protocol} = Me|Rest], Protocol) when Pid == self() ->
     Keep = lists:filter(
 	     fun({P, Prot}) when Prot == Protocol ->
-		     ?debug("Killing old device session ~p~n", [P]),
+		     ?dbg("Killing old device session ~p~n", [P]),
 		     exit(P, replaced),
 		     false;
 		(_) ->
@@ -79,18 +79,23 @@ incoming(Data, St) ->
 %% @end
 %%
 keys(ID) ->
+    ?dbg("keys(~p)", [ID]),
     R = case exodm_db_device:dec_ext_key(ID) of
 	    {AID, DID} ->
+		?dbg("keys: AID ~p, DID ~p~n", [AID, DID]),
 		case exodm_db_device:lookup_attr(AID, DID, 'server-key') of
 		    [{_, Sk}] ->
+			?dbg("keys: server key found.~n", []),
 			case exodm_db_device:lookup_attr(
 			       AID, DID, 'device-key') of
-			    [{_, Ck}] -> {Sk, Ck};
+			    [{_, Ck}] -> 
+				?dbg("keys: device key found.~n", []),
+				{Sk, Ck};
 			    _ -> error
 			end;
 		    _ -> error
 		end;
 	    error -> error
 	end,
-    ?debug("~p:keys(~p) -> ~p~n", [?MODULE, ID, R]),
+    ?dbg("keys: result ~p", [R]),
     R.

@@ -431,10 +431,13 @@ lookup_position(AID, DID0) ->
     }.
 
 dec_ext_key(<<$a, Ia:8/binary, "=", Ix/binary>>) ->
+    ?debug("Ia = ~p, Ix = ~p~n", [Ia,Ix]),
     {<<"a", Ia/binary>>, <<"=", Ix/binary>>};
 dec_ext_key(<<Sep, ID/binary>>) ->
+    ?debug("Sep = ~p, ID = ~p~n", [Sep, ID]),
     case split(Sep, ID) of
 	[AcctName, DID] ->
+	    ?debug("Name = ~p, DID = ~p~n", [AcctName, DID]),
 	    case exodm_db_account:lookup_by_name(AcctName) of
 	        false->
 		    error;
@@ -445,6 +448,7 @@ dec_ext_key(<<Sep, ID/binary>>) ->
 	    error
     end;
 dec_ext_key(Key) ->
+    ?debug("Key = ~p~n", [Key]),
     try
 	AID = exodm_db_session:get_aid(),
 	{exodm_db:account_id_key(AID), exodm_db:encode_id(Key)}
