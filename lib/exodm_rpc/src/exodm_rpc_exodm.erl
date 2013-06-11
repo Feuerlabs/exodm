@@ -455,12 +455,14 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICES,
 %% Mblox access parameter configuration
 json_rpc_(AID, {call, ?EXODM, ?RPC_SET_MBLOX_PARAMETERS,
 		[{account, _Acct, _},
+		 {'application-id', AppID, _},
 		 {'originating-msisdn', OrigMsisdn, _},
 		 {'consumer-key', ConsumerKey, _},
 		 {'secret-key', SecretKey, _} | Rest]}, _Env) ->
-    Tree = [{'originating-msisdn', [], OrigMsisdn},
-	    {'consumer-key', [], ConsumerKey},
-	    {'secret-key', [], SecretKey} |
+    Tree = [{<<"application-id">>, [], AppID},
+	    {<<"originating-msisdn">>, [], OrigMsisdn},
+	    {<<"consumer-key">>, [], ConsumerKey},
+	    {<<"secret-key">>, [], SecretKey} |
 	    case lists:keyfind('token', 1, Rest) of
 		{_, Token, _} -> [{'token', [], Token}];
 		false -> []
@@ -468,6 +470,7 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_SET_MBLOX_PARAMETERS,
     kvdb_conf:write_tree(acct, kvdb_conf:join_key(
 				 exodm_db:account_id_key(AID), <<"mblox">>),
 			 Tree),
+    exodm_rpc_push_mblox:account_updated(AID),
     {ok, result_code(ok)};
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_GET_MBLOX_PARAMETERS,

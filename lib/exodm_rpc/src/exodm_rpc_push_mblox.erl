@@ -47,6 +47,9 @@ send(Ch, AID, DID, _Protocol, Msg) ->
     gen_server:call(Ch, {send, AID, DID, Msg}).
 
 
+account_updated(AID) ->
+    catch gen_server:cast(?MODULE, {account_updated, AID}).
+
 %% Currently, we make no use of the server. It could be used e.g. to
 %% periodically refresh the access tokens.
 start_link() ->
@@ -86,7 +89,20 @@ handle_call_({send, AID0, DID, Msg}, _, #st{tokens = Ts} = S) ->
 handle_call_(_Req, _From, S) ->
     {reply, error, S}.
 
-
+handle_cast({account_updated, AID0}, #st{tokens = Ts} = S) ->
+    S1 = try  AID = exodm_db:account_id_key(AID0),
+	      case generate_token(AID) of
+		  error -> S;
+		  Token ->
+		      S#st{tokens = dict:store(AID, Token, Ts)}
+	      end
+	 catch
+	     error:Reason ->
+		 ?debug("updating account ~p failed: ~p~n",
+			[AID0, Reason]),
+		 S
+	 end,
+    {noreply, S1};
 handle_cast(_Msg, S) ->
     {noreply, S}.
 
@@ -229,7 +245,11 @@ token_request_reply({ok, {http_response, _, 200, _, _Hdrs}, Data}, AID) ->
 	    Token;
 	false ->
 	    error({cannot_fetch_token, Data})
-    end.
+    end;
+token_request_reply(Other, AID) ->
+    ?debug("Unexpected POST Reply:~n~p~n", [Other]),
+    error(error_refreshing_token).
+
 
 start_timer(Vals, AID) ->
     case lists:keyfind("expires_in", 1, Vals) of
