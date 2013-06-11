@@ -424,22 +424,19 @@ plugin_get_account(Cfg) ->
 %%% ==================================== Client BERT RPC Setup
 
 start_rpc_client(Cfg) ->
-    Auth = ?rpc(exodm_db_device, client_auth_config, [_AID =  <<"a00000003">>,
-						      DID = <<"x00000001">>]),
-    ?debugVal(Auth),
-    Apps = [exo, bert, gproc, kvdb, exoport],
-    ?debugVal(Apps),
-    [{A,ok} = {A, ensure_loaded(A)} || A <- Apps],
-    [ [application:set_env(A, K, V) || {K,V} <- L] ||
-	{A, L} <- [{exoport, [{exodm_address, {"localhost", 9900}},
-			      {bert_port, 9990},
-			      {auto_connect, true},
-			      {device_id, DID},
-			      {account, ?ACC2}]} | Auth] ],
+    AID = <<"a00000003">>,
+    DID = <<"x00000001">>,
+    {Ck, Sk} = ?rpc(exodm_db_device, lookup_keys, [AID, DID]),
+    Opts = [{config, [{exodm_host, "localhost"},
+		      {exodm_port, 9900},
+		      {device_id, binary_to_list(DID)},
+		      {account, binary_to_list(?ACC2)},
+		      {'client-key', Ck},
+		      {'server-key', Sk}]}],
 
     kvdb:start(),
     kvdb_conf:open("kvdb_conf", [{backend, ets}]),
-    [application:start(A) || A <- Apps],
+    exoport:start(Opts),
     Cfg.
 
 ensure_loaded(A) ->
