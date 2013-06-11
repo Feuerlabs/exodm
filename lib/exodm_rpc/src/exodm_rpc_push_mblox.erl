@@ -41,7 +41,7 @@
 encode_push_message(_AID, _DID, messages) ->
     %% Call = base_64:encode(bert:to_binary({exoport, ping, []})),
     Call = ascii_hex_encode(bert:to_binary({exoport, ping, []})),
-    <<"EXODM-RPC:none: ", Call/binary>>.
+    {ok, <<"EXODM-RPC:none: ", Call/binary>>}.
 
 send(Ch, AID, DID, _Protocol, Msg) ->
     gen_server:call(Ch, {send, AID, DID, Msg}).
@@ -182,7 +182,7 @@ send_req_reply({ok, {http_response, _, 401, _, _}, _}, AID, S) ->
     remove_channel(AID),
     {error, S#st{tokens = dict:erase(AID, S#st.tokens)}};
 send_req_reply({ok, {http_response, _, 200, _, _}, Data}, _AID, S) ->
-    {ok, {struct, Values}} = json2:decode_string(Data),
+    {ok, {struct, Values}} = json2:decode_string(binary_to_list(Data)),
     {{ok, Values}, S}.
 
 
@@ -224,7 +224,7 @@ generate_token_(AID0) ->
 	    SecretKey = get_value(<<"secret-key">>, T),
 	    Auth = base64:encode(<<ConsumerKey/binary, ":",
 				   SecretKey/binary>>),
-	    Body = <<"grant_type=client_credentials">>,
+	    Body = [{"grant_type", "client_credentials"}],
 	    Hdrs = [{'Authorization', Auth},
 		    {'Content-Type', "application/x-www-form-urlencoded"}],
 	    token_request_reply(
@@ -233,27 +233,28 @@ generate_token_(AID0) ->
     end.
 
 token_request_reply({ok, {http_response, _, 200, _, _Hdrs}, Data}, AID) ->
-    {ok, {struct, Values}} = json2:decode_string(Data),
+    {ok, {struct, Values}} = json2:decode_string(binary_to_list(Data)),
     case lists:keyfind("access_token", 1, Values) of
 	{_, TokenS} ->
 	    Token = list_to_binary(TokenS),
-	    kvdb_conf:write(acct, kvdb_conf:join_key(
-				    [AID, <<"mblox">>, <<"token">>]),
-			    Token),
+	    kvdb_conf:write(acct, {kvdb_conf:join_key(
+				     [AID, <<"mblox">>, <<"token">>]),
+				   [], Token}),
 	    add_channel(AID),
 	    start_timer(Values, AID),
 	    Token;
 	false ->
 	    error({cannot_fetch_token, Data})
     end;
-token_request_reply(Other, AID) ->
+token_request_reply(Other, _AID) ->
     ?debug("Unexpected POST Reply:~n~p~n", [Other]),
     error(error_refreshing_token).
 
 
 start_timer(Vals, AID) ->
     case lists:keyfind("expires_in", 1, Vals) of
-	{_, Secs} ->
+	{_, Secs0} ->
+	    Secs = list_to_integer(Secs0),
 	    MSecs = min(max(30, Secs - 30) * 1000, 16#ffffffff),
 	    ?debug("Refresh timer set to: ~p msecs~n", [MSecs]),
 	    erlang:start_timer(MSecs, self(), {refresh_token, AID});
@@ -276,5 +277,5 @@ to_hex(B) when B > 16, B =< 255 ->
     << (to_hex_(B div 16)), (to_hex_(B rem 16)) >>.
 
 to_hex_(B) when B < 10 -> $0 + B;
-to_hex_(B) when B =< 10, B =< 16 -> ($A + (B-10)).
+to_hex_(B) when B >= 10, B =< 16 -> ($A + (B-10)).
 

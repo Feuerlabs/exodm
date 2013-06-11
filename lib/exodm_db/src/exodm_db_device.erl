@@ -9,6 +9,7 @@
 
 -export([init/1]).
 -export([new/3, update/3, lookup/2, lookup_attr/3, list_next/3,
+	 write_attrs/3,
 	 delete/2, delete_devices/2,
 	 add_config_set/3, remove_config_set/3, list_config_sets/2,
 	 yang_modules/2,
@@ -114,6 +115,20 @@ insert_keys(Tab,DID, Options) ->
 	SK -> insert(Tab,DID,'server-key', exodm_db:uint64_bin(SK))
     end.
 
+%% For internal use: write without validation
+write_attrs(AID0, DID0, Attrs) ->
+    DID = exodm_db:encode_id(DID0),
+    AID = exodm_db:account_id_key(AID0),
+    Tab = table(AID),
+    case exist(AID, DID) of
+	true ->
+	    lists:foreach(
+	      fun({K, V}) ->
+		      insert_attr(Tab, DID, K, V) 
+	      end, Attrs);
+	false ->
+	    error(device_not_found)
+    end.
 
 %% FIXME validate every item BEFORE insert!
 update(AID, DID, Options) ->

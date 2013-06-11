@@ -31,6 +31,7 @@ authenticate(S, Role, Arg) ->
 	    ?dbg("regged with gproc: ~p~n", [_Prop]),
 	    exodm_rpc_dispatcher:check_queue(<<"to_device">>, ID),
 	    ?dbg("queue checked~n", []),
+	    exodm_rpc_push:clear_notify_sent(ID),
 	    {ok, St};
 	error ->
 	    error

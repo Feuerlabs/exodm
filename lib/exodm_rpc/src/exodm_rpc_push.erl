@@ -3,12 +3,51 @@
 -compile(export_all).
 
 notify(AID, DID) ->
-    case exodm_db_device:lookup_attr(AID, DID, push_protocol) of
-	[] ->
+    case exodm_db_device:lookup_attr(AID, DID, notification_sent) of
+	[{_, TS}] when TS =/= <<>> ->
 	    ok;
-	[{_, Protocol}] ->
-	    push(AID, DID, Protocol, messages)
+	_ ->
+	    case exodm_db_device:lookup_attr(AID, DID, push_protocol) of
+		[] ->
+		    ok;
+		[{_, Protocol}] ->
+		    case push(AID, DID, Protocol, messages) of
+			{ok, _} -> notify_sent(AID, DID);
+			Other ->
+			    Other
+		    end
+	    end
     end.
+
+clear_notify_sent(ExtID) ->
+    {AID, DID} = exodm_db_device:dec_ext_key(ExtID),
+    clear_notify_sent(AID, DID).
+
+clear_notify_sent(AID, DID) ->
+    write_notification_sent(AID, DID, <<>>).
+
+notify_sent(AID, DID) ->
+    {{Y,Mo,D},{H,Mi,S}} = erlang:universaltime(),
+    TS = lists:concat([i2l(Y) | [i2(X) || X <- [Mo,D,H,Mi,S]]]),
+    write_notification_sent(AID, DID, TS).
+
+write_notification_sent(AID, DID, TS) ->
+    case exodm_db_device:exist(AID, DID) of
+	true ->
+	    exodm_db_device:write_attrs(AID, DID,
+					[{notification_sent, TS}]);
+	false ->
+	    error(device_not_found)
+    end.
+
+i2(I) when I >= 0, I < 10 ->
+    "0" ++ integer_to_list(I);
+i2(I) when I >= 10, I =< 99 ->
+    integer_to_list(I).
+
+i2l(I) ->
+    integer_to_list(I).
+
 
 add_active_channel(AID, DID) ->
     exodm_rpc_handler:add_device_session(AID, DID, push).

@@ -24,7 +24,7 @@
 	 delete/1, 
 	 update/2, 
 	 lookup/1,
-	 lookup_attribute/2,
+	 lookup_attr/2,
 	 lookup_name/1,
 	 lookup_by_name/1, 
 	 exist/1,
@@ -296,8 +296,8 @@ lookup(AID0) when is_list(AID0) ->
     AID = exodm_db:account_id_key(AID0),
     lookup_(AID).
 
-lookup_attribute(AID, Attr) when is_atom(Attr);
-				 is_binary(Attr) ->
+lookup_attr(AID, Attr) when is_atom(Attr);
+			    is_binary(Attr) ->
     read(exodm_db:account_id_key(AID), Attr).
 
 lookup_(Key) ->
