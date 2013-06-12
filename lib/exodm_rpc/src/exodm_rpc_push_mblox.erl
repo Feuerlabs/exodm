@@ -39,8 +39,8 @@
 %%     -d  "{\"message\": \"$2\",\"destination\" : $DESTINATION,\"originator\" : $ORIGINATOR }" https://api.mblox.com/v1/apps/$APPID/sms/outbound/messages
 
 encode_push_message(_AID, _DID, messages) ->
-    %% Call = base_64:encode(bert:to_binary({exoport, ping, []})),
-    Call = ascii_hex_encode(bert:to_binary({exoport, ping, []})),
+    Call = base64:encode(bert:to_binary({exoport, ping, []})),
+    %% Call = ascii_hex_encode(bert:to_binary({exoport, ping, []})),
     {ok, <<"EXODM-RPC:none: ", Call/binary>>}.
 
 send(Ch, AID, DID, _Protocol, Msg) ->
@@ -268,7 +268,7 @@ get_value(K, [{K, _, V}|_]) ->
 get_value(K, [_|T]) ->
     get_value(K, T).
 
-
+-ifdef(__not_used).
 ascii_hex_encode(Bin) when is_binary(Bin) ->
     << << (to_hex(B))/binary >> || <<B:8/integer>> <= Bin >>.
 
@@ -278,4 +278,5 @@ to_hex(B) when B > 16, B =< 255 ->
 
 to_hex_(B) when B < 10 -> $0 + B;
 to_hex_(B) when B >= 10, B =< 16 -> ($A + (B-10)).
+-endif.
 
