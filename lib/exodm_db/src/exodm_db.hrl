@@ -37,6 +37,7 @@
 -define(DEV_DB_CONFIG_SET,      <<"config_set">>).
 -define(DEV_DB_DEVICE_TYPE,     <<"device-type">>).
 -define(DEV_DB_PROTOCOL,        <<"protocol">>).
+-define(DEV_DB_PUSH_PROTOCOL,   <<"push-protocol">>).
 -define(DEV_DB_DEVICE_ID,       <<"device-id">>).
 -define(DEV_DB_LATITUDE,        <<"latitude">>).
 -define(DEV_DB_LONGITUDE,       <<"longitude">>).

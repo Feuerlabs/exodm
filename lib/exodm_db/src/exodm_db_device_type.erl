@@ -16,6 +16,7 @@
 
 -include_lib("kvdb/include/kvdb_conf.hrl").
 -include_lib("lager/include/log.hrl").
+-include("exodm_db.hrl").
 
 init(AID0) ->
     AID = exodm_db:account_id_key(AID0),
@@ -39,9 +40,19 @@ new(AID0, Name0, Options) ->
     {_, Protocol0} = lists:keyfind(protocol, 1, Options),
     Protocol = to_binary(Protocol0),
     valid_protocol(Protocol),
+    PushProtocol =
+	case lists:keyfind('push-protocol', 1, Options) of
+	    {_, PushProto0} ->
+		PushProto = to_binary(PushProto0),
+		valid_protocol(PushProto),
+		[{?DEV_DB_PUSH_PROTOCOL, [], PushProto}];
+	    false ->
+		[]
+	end,
     Tree = #conf_tree{root = Name,
 		      tree = [{<<"name">>, [], exodm_db:decode_id(Name)},
-			      {<<"protocol">>, [], Protocol}]},
+			      {?DEV_DB_PROTOCOL, [], Protocol}
+			      | PushProtocol]},
     exodm_db:in_transaction(
       fun(_) ->
 	      case exist_(AID, Name) of
@@ -82,7 +93,7 @@ update(AID0, Name0, Options) ->
 	       fun({'protocol', P0}) ->
 		       P = to_binary(P0),
 		       valid_protocol(P),
-		       {<<"protocol">>, [], P}
+		       {?DEV_DB_PROTOCOL, [], P}
 	       end, Options),
     Tree = #conf_tree{root = Name,
 		      tree = Values},

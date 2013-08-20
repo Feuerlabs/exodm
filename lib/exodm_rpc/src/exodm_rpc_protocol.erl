@@ -43,12 +43,14 @@ remove_application(Application) ->
     ok.
 
 module(<<"exodm_bert">>) -> exodm_rpc_bert;
+module(<<"exodm_bert_direct">>) -> exodm_rpc_bert;
 module(<<"exodm">>) -> exodm_rpc_exodm;
 module(<<"exosense">>) -> exodm_rpc_exodm;
 module(<<"ga_ck3">>) -> exodm_ck3_dispatch;
 module(<<"exoport_http">>) -> exodm_rpc_exoport_http;
 module(<<"exoport_ios">>) -> exodm_rpc_exoport_ios;
 module(<<"exoport_mblox">>) -> exodm_rpc_push_mblox;
+module(<<"exodm_mblox">>) -> exodm_rpc_push_mblox;
 module(P) ->
     case ets:lookup(?MODULE, P) of
 	[#protocol{module = M}] ->
@@ -58,12 +60,14 @@ module(P) ->
     end.
 
 mode(<<"exodm_bert">>) -> queued;
+mode(<<"exodm_bert_direct">>) -> direct;
 mode(<<"exodm">>) -> direct;
 mode(<<"exosense">>) -> direct;
 mode(<<"ga_ck3">>) -> queued;
 mode(<<"exoport_http">>) -> queued;
 mode(<<"exoport_ios">>) -> direct;
 mode(<<"exoport_mblox">>) -> direct;
+mode(<<"exodm_mblox">>) -> direct;
 mode(P) ->
     case ets:lookup(?MODULE, P) of
 	[#protocol{mode = M}] ->
