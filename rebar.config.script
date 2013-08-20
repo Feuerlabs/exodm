@@ -1,7 +1,19 @@
 %% -*- erlang -*-
-case os:getenv("REBAR_DEPS") of
-    false ->
-	CONFIG;
-    Dir ->
-	lists:keystore(deps_dir, 1, CONFIG, {deps_dir, Dir})
+CONFIG1 = case os:getenv("REBAR_DEPS") of
+	      false ->
+		  CONFIG;
+	      Dir ->
+		  lists:keystore(deps_dir, 1, CONFIG, {deps_dir, Dir})
+	  end.
+case os:getenv("EXO_TEST") of
+    "true" ->
+	Deps = proplists:get_value(deps, CONFIG1, []),
+	lists:keystore(
+	  deps, 1, CONFIG1,
+	  {deps,
+	   Deps ++
+	       [{exoport, ".*",
+		 {git, "git@github.com:Feuerlabs/exoport.git", "HEAD"}}]});
+    _ ->
+	CONFIG1
 end.

@@ -1317,7 +1317,7 @@ make(Top) ->
     case os:getenv("EXODM_SKIP_MAKE") of
 	Y when Y==false; Y=="0"; Y=="false"  ->
 	    in_dir(Top, fun() ->
-				run("make release"),
+				run("make release exoport=true"),
 				run("make generate")
 			end);
 	_ ->
