@@ -7,10 +7,10 @@ notify(AID, DID) ->
 	[{_, TS}] when TS =/= <<>> ->
 	    ok;
 	_ ->
-	    case exodm_db_device:lookup_attr(AID, DID, push_protocol) of
-		[] ->
+	    case exodm_db_device:push_protocol(AID, DID) of
+		none ->
 		    ok;
-		[{_, Protocol}] ->
+		Protocol when is_binary(Protocol) ->
 		    case push(AID, DID, Protocol, messages) of
 			{ok, _} -> notify_sent(AID, DID);
 			Other ->

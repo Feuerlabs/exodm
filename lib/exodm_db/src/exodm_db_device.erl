@@ -14,6 +14,7 @@
 	 add_config_set/3, remove_config_set/3, list_config_sets/2,
 	 yang_modules/2,
 	 protocol/2,
+	 push_protocol/2,
 	 exist/2]).
 -export([key/2, tab_and_key/1]).
 -export([enc_ext_key/2, dec_ext_key/1]).
@@ -327,6 +328,27 @@ protocol(AID0, DID0) ->
     AID = exodm_db:account_id_key(AID0),
     DID = exodm_db:encode_id(DID0),
     protocol(AID, DID).
+
+push_protocol(AID, DID) when is_binary(AID), is_binary(DID) ->
+    Tab = table(AID),
+    case read_value(Tab, DID, ?DEV_DB_PUSH_PROTOCOL) of
+	false ->
+	    case read_value(Tab, DID, ?DEV_DB_DEVICE_TYPE) of
+		false ->
+		    none;
+		T ->
+		    case kvdb_conf:read(
+			   exodm_db_device_type:table(AID),
+			   kvdb_conf:join_key(T, ?DEV_DB_PUSH_PROTOCOL)) of
+			{ok, {_, _, P}} ->
+			    P;
+			{error, not_found} ->
+			    none
+		    end
+	    end;
+	P ->
+	    P
+    end.
 
 list_next(AID, N, Prev) when is_binary(AID), is_binary(Prev) ->
     exodm_db:list_next(table(AID), N, Prev,

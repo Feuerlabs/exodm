@@ -76,6 +76,8 @@ device_sessions(ExtID) when is_binary(ExtID) ->
 find_device_session(AID, DID, Protocol) ->
     case find_device_session(
 	   exodm_db_device:enc_ext_key(AID, DID), Protocol) of
+	{ok,_} = Ok ->
+	    Ok;
 	error ->
 	    find_device_session(
 	      exodm_db_device:enc_ext_key(AID, <<"*">>), Protocol)
@@ -264,19 +266,20 @@ web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
 	    %% check_if_device_exists(AID, DID),
 	    ?debug("found device-id: ~p~n", [DID]),
 	    case find_method_spec(Method, AID, DID) of
-		{ok, Yang, Module, ShortMeth, Protocol, URL, Spec} ->
+		{ok, Yang, Module, ShortMeth, Protocol0, URL, Spec} ->
 		    ?info("Method spec (~p): ~p~n"
 			   "Module = ~p~n", [Method, Spec, Module]),
-		    Env1 =
-			[{yang, Yang},
-			 {'device-id', DID}] ++
-			[{'notification-url', URL} || URL =/= <<>>] ++
-			[{protocol, Protocol}|Env0],
 		    case validate_request(
 			   ShortMeth, Module, Request, Spec, AID) of
 			{ok, Attrs, RpcEnv} ->
 			    RPC = {call, Module, ShortMeth, Attrs},
 			    ?debug("request verified: ~p~n", [RPC]),
+			    Protocol = get_protocol(Attrs, Protocol0),
+			    Env1 =
+				[{yang, Yang},
+				 {'device-id', DID}] ++
+				[{'notification-url', URL} || URL =/= <<>>] ++
+				[{protocol, Protocol}|Env0],
 			    Env2 = RpcEnv ++ Env1,
 			    case exodm_rpc_protocol:mode(Protocol) of
 				queued ->
@@ -300,6 +303,28 @@ web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
 	    end;
 	error ->
 	    web_rpc_system_(Db, AID, Env0, RPC0)
+    end.
+
+get_protocol(Attrs, P) ->
+    ?debug("get_protocol(~p, ~p)~n", [Attrs, P]),
+    case semantic_attr(Attrs, <<"protocol">>) of
+	undefined ->
+	    P;
+	P1 ->
+	    P1
+    end.
+
+semantic_attr(Attrs, Sem0) ->
+    Sem = to_binary(Sem0),
+    ?debug("semantic_attr(~p, ~p)~n", [Attrs, Sem0]),
+    case [X || {_, X, As} <- Attrs,
+	       [true || {{<<"exosense">>,<<"semantics">>},_,S,_}
+			    <- As,
+			S == Sem] =/= []] of
+	[] ->
+	    undefined;
+	[Found] ->
+	    Found
     end.
 
 web_rpc_system_(_Db, AID, Env0, {call, Method, Request}) ->
