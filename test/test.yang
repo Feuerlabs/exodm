@@ -53,4 +53,21 @@ module test {
       leaf-list evens { type uint32; }
     }
   }
+
+  rpc list-even-direct {
+    description "RPC that returns a list of even numbers between 0 and limit";
+    input {
+      uses exo:std-request;
+      leaf protocol {
+	type string;
+	exo:semantics "protocol";
+	default "exodm_bert_direct";
+      }
+      leaf limit { type uint32; }
+    }
+    output {
+      uses exo:std-callback;
+      leaf-list evens { type uint32; }
+    }
+  }
 }

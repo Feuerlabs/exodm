@@ -1,6 +1,7 @@
 -module(exodm_rpc_bert).
 
--export([dispatch/6,
+-export([dispatch/6,           % queued RPC
+	 json_rpc/2,           % direct RPC
 	 request_timeout/1]).
 
 -include_lib("lager/include/log.hrl").
@@ -32,6 +33,31 @@ dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
 		     Req, Env, AID, DID)
     end.
 
+json_rpc({call, M, F, As} = Req, Env) ->
+    ?debug("~p:json_rpc(~p, ~p)~n", [?MODULE, Req, Env]),
+    {AID, DID} = {get_env('aid', Env), get_env('device-id', Env)},
+    case exodm_rpc_handler:find_device_session(AID, DID, <<"exodm_bert">>) of
+	{ok, Pid} ->
+	    case bert_rpc_(Pid, M, F, As, Req, Env, AID, DID) of
+		{reply, Res, _} ->
+		    {ok, [{<<"rpc-status-string">>, <<"complete">>},
+			  {<<"final">>, true}|Res]};
+		Other ->
+		    Other
+	    end;
+	_ ->
+	    {ok, [{<<"rpc-status-string">>, <<"device-error">>},
+		  {<<"final">>, true}]}
+    end.
+
+get_env(K, Env) ->
+    case lists:keyfind(K, 1, Env) of
+	false ->
+	    error({required, K});
+	{_, V} ->
+	    V
+    end.
+
 remove_cached(AID, Cfg, Ref, DID) ->
     case exodm_db_config:remove_cached(AID, Cfg, Ref, DID) of
 	{ok, true} ->
@@ -47,25 +73,26 @@ request_timeout({_, _Env, {request, _, {call, _M, _Req, _}}}) ->
     ok.
 
 bert_rpc(Pid, M, F, As, Req, Env, AID, DID) ->
-    try
-	dbg:tracer(),
-	dbg:tpl(bert_rpc_exec,x),
-	dbg:p(all,[c]),
+    case bert_rpc_(Pid, M, F, As, Req, Env, AID, DID) of
+	{reply, ok, _} ->
+	    ok;
+	_Other ->
+	    error
+    end.
+
+bert_rpc_(Pid, M, F, As, Req, Env, AID, DID) ->
     Result = (catch nice_bert_rpc:call(Pid, M, F, [remove_yang_info(As)])),
     ?debug("RPC Result = ~p~n", [Result]),
     case Result of
 	{reply, {notify, Method, Elems}, _} ->
 	    exodm_rpc_handler:notification(
-	      Method, Elems, Env, Req, AID, DID);
-	{reply, ok, _} ->
-	    ok;
-	_Other ->
-	    error
-    end
-    after
-	dbg:ctpl(bert_rpc_exec),
-	dbg:stop()
+	      Method, Elems, Env, Req, AID, DID),
+	    {reply, ok, []};
+	Other ->
+	    Other
     end.
+
+
 
 remove_yang_info([As]) when is_list(As) ->
     [remove_yang_info(As)];

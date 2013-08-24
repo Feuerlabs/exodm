@@ -5,6 +5,7 @@
 %% Must explicitly export the RPC callbacks, since otherwise the access check
 %% will fail.
 -export([test_echo/1,
+	 list_even/1,
 	 push_config_set_meth/1]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -111,6 +112,10 @@ exodm_test_() ->
 			       ?my_t(json_remove_config_set_members(Cfg1)),
 			       ?my_t(json_list_config_set_members2(Cfg1)),
 			       %% ?my_t(json_delete_config_set(Cfg1)),
+			       %% test exodm_bert_direct *before* starting up
+			       %% device -
+			       %% should give a 'device-error' result
+			       ?my_t(override_protocol_offline(Cfg1)),
 			       {setup,
 			       	fun() -> start_rpc_client(Config) end,
 			       	fun(Cfg2) ->
@@ -126,7 +131,8 @@ exodm_test_() ->
 			       		 ?my_t(push_config_set1(Cfg2)),
 					 ?my_t(upstream_rpc(Cfg2)),
 					 ?my_t(upstream_http_rpc(Cfg2)),
-					 ?my_t(upstream_http_rpc2(Cfg2))
+					 ?my_t(upstream_http_rpc2(Cfg2)),
+					 ?my_t(override_protocol(Cfg2))
 			       		]
 			       	end}
 			      ]
@@ -1180,6 +1186,43 @@ upstream_http_rpc2(Cfg) ->
 	      {"jsonrpc", "2.0"}]} = Reply,
     ok.
 
+override_protocol(Cfg) ->
+    set_access([{redirect, [{{test,'list-even-direct',1},
+			     {?MODULE, list_even,1}}]},
+		{accept, ?MODULE, list_even, 1}], Cfg),
+    ID = ?LINE,
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
+				"test:list-even-direct", ID,
+				{struct, [{"device-id", "x00000001"},
+					  {"protocol", "exodm_bert_direct"},
+					  {"limit",9}]}),
+    io:fwrite(user, "~p: Reply = ~p", [?LINE, Reply]),
+    {struct, [{"result",
+	       {struct, [{"transaction-id", _},
+			 {"rpc-status-string", "complete"},
+			 {"final", true},
+			 {"evens", {array, [2,4,6,8]}}]}},
+	      {"id", ID},
+	      {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
+override_protocol_offline(_Cfg) ->
+    ID = ?LINE,
+    {ok, Reply} = post_json_rpc({8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"},
+				"test:list-even-direct", ID,
+				{struct, [{"device-id", "x00000001"},
+					  {"protocol", "exodm_bert_direct"},
+					  {"limit",9}]}),
+    io:fwrite(user, "~p: Reply = ~p", [?LINE, Reply]),
+    {struct, [{"result",
+	       {struct, [{"transaction-id", _},
+			 {"rpc-status-string", "device-error"},
+			 {"final", true},
+			 {"evens", {array, []}}]}},
+	      {"id", ID},
+	      {"jsonrpc", "2.0"}]} = Reply,
+    ok.
+
 push_config_set_meth(Args) ->
     push_config_set1 ! {self(), got_push_request, Args},
     receive
@@ -1188,6 +1231,10 @@ push_config_set_meth(Args) ->
     after 10000 ->
 	    error(timeout)
     end.
+
+list_even(Args) ->
+    io:fwrite(user, "~p: ~p:list_even(~p)~n", [?LINE, ?MODULE, Args]),
+    [{evens, [2,4,6,8]}].
 
 
 fetch_json(Cfg) ->
