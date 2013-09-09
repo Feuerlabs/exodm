@@ -90,7 +90,6 @@ handler_session(Arg) ->
       exodm_rpc_from_web,
       fun() ->
 	      try
-		  ?debug("arg ~p~n", [Arg]),
 		  {ok,{IP,_}} = sockname(Arg#arg.clisock),
 		  Env0 = [{client_ip_port,Arg#arg.client_ip_port},
 			  {ip,IP},
@@ -1086,9 +1085,10 @@ post_request(URL, Hdrs, Body) ->
     try
 	Host = get_host_part(URL),
 	Hdrs1 = lists:keystore("Host", 1, Hdrs, {"Host", Host}),
+	Timeout = get_http_request_timeout(10000),
 	Res =
 	    lhttpc:request(
-	      binary_to_list(URL), "POST", Hdrs1, Body, 1000),
+	      binary_to_list(URL), "POST", Hdrs1, Body, Timeout),
 	?debug("post_request(~p, ...) ->~n  ~p~n", [URL, Res]),
 	Res
     catch
@@ -1097,6 +1097,14 @@ post_request(URL, Hdrs, Body) ->
 		   "~p:~p; ~p~n",
 		   [URL, Hdrs, Body, Type, Reason, erlang:get_stacktrace()]),
 	    error
+    end.
+
+get_http_request_timeout(Default) ->
+    case application:get_env(exodm, http_request_timeout) of
+	{ok, T} when is_integer(T), T > 0, T < 16#FFFFFFFF ->
+	    T;
+	_ ->
+	    Default
     end.
 
 get_host_part(URL0) ->

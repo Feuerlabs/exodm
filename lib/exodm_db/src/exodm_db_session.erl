@@ -43,7 +43,7 @@
                   sha,
                   timer}).
 
--define(INACTIVITY_TIMER, 5*60000).  % should be configurable?
+-define(INACTIVITY_TIMER, 20*60000).  % should be configurable?
 
 -include("exodm_db.hrl").
 -include_lib("lager/include/log.hrl").
@@ -158,19 +158,19 @@ set_aid(Aid, User) ->
     case ets:lookup(?TAB, User) of
         [] -> 
             error(no_user_session);
-        [S=#session{role = Role}] ->
+        [#session{role = Role}] ->
             put_auth_({User, Aid, Role}),
-            ets:insert(?TAB, S#session {aid = Aid})
+            ets:update_element(?TAB, User, {#session.aid, Aid})
     end.
             
-set_role(Aid, User, Role) ->
-    case ets:lookup(?TAB, User) of
-        [] -> 
-            error(no_user_session);
-        [S] ->
-            put_auth_({User, Aid, Role}),
-            ets:insert(?TAB, S#session {role = Role})
-    end.
+%% set_role(Aid, User, Role) ->
+%%     case ets:lookup(?TAB, User) of
+%%         [] -> 
+%%             error(no_user_session);
+%%         [S] ->
+%%             put_auth_({User, Aid, Role}),
+%%             ets:update_element(?TAB, User, {#session.role, Role})
+%%     end.
             
 
 set_auth_as_user(Aid, User) ->
@@ -198,10 +198,10 @@ set_auth_as_user(Aid, User, Db, Sticky) ->
                     ?debug("not authorized", []),
                     false
             end;
-        [S=#session{role = Role}] ->
+        [#session{role = Role}] ->
             ?debug("old user", []),
             put_auth_({User, Aid, Role}),
-            ets:insert(?TAB, S#session {aid = Aid}),
+            ets:update_element(?TAB, User, {#session.aid, Aid}),
             set_sticky_flag(Sticky),
             true
     end.
@@ -253,7 +253,7 @@ spawn_monitor_child(F) -> proc_lib:spawn_monitor(auth_f(F)).
 
 get_user() -> if_active_(get_auth_(), fun({X,_,_}) -> X end).
 get_aid()  -> if_active_(get_auth_(), fun({_,X,_}) -> X end).
-get_role() -> if_active_(get_auth_(), fun({_,_,X}) -> X end).
+%% get_role() -> if_active_(get_auth_(), fun({_,_,X}) -> X end).
 get_auth() -> if_active_(get_auth_(), fun(X) -> X end).
 
 if_active_({{did,_,_},_,_} = X, Ret) ->
@@ -350,7 +350,8 @@ handle_call({make_user_active, A, U, Db}, _, St) ->
                           case exodm_db_user:list_accounts(U) of
                               [] ->
                                   ?debug("No accounts for user ~s~n", [U]),
-                                  ?debug("User record: ~p~n", [exodm_db_user:lookup(U)]),
+                                  ?debug("User record: ~p~n",
+                                         [exodm_db_user:lookup(U)]),
                                   {reply, false, St};
                               AList ->
                                   case lists:member(A, AList) of
@@ -363,7 +364,8 @@ handle_call({make_user_active, A, U, Db}, _, St) ->
                                                      [U]),
                                                   {reply, false, St};
                                               {true, Hash, undefined} ->
-                                                  create_session(A, U, Hash, undefined),
+                                                  create_session(
+                                                    A, U, Hash, undefined),
                                                   {reply, true, St}
                                           end;
                                       false ->
@@ -426,9 +428,14 @@ handle_cast({first_auth, Pid, Aid, User, Res}, #st{pending = Pend,
 	    {noreply, process_pending(false, Waiting, Aid, User, St1)}
     end.
 
-handle_info({timeout, _, User}, St) ->
+handle_info({timeout, TRef, User}, St) ->
     io:fwrite("Session timeout (~s)~n", [User]),
-    ets:delete(?TAB, User),
+    case ets:lookup(?TAB, User) of
+        [#session{timer = TRef}] ->
+            ets:delete(?TAB, User);
+        _ ->
+            ?debug("Timer ref (~p) doesn't match session ~s", [TRef, User])
+    end,
     {noreply, St};
 handle_info({exodm_db_account, delete, AID}, St) ->
     Recs = ets:select(?TAB, [{#session{aid = AID, _ = '_'}, [], ['$_']}], 100),
@@ -515,7 +522,7 @@ first_auth_(ID, P) ->
                     ?debug("id ~p, no password ", [ID]),
                     {true, Hash, undefined};
                 _ when is_binary(P) ->
-                    ?debug("id ~p, password ~p", [ID, P]),
+                    ?debug("id ~p, password ********", [ID]),
                     {ok, HashStr} = bcrypt:hashpw(P, Hash),
                     ?debug("id ~p, new hash ~p ", [ID, HashStr]),
                     case list_to_binary(HashStr) of
@@ -546,11 +553,11 @@ create_session(AID, User, Hash, Sha) ->
     ets:insert(?TAB, S),
     S.
 
-max_role([Role]) ->
-    Role;
-%% FIXME !!!
-max_role([Role | _]) ->
-    Role.
+%% max_role([Role]) ->
+%%     Role;
+%% %% FIXME !!!
+%% max_role([Role | _]) ->
+%%     Role.
 
 
 sha(Hash, Passwd) ->
@@ -572,3 +579,11 @@ reset_timer(#session{user = User, timer = TRef}) ->
     end,
     NewTRef = start_timer(User),
     ets:update_element(?TAB, User, {#session.timer, NewTRef}).
+
+inactivity_timer() ->
+    case application:get_env(exodm, user_session_timeout) of
+        {ok, T} when is_integer(T), T > 0 ->
+            T;
+        _ ->
+            ?INACTIVITY_TIMER
+    end.

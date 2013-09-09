@@ -17,11 +17,25 @@ out(#arg{req = #http_request{
     exodm_rpc_handler:exoport_handler_session(A);
 out(#arg{req = #http_request{method = 'POST'},
          pathinfo = "/rpc"} = A) ->
-    ?debug("~p: Redirected request:~n~s~n", [?MODULE, pp_arg(A)]),
+    ?debug("~p: Redirected request:~n~s~n", [?MODULE, pp_arg(anonymize(A))]),
     exodm_rpc_handler:handler_session(A);
-out(_Other) ->
-    ?debug("~p: Unrecognized request:~n~s~n", [?MODULE, pp_arg(_Other)]),
+out(Other) ->
+    ?debug("~p: Unrecognized request:~n~s~n",
+	   [?MODULE, pp_arg(anonymize(Other))]),
     [{status,404}].
+
+anonymize(#arg{headers = Hdrs} = A) ->
+    case Hdrs of
+	#headers{authorization = {User, Pwd, Hash}} ->
+	    A#arg{ headers = Hdrs#headers{
+			       authorization = {User, "<pwd>", "<hash>"}
+			      } };
+	_ ->
+	    A
+    end;
+anonymize(Other) ->
+    Other.
+
 
 pp_arg(Arg) ->
     Sz = tuple_size(Arg) -1,

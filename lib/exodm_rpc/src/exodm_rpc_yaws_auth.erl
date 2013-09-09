@@ -17,7 +17,7 @@ auth(#arg{headers = Hdrs} = Arg, _RequestBody) ->
     %% look at the authentication record.
     case Hdrs#headers.authorization of
 	{UserStr, Pwd, "Basic " ++ _I} ->
-	    ?debug("Authenticating ~s; ~s...~n", [UserStr, Pwd]),
+	    ?debug("Authenticating ~s; pwd: ********...~n", [UserStr]),
             User = list_to_binary(UserStr),
 	    Req = Arg#arg.req,
             try 

@@ -5,6 +5,8 @@ REBAR=./rebar
 PREBAR=../rebar
 
 ESL="$(PWD)/rel/plugins"
+EXODM_DIR=$(PWD)
+EL=$(EXODM_DIR)/deps
 
 .PHONY: all compile clean release upgrade test node console start attach tar \
 	recompile dev devrun
@@ -139,16 +141,28 @@ else
 endif
 
 test:
-	$(REBAR) skip_deps=true eunit
+	EXO_TEST=true $(REBAR) skip_deps=true eunit
 
 retest:
-	EXODM_SKIP_MAKE=true $(REBAR) skip_deps=true eunit
+	EXO_TEST=true EXODM_SKIP_MAKE=true $(REBAR) skip_deps=true eunit
 
 # `make test_console` steps into the EUnit directory for the test system
 # and starts exodm in 'console' mode. This is useful after a `make test`,
 # in order to inspect the database, run test commands, etc.
 test_console:
 	cd .eunit/exodm_tmp; ERL_SETUP_LIBS=$(ESL) ../../rel/exodm/bin/exodm console
+
+ck3_test:
+	CK3_TEST=true EXO_TEST=true $(REBAR) get-deps compile
+	rm -r rel/plugins
+	mkdir -p rel/plugins
+	ln -s $(PWD)/deps/exodm_ck3 rel/plugins/
+	EPD=$(EXODM_DIR)/rel/plugins
+	(cd deps/ck3_test/test && make)
+	echo "starting CT run"
+	(cd deps/ck3_test/test && \
+	ERL_LIBS=$(EL) EXODM_PLUGIN_DIR=$(EPD) ct_run -config ck3.cfg -suite ck3_SUITE -erl_args -name ct -setcookie exodm -pz $(EXODM_DIR)/ebin)
+
 
 clean:
 	$(REBAR) clean
