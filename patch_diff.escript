@@ -51,7 +51,7 @@ file_type(F) when F=="Makefile"; F=="rebar.config"; F=="rebar.config.script";
 		  F=="patch_diff.escript"; F=="rebar"; F=="devrun";
 		  F=="README.md"; F=="rel/sys.config" ->
     make;
-file_type(F) when F=="vm.args"; F=="ctl"; F=="make_node" ->
+file_type(F) when F=="rel/vm.args"; F=="ctl"; F=="make_node" ->
     setup;
 file_type(F) ->
     %% use longest match to find extension, rather than filename:extension/1
@@ -72,7 +72,9 @@ actual_file(beam, F) ->
     case filelib:is_regular(Beam) of
 	true -> Beam;
 	false -> error({cannot_find, Beam})
-    end.
+    end;
+actual_file(_, F) ->
+    F.
 
 output(L, #state{output = tty}) ->
     io:fwrite("Files = ~p~n", [L]);
@@ -81,10 +83,14 @@ output(L, #state{output = {tar, F}, compress = Compress}) ->
 
 make_tar(L, Tar, Compress) ->
     Patches = "rel/patches",
+    Setup = "rel/patches/setup_files",
     FileList =
 	lists:flatmap(
 	  fun({beam,Files}) ->
 		  [{filename:join(Patches, filename:basename(F)), F}
+		   || F <- Files];
+	     ({setup, Files}) ->
+		  [{filename:join(Setup, filename:basename(F)), F}
 		   || F <- Files]
 	  end, L),
     erl_tar:create(Tar, FileList, [compressed || Compress]).
@@ -98,10 +104,9 @@ args(["-tar", F|T], St) ->
 args(["-z" | T], St) ->
     args(T, St#state{compress = true});
 args(["-capture" | T], St) ->
-    C = lists:partition(fun(X) ->
-					lists:member(list_to_atom(X), types())
-				end, T)
-    args(T, St#state{
+    {Types, Rest} = capture(T),
+    io:fwrite("Types = ~p; Rest = ~p~nT = ~p~n", [Types,Rest,T]),
+    args(Rest, St#state{capture = Types});
 args(["--" | T], St) ->
     St#state{diff_tail = [" --"| [[" ",X] || X <- T]]};
 args([H|_], _St) ->
@@ -110,7 +115,21 @@ args([], St) ->
     St.
 
 types() ->
-    [beam, app, all].
+    [beam, app, setup, all].
+
+capture(Args) ->
+    capture(Args, types(), []).
+
+capture([H|T] = L, Ts, Acc) ->
+    case lists:member(A = list_to_atom(H), Ts) of
+	true ->
+	    capture(T, Ts, [A|Acc]);
+	false ->
+	    {lists:reverse(Acc), L}
+    end;
+capture([], _, Acc) ->
+    {lists:reverse(Acc), []}.
+
 
 usage() ->
     Script = escript:script_name(),
