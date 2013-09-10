@@ -429,7 +429,7 @@ handle_cast({first_auth, Pid, Aid, User, Res}, #st{pending = Pend,
     end.
 
 handle_info({timeout, TRef, User}, St) ->
-    io:fwrite("Session timeout (~s)~n", [User]),
+    ?debug("Session timeout (~s)~n", [User]),
     case ets:lookup(?TAB, User) of
         [#session{timer = TRef}] ->
             ets:delete(?TAB, User);
@@ -542,16 +542,40 @@ create_session(AID, User, Hash, Sha) ->
     %% FIXME
     %% User can have several roles !!
     %% Role = max_role(exodm_db_user:list_account_roles(AID, User)),
-    
+
     S=#session{user = User,
                aid = AID,
                hash = Hash,
-               sha = Sha,
-               timer = start_timer(User)},
+               sha = Sha},
 %%               role = Role},
-    
-    ets:insert(?TAB, S),
-    S.
+    Session =
+        case ets:insert_new(?TAB, S) of
+            false ->
+                case ets:lookup(?TAB, User) of
+                    [S0] ->
+                        ?debug("Tried creating session twice:~nS0 = ~p~n"
+                               "S = ~p~n", [S0, S]),
+                        if S0#session.sha == undefined ->
+                                ets:update_element(?TAB, User,
+                                                   {#session.sha, Sha}),
+                                S0#session{sha = Sha};
+                           true ->
+                                S0
+                        end;
+                    [] ->
+                        ets:insert(?TAB, S),
+                        S
+                end;
+            true ->
+                S
+        end,
+    if Session#session.timer == undefined ->
+            TRef = start_timer(User),
+            ets:update_element(?TAB, User, {#session.timer, TRef}),
+            Session#session{timer = TRef};
+       true ->
+            Session
+    end.
 
 %% max_role([Role]) ->
 %%     Role;
@@ -564,7 +588,7 @@ sha(Hash, Passwd) ->
     crypto:sha_mac(Hash, Passwd).
 
 start_timer(User) ->
-    erlang:start_timer(?INACTIVITY_TIMER, self(), User).
+    erlang:start_timer(inactivity_timer(), self(), User).
 
 reset_timer(#session{user = User, timer = TRef}) ->
     case erlang:cancel_timer(TRef) of
