@@ -1,7 +1,8 @@
 -module(exodm_rpc_dispatcher).
 -behaviour(gen_server).
 
--export([check_queue/2]).
+-export([check_queue/2,
+	 asynch_check_queue/2]).
 -export([attempt_dispatch/3,
 	 attempt_dispatch/4]).
 -export([start_link/3]).
@@ -25,6 +26,9 @@
 check_queue(Tab, Q) ->
     call(Tab, {check_queue, Q}).
 
+asynch_check_queue(Tab, Q) ->
+    cast(Tab, {check_queue, Q}).
+
 attempt_dispatch(Db, Tab, Q) ->
     attempt_dispatch(Db, Tab, Q, false).
 
@@ -38,6 +42,15 @@ call(Tab0, Req) ->
 	    error(noproc);
 	Pid when is_pid(Pid) ->
 	    gen_server:call(Pid, Req)
+    end.
+
+cast(Tab0, Msg) ->
+    Tab = kvdb_lib:table_name(Tab0),
+    case gproc:where({n,l, {?MODULE, Tab}}) of
+	undefined ->
+	    error;
+	Pid when is_pid(Pid) ->
+	    gen_server:cast(Pid, Msg)
     end.
 
 start_link(Tab0, M, JobQ) ->
@@ -123,6 +136,9 @@ handle_call({attempt_dispatch, Q, Db, DoReply},
 handle_call(_, _, St) ->
     {noreply, St}.
 
+handle_cast({check_queue, Q}, St) ->
+    {_, St1} = check_queue_(Q, St),
+    {noreply, St1};
 handle_cast(_, St) -> {noreply, St}.
 
 terminate(_, _) -> ok.
@@ -173,6 +189,10 @@ run_dispatcher(JobsQ, Db, Tab, Q, Reply) ->
 
 
 
+dispatch(Db, <<"from_device">> = Tab, Q, JobsQ, Reply) ->
+    exodm_db_session:set_auth_as_device(Q),
+    %% Set Sessions to []; we don't care if the device is online for upstream
+    pop_and_dispatch(Reply, Db, Tab, Q, JobsQ, []);
 dispatch(Db, Tab, Q, JobsQ, Reply) ->
     ?debug("dispatch(~p, ~p)~n", [Tab, Q]),
     Sessions = exodm_rpc_handler:device_sessions(Q),
@@ -245,41 +265,54 @@ pop_and_dispatch_run_(Reply, Db, Tab, Q, Sessions) ->
 	    done(Reply);
 	{ok, QK, {_, Env, Req} = Entry} ->
 	    ?debug("PEEK: Entry = ~p~n", [Entry]),
-	    set_user(Env, Db),
+	    if Tab == <<"to_device">> ->
+		    set_user(Env, Db);
+	       true -> ok  % Already authenticated as device.
+	    end,
 	    {AID, DID} = exodm_db_device:dec_ext_key(Q),
 	    %% FIXME: Since Q remains the same, we should only do this once.
 	    Protocol = exodm_db_device:protocol(AID, DID),
-	    case lists:keyfind(Protocol, 2, Sessions) of
-	    %% case exodm_rpc_handler:find_device_session(Q, Protocol) of
-		%% {ok, Pid} ->
-		{Pid, _} ->
-		    Mod = exodm_rpc_protocol:module(Protocol),
-		    ?debug("Calling ~p:dispatch(~p, ~p, ~p, ~p)~n",
-			   [Mod, Env, AID, DID, Pid]),
-		    try Mod:dispatch(Tab, Req, Env, AID,
-				     exodm_db:decode_id(DID), Pid) of
-			error ->
-			    retry(Db, Tab, QK, Entry, Reply);
-			_Result ->
-			    ?debug("Valid result (~p); deleting queue object~n",
-				   [_Result]),
-			    _DeleteRes = kvdb:queue_delete(Db, Tab, QK),
-			    ?debug("Delete (~p) -> ~p~n", [QK, _DeleteRes]),
-			    %% done(Reply),
-			    next
-		    catch
-			_:_ ->
-			    retry(Db, Tab, QK, Entry, Reply)
-		    end;
-		false ->
-		    ?debug("No matching protocol session for ~p (~p).~n",
-			   [Entry, Sessions]),
-		    notify_device(AID, DID),
-		    done(Reply)
-	    end;
+	    do_dispatch(Reply, Db, Tab, Q, Sessions, QK, Entry, AID, DID, Protocol);
 	Other ->
-	    ?error("PEEK(~p/~p) -> UNEXPECTED: ~p~n", [Tab, Q, Other]),
+	    ?error("Unexpected result of peek(~p, ~p, ~p): ~p~n"
+		   "aborting dispatch~n",
+		   [Db, Tab, Q, Other]),
 	    done(Reply)
+    end.
+
+do_dispatch(Reply, Db, <<"from_device">> = Tab, _Q, _Sessions,
+	    QK, Entry, AID, DID, Protocol) ->
+    Mod = exodm_rpc_protocol:module(Protocol),
+    do_dispatch_(Mod, Reply, Db, Tab, Entry, AID, DID, undefined, QK);
+do_dispatch(Reply, Db, <<"to_device">> = Tab, Q, Sessions,
+	    QK, {_, Env, _} = Entry, AID, DID, Protocol) ->
+    case exodm_rpc_handler:find_device_session(Q, Protocol) of
+	{ok, Pid} ->
+	    Mod = exodm_rpc_protocol:module(Protocol),
+	    do_dispatch_(Mod, Reply, Db, Tab, Entry, AID, DID, Pid, QK);
+	error ->
+	    ?error("No matching protocol session for ~p (~p)~n"
+		   "Entry now blocking queue~n",
+		   [{Env, Entry}, Sessions]),
+	    done(Reply)
+    end.
+
+do_dispatch_(Mod, Reply, Db, Tab, {_,Env,Req} = Entry, AID, DID, Pid, QK) ->
+    ?debug("Calling ~p:dispatch(~p, ~p, ~p, ~p)~n",
+	   [Mod, Env, AID, DID, Pid]),
+    try Mod:dispatch(Tab, Req, Env, AID, exodm_db:decode_id(DID), Pid) of
+	error ->
+	    retry(Db, Tab, qK, Entry, Reply);
+	_Result ->
+	    ?debug("Valid result (~p); deleting queue object~n",
+		   [_Result]),
+	    _DeleteRes = kvdb:queue_delete(Db, Tab, QK),
+	    ?debug("Delete (~p) -> ~p~n", [QK, _DeleteRes]),
+	    %% done(Reply),
+	    next
+    catch
+	_:_ ->
+	    retry(Db, Tab, QK, Entry, Reply)
     end.
 
 notify_device(AID, DID) ->
@@ -294,5 +327,6 @@ retry(Db, Table, QK, {_, _Env, _} = _Req, _Reply) ->
 set_user(Env, Db) ->
     {user, UID} = lists:keyfind(user, 1, Env),
     {aid, AID} = lists:keyfind(aid, 1, Env),
-    exodm_db_session:logout(),
-    exodm_db_session:set_auth_as_user(AID, UID, Db).
+    exodm_db_session:identify_trusted_process(AID, UID, Db).
+    %% exodm_db_session:logout(),
+    %% exodm_db_session:set_auth_as_user(AID, UID, Db).

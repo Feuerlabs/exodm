@@ -20,6 +20,7 @@
          set_auth_as_account/2, set_auth_as_account/3, set_auth_as_account/4,
          set_aid/2,
          set_auth_as_device/1,
+         identify_trusted_process/2, identify_trusted_process/3,
          set_trusted_proc/0, unset_trusted_proc/0,
          is_trusted_proc/0]).
 
@@ -43,7 +44,7 @@
                   sha,
                   timer}).
 
--define(INACTIVITY_TIMER, 5*60000).  % should be configurable?
+-define(INACTIVITY_TIMER, 20*60000).  % should be configurable?
 
 -include("exodm_db.hrl").
 -include_lib("lager/include/log.hrl").
@@ -65,6 +66,7 @@ authenticate(Type, AID, ID0, Pwd) ->
             false
     end.
 
+session_id(device, AID, {did,AID,_} = ID) -> ID;
 session_id(device, AID, ID) -> {did, AID, ID};
 session_id(user  , _  , ID) -> ID.
 
@@ -158,19 +160,19 @@ set_aid(Aid, User) ->
     case ets:lookup(?TAB, User) of
         [] -> 
             error(no_user_session);
-        [S=#session{role = Role}] ->
+        [#session{role = Role}] ->
             put_auth_({User, Aid, Role}),
-            ets:insert(?TAB, S#session {aid = Aid})
+            ets:update_element(?TAB, User, {#session.aid, Aid})
     end.
             
-set_role(Aid, User, Role) ->
-    case ets:lookup(?TAB, User) of
-        [] -> 
-            error(no_user_session);
-        [S] ->
-            put_auth_({User, Aid, Role}),
-            ets:insert(?TAB, S#session {role = Role})
-    end.
+%% set_role(Aid, User, Role) ->
+%%     case ets:lookup(?TAB, User) of
+%%         [] -> 
+%%             error(no_user_session);
+%%         [S] ->
+%%             put_auth_({User, Aid, Role}),
+%%             ets:update_element(?TAB, User, {#session.role, Role})
+%%     end.
             
 
 set_auth_as_user(Aid, User) ->
@@ -198,12 +200,25 @@ set_auth_as_user(Aid, User, Db, Sticky) ->
                     ?debug("not authorized", []),
                     false
             end;
-        [S=#session{role = Role}] ->
+        [#session{role = Role}] ->
             ?debug("old user", []),
             put_auth_({User, Aid, Role}),
-            ets:insert(?TAB, S#session {aid = Aid}),
+            ets:update_element(?TAB, User, {#session.aid, Aid}),
             set_sticky_flag(Sticky),
             true
+    end.
+
+identify_trusted_process(Aid, User) ->
+    identify_trusted_process(Aid, User, kvdb_conf).
+
+identify_trusted_process(Aid, User, Db) ->
+    case lookup_user_info(Db, Aid, User, no_auth) of
+        #session{role = Role} ->
+            put_auth_({User, Aid, Role}),
+            set_trusted_proc(),
+            ok;
+        false ->
+            error({cannot_identify_as, {Aid, User}})
     end.
 
 set_auth_as_account(Account, User) when is_binary(Account) ->
@@ -253,7 +268,7 @@ spawn_monitor_child(F) -> proc_lib:spawn_monitor(auth_f(F)).
 
 get_user() -> if_active_(get_auth_(), fun({X,_,_}) -> X end).
 get_aid()  -> if_active_(get_auth_(), fun({_,X,_}) -> X end).
-get_role() -> if_active_(get_auth_(), fun({_,_,X}) -> X end).
+%% get_role() -> if_active_(get_auth_(), fun({_,_,X}) -> X end).
 get_auth() -> if_active_(get_auth_(), fun(X) -> X end).
 
 if_active_({{did,_,_},_,_} = X, Ret) ->
@@ -344,35 +359,16 @@ handle_call({auth, A, ID, P}, From, St) ->
 handle_call({make_user_active, A, U, Db}, _, St) ->
     case ets:lookup(?TAB, U) of
         [] ->
-            kvdb:in_transaction(
-              Db, fun(_) ->
-                          %% Check that the user has access to account
-                          case exodm_db_user:list_accounts(U) of
-                              [] ->
-                                  ?debug("No accounts for user ~s~n", [U]),
-                                  ?debug("User record: ~p~n", [exodm_db_user:lookup(U)]),
-                                  {reply, false, St};
-                              AList ->
-                                  case lists:member(A, AList) of
-                                      true ->
-                                          case first_auth_(U, no_password) of
-                                              false ->
-                                                  ?debug(
-                                                     "first_auth_(~s, "
-                                                     "no_password) -> false~n",
-                                                     [U]),
-                                                  {reply, false, St};
-                                              {true, Hash, undefined} ->
-                                                  create_session(A, U, Hash, undefined),
-                                                  {reply, true, St}
-                                          end;
-                                      false ->
-                                          ?debug("Account ~s not member of ~p~n",
-                                                 [A, AList]),
-                                          {reply, false, St}
-                                  end
-                          end
-                  end);
+            try lookup_user_info(Db, A, U, no_password) of
+                #session{} = Session ->
+                    create_session(Session),
+                    {reply, true, St};
+                false ->
+                    {reply, false, St}
+            catch error:R ->
+                    io:fwrite("ERROR ~p~n~p~n", [R,erlang:get_get_stacktrace()]),
+                    {reply, false, St}
+            end;
         [#session{} = Session] ->
             reset_timer(Session),
             {reply, true, St}
@@ -419,16 +415,21 @@ handle_cast({first_auth, Pid, Aid, User, Res}, #st{pending = Pend,
     St1 = St#st{pending = dict:erase(User, Pend),
 		procs = dict:erase(Pid, Procs)},
     case Res of
-	{true, Hash, Sha} ->
-            create_session(Aid, User, Hash, Sha),
+        #session{} = Session ->
+            create_session(Session),
 	    {noreply, process_pending(true, Waiting, Aid, User, St1)};
 	false ->
 	    {noreply, process_pending(false, Waiting, Aid, User, St1)}
     end.
 
-handle_info({timeout, _, User}, St) ->
-    io:fwrite("Session timeout (~s)~n", [User]),
-    ets:delete(?TAB, User),
+handle_info({timeout, TRef, User}, St) ->
+    ?debug("Session timeout (~s)~n", [User]),
+    case ets:lookup(?TAB, User) of
+        [#session{timer = TRef}] ->
+            ets:delete(?TAB, User);
+        _ ->
+            ?debug("Timer ref (~p) doesn't match session ~s", [TRef, User])
+    end,
     {noreply, St};
 handle_info({exodm_db_account, delete, AID}, St) ->
     Recs = ets:select(?TAB, [{#session{aid = AID, _ = '_'}, [], ['$_']}], 100),
@@ -486,23 +487,27 @@ pending(A, ID, [{_, P}|_] = Clients, #st{pending = Pend, procs = Procs} = St) ->
     end.
 
 first_auth(A, ID, P, Parent) ->
-    Res = first_auth_(ID, P),
+    Res = lookup_user_info(kvdb_conf, A, ID, P),
+    %% Res = first_auth_(A, ID, P),
     gen_server:cast(Parent, {first_auth, self(), A, ID, Res}).
 
-first_auth_(ID, P) ->
-    LookupRes = case ID of
-                    {did, AID, DID} ->
-                        exodm_db_device:lookup_attr(AID, DID, ?DEV_DB_PASSWORD);
-                    _ ->
-                        exodm_db_user:lookup_attr(ID, password)
-                end,
+first_auth_(A, ID, P) ->
+    {Type, LookupRes} =
+        case ID of
+            {did, AID, DID} ->
+                {device, exodm_db_device:lookup_attr(
+                           AID, DID, ?DEV_DB_PASSWORD)};
+            _ ->
+                {user, exodm_db_user:lookup_attr(ID, password)}
+        end,
     case LookupRes of
         [] ->
             ?debug("id ~p, no hash", [ID]),
             case ID of
-                {did, _, _} ->
+                {did, AID1, DID1} ->
                     ?debug("allow device ~p with no password~n", [ID]),
-                    {true, <<>>, undefined};
+                    #session{user = session_id(device, AID1, DID1),
+                             aid = AID1};
                 _ ->
                     false
             end;
@@ -513,15 +518,20 @@ first_auth_(ID, P) ->
                     %% means we're faking authentication of a system process
                     %% we can't make a sha hash, since we don't know the pwd.
                     ?debug("id ~p, no password ", [ID]),
-                    {true, Hash, undefined};
+                    #session{user = session_id(Type, A, ID),
+                             aid = A,
+                             hash = Hash};
                 _ when is_binary(P) ->
-                    ?debug("id ~p, password ~p", [ID, P]),
+                    ?debug("id ~p, password ********", [ID]),
                     {ok, HashStr} = bcrypt:hashpw(P, Hash),
                     ?debug("id ~p, new hash ~p ", [ID, HashStr]),
                     case list_to_binary(HashStr) of
                         Hash ->
                             ?debug("bcrypt hash matches for ~p~n", [ID]),
-                            {true, Hash, sha(Hash, P)};
+                            #session{user = session_id(Type, A, ID),
+                                     aid = A,
+                                     hash = Hash,
+                                     sha = sha(Hash, P)};
                         _ ->
                             ?debug("bcrypt hash doesn't match for ~p~n"
                                    "~p | ~p~n", [ID, HashStr, Hash]),
@@ -530,34 +540,60 @@ first_auth_(ID, P) ->
             end
     end.
 
-create_session(AID, User, Hash, Sha) ->
-    ?debug("aid ~p, user ~p", [AID, User]),
-    %% FIXME
-    %% User can have several roles !!
-    %% Role = max_role(exodm_db_user:list_account_roles(AID, User)),
-    
-    S=#session{user = User,
-               aid = AID,
-               hash = Hash,
-               sha = Sha,
-               timer = start_timer(User)},
-%%               role = Role},
-    
-    ets:insert(?TAB, S),
-    S.
+%% create_session(AID, User, Hash, Sha) ->
+%%     ?debug("aid ~p, user ~p", [AID, User]),
+%%     %% FIXME
+%%     %% User can have several roles !!
+%%     %% Role = max_role(exodm_db_user:list_account_roles(AID, User)),
 
-max_role([Role]) ->
-    Role;
-%% FIXME !!!
-max_role([Role | _]) ->
-    Role.
+%%     create_session(#session{user = User,
+%%                             aid = AID,
+%%                             hash = Hash,
+%%                             sha = Sha}).
+
+create_session(#session{user = User, sha = Sha} = S) ->
+    Session =
+        case ets:insert_new(?TAB, S) of
+            false ->
+                case ets:lookup(?TAB, User) of
+                    [S0] ->
+                        ?debug("Tried creating session twice:~nS0 = ~p~n"
+                               "S = ~p~n", [S0, S]),
+                        if S0#session.sha == undefined ->
+                                %% Use update_element to avoid lost update issues
+                                ets:update_element(?TAB, User,
+                                                   {#session.sha, Sha}),
+                                S0#session{sha = Sha};
+                           true ->
+                                S0
+                        end;
+                    [] ->
+                        ets:insert(?TAB, S),
+                        S
+                end;
+            true ->
+                S
+        end,
+    if Session#session.timer == undefined ->
+            TRef = start_timer(User),
+            ets:update_element(?TAB, User, {#session.timer, TRef}),
+            Session#session{timer = TRef};
+       true ->
+            Session
+    end.
+
+%% max_role([Role]) ->
+%%     Role;
+%% %% FIXME !!!
+%% max_role([Role | _]) ->
+%%     Role.
 
 
 sha(Hash, Passwd) ->
     crypto:sha_mac(Hash, Passwd).
 
 start_timer(User) ->
-    erlang:start_timer(?INACTIVITY_TIMER, self(), User).
+    erlang:start_timer(inactivity_timer(), self(), User).
 
 reset_timer(#session{user = User, timer = TRef}) ->
     case erlang:cancel_timer(TRef) of
@@ -572,3 +608,47 @@ reset_timer(#session{user = User, timer = TRef}) ->
     end,
     NewTRef = start_timer(User),
     ets:update_element(?TAB, User, {#session.timer, NewTRef}).
+
+inactivity_timer() ->
+    case application:get_env(exodm, user_session_timeout) of
+        {ok, T} when is_integer(T), T > 0 ->
+            T;
+        _ ->
+            ?INACTIVITY_TIMER
+    end.
+
+%% lookup_user_info(Db, Aid, User) ->
+%%     lookup_user_info(Db, Aid, User, no_auth).
+
+lookup_user_info(Db0, A, U, Auth) ->
+    kvdb:in_transaction(
+      Db0, fun(Db) ->
+                   %% Check that the user has access to account
+                   case list_accounts(U) of
+                       [] ->
+                           ?debug("No accounts for user ~s~n", [U]),
+                           ?debug("User record: ~p~n",
+                                  [exodm_db_user:lookup(U)]),
+                           false;
+                       AList ->
+                           case lists:member(A, AList) of
+                               true ->
+                                   case Auth of
+                                       no_auth ->
+                                           #session{user = U,
+                                                    aid = A};
+                                       _ ->
+                                           first_auth_(A, U, Auth)
+                                   end;
+                               false ->
+                                   ?debug("Account ~s not member of ~p~n",
+                                          [A, AList]),
+                                   false
+                           end
+                   end
+           end).
+
+list_accounts({did, AID, ID}) ->
+    [AID];
+list_accounts(User) ->
+    exodm_db_user:list_accounts(User).

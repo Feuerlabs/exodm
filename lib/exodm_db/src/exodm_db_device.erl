@@ -589,11 +589,17 @@ encode_value(?DEV_DB_SESSION_TIMEOUT, T) ->
     list_to_binary(integer_to_list(T));
 encode_value(?DEV_DB_PASSWORD, P0) ->
     P = to_binary(P0),
-    {ok, Salt} = bcrypt:gen_salt(),
+    {ok, Salt} = gen_salt(),
     {ok, Hash} = bcrypt:hashpw(P, Salt),
     to_binary(Hash);
 encode_value(_, V) ->
     to_binary(V).
+
+gen_salt() ->
+    case application:get_env(bcrypt, default_log_rounds) of
+	{ok, R} -> bcrypt:gen_salt(R);
+	_ -> bcrypt:gen_salt()
+    end.
 
 decode_value(?DEV_DB_LATITUDE, Bin) ->
     exodm_db:bin_to_float(Bin);

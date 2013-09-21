@@ -491,12 +491,11 @@ list_account_roles_(AID, UID)  ->
 %%
 %%--------------------------------------------------------------------
 insert_password(Key, Item, Value) ->
-    ?debug("key ~p, item ~p, value ~p ", [Key, Item, Value]),
+    ?debug("key ~p, item ~p, value ******** ", [Key, Item]),
     {ok, Salt} = bcrypt:gen_salt(),
     %% Expensive hash; expensive to create, expensive to check against
     %% So make sure we can not use this fact for a DOS attack!
     {ok, Hash} = bcrypt:hashpw(Value, Salt),
-    ?debug("hash ~p", [Hash]),
     insert(Key, Item, to_binary(Hash)).
 
 new_list_pos(Base) ->

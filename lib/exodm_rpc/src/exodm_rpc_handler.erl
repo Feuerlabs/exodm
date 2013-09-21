@@ -97,15 +97,7 @@ handler_session(Arg) ->
       exodm_rpc_from_web,
       fun() ->
 	      try
-		  ?debug("arg ~p~n", [Arg]),
-		  {ok,{IP,_}} = sockname(Arg#arg.clisock),
-		  Env0 = [{client_ip_port,Arg#arg.client_ip_port},
-			  {ip,IP},
-			  {ssl,is_ssl(Arg#arg.clisock)},
-			  {client,json_rpc}],
-		  Arg2=Arg#arg{state = Env0 },
-		  yaws_rpc:handler_session(
-		    maybe_multipart(Arg2), {?MODULE, web_rpc})
+		  handler_session_(init_state({parse, []}, Arg))
 	      catch
 		  error:E ->
 		      Trace = erlang:get_stacktrace(),
@@ -115,26 +107,78 @@ handler_session(Arg) ->
 	      end
       end).
 
-maybe_multipart(#arg{headers = #headers{content_type = "multipart" ++ _},
-		     state = Env} = A) ->
-    ?debug("Multipart POST~n", []),
-    Parts = parse_multipart(yaws_api:parse_multipart_post(A)),
-    case lists:keytake(jsonrpc, 1, Parts) of
-	false ->
-	    error(no_jsonrpc);
-	{value, {_, JSON}, NewEnv} ->
-	    A#arg{clidata = JSON, state = Env ++ NewEnv}
+init_state(St, #arg{state = undefined} = Arg) ->
+    Arg#arg{state = St};
+init_state(_, Arg) ->
+    Arg.
+
+handler_session_(#arg{headers = #headers{content_type = "multipart" ++ _},
+		      state = {parse, Acc}} = Arg) ->
+    ?debug("Multipart POST; Acc = ~p~n", [Acc]),
+    case yaws_api:parse_multipart_post(Arg) of
+	{cont, Cont, Res} = _C ->
+	    %% We should perhaps write to temporary disk storage instead?
+	    ?debug("multipart_post() -> ~p~n", [_C]),
+	    {get_more, Cont, {parse, append_acc(Acc, Res)}};
+	{result, Res} = _R ->
+	    ?debug("multipart_post() -> ~p~n", [_R]),
+	    Parts = parse_multipart_result(append_acc(Acc, Res), []),
+	    ?debug("Parts = ~p~n", [Parts]),
+	    case lists:keytake(jsonrpc, 1, Parts) of
+		false ->
+		    error(no_jsonrpc);
+		{value, {_, JSON}, NewEnv} ->
+		    Env0 = env(Arg),
+		    io:fwrite("Calling handler session. setting clidata =~n~s~n",
+			      [JSON]),
+		    yaws_rpc:handler_session(
+		      Arg#arg{state = Env0 ++ NewEnv,
+			      clidata = JSON}, {?MODULE, web_rpc})
+	    end;
+	{error, Reason} ->
+	    error(Reason)
     end;
-maybe_multipart(A) ->
-    A.
+handler_session_(Arg) ->
+    yaws_rpc:handler_session(Arg#arg{state = env(Arg)}, {?MODULE, web_rpc}).
+
+append_acc([{part_body,PB}], [{part_body,PB2}|T]) ->
+    append_acc([{part_body, [PB, PB2]}], T);
+append_acc([{part_body,PB}], [{body, B}|T]) ->
+    [{body, [PB, B]}|T];
+append_acc([H|T], L) ->
+    [H|append_acc(T, L)];
+append_acc([], L) ->
+    L.
+
+env(Arg) ->
+    {ok,{IP,_}} = sockname(Arg#arg.clisock),
+    [{client_ip_port,Arg#arg.client_ip_port},
+     {ip,IP},
+     {ssl,is_ssl(Arg#arg.clisock)},
+     {client,json_rpc}].
 
 
-parse_multipart({result, Result}) ->
-    parse_multipart_result(Result, []).
+
+%% maybe_multipart(#arg{headers = #headers{content_type = "multipart" ++ _},
+%% 		     state = Env} = A) ->
+%%     ?debug("Multipart POST~n", []),
+%%     Parts = parse_multipart(yaws_api:parse_multipart_post(A), []),
+%%     case lists:keytake(jsonrpc, 1, Parts) of
+%% 	false ->
+%% 	    error(no_jsonrpc);
+%% 	{value, {_, JSON}, NewEnv} ->
+%% 	    A#arg{clidata = JSON, state = Env ++ NewEnv}
+%%     end;
+%% maybe_multipart(A) ->
+%%     A.
+
+%% parse_multipart({result, Result}) ->
+%%     parse_multipart_result(Result, []).
 
 parse_multipart_result([{head, {"file", Opts}},{body, Body}|Rest], Acc) ->
     {_, Filename} = lists:keyfind("filename", 1, Opts),
     {_, "application/octet-stream"} = lists:keyfind(content_type, 1, Opts),
+    io:fwrite("File = ~s:~n~s~n", [Filename,Body]),
     parse_multipart_result(Rest, [{file, {list_to_binary(Filename),
 					  list_to_binary(Body)}}|Acc]);
 parse_multipart_result([{head, {"jsonrpc", _}}, {body, JSON}|Rest], Acc) ->
@@ -1161,9 +1205,10 @@ post_request(URL, Hdrs, Body) ->
     try
 	Host = get_host_part(URL),
 	Hdrs1 = lists:keystore("Host", 1, Hdrs, {"Host", Host}),
+	Timeout = get_http_request_timeout(10000),
 	Res =
 	    lhttpc:request(
-	      binary_to_list(URL), "POST", Hdrs1, Body, 1000),
+	      binary_to_list(URL), "POST", Hdrs1, Body, Timeout),
 	?debug("post_request(~p, ...) ->~n  ~p~n", [URL, Res]),
 	Res
     catch
@@ -1172,6 +1217,14 @@ post_request(URL, Hdrs, Body) ->
 		   "~p:~p; ~p~n",
 		   [URL, Hdrs, Body, Type, Reason, erlang:get_stacktrace()]),
 	    error
+    end.
+
+get_http_request_timeout(Default) ->
+    case application:get_env(exodm, http_request_timeout) of
+	{ok, T} when is_integer(T), T > 0, T < 16#FFFFFFFF ->
+	    T;
+	_ ->
+	    Default
     end.
 
 get_host_part(URL0) ->
