@@ -20,6 +20,7 @@
          set_auth_as_account/2, set_auth_as_account/3, set_auth_as_account/4,
          set_aid/2,
          set_auth_as_device/1,
+         identify_trusted_process/2, identify_trusted_process/3,
          set_trusted_proc/0, unset_trusted_proc/0,
          is_trusted_proc/0]).
 
@@ -65,6 +66,7 @@ authenticate(Type, AID, ID0, Pwd) ->
             false
     end.
 
+session_id(device, AID, {did,AID,_} = ID) -> ID;
 session_id(device, AID, ID) -> {did, AID, ID};
 session_id(user  , _  , ID) -> ID.
 
@@ -206,6 +208,19 @@ set_auth_as_user(Aid, User, Db, Sticky) ->
             true
     end.
 
+identify_trusted_process(Aid, User) ->
+    identify_trusted_process(Aid, User, kvdb_conf).
+
+identify_trusted_process(Aid, User, Db) ->
+    case lookup_user_info(Db, Aid, User, no_auth) of
+        #session{role = Role} ->
+            put_auth_({User, Aid, Role}),
+            set_trusted_proc(),
+            ok;
+        false ->
+            error({cannot_identify_as, {Aid, User}})
+    end.
+
 set_auth_as_account(Account, User) when is_binary(Account) ->
     set_auth_as_account(Account, User, kvdb_conf, false).
 
@@ -344,37 +359,16 @@ handle_call({auth, A, ID, P}, From, St) ->
 handle_call({make_user_active, A, U, Db}, _, St) ->
     case ets:lookup(?TAB, U) of
         [] ->
-            kvdb:in_transaction(
-              Db, fun(_) ->
-                          %% Check that the user has access to account
-                          case exodm_db_user:list_accounts(U) of
-                              [] ->
-                                  ?debug("No accounts for user ~s~n", [U]),
-                                  ?debug("User record: ~p~n",
-                                         [exodm_db_user:lookup(U)]),
-                                  {reply, false, St};
-                              AList ->
-                                  case lists:member(A, AList) of
-                                      true ->
-                                          case first_auth_(U, no_password) of
-                                              false ->
-                                                  ?debug(
-                                                     "first_auth_(~s, "
-                                                     "no_password) -> false~n",
-                                                     [U]),
-                                                  {reply, false, St};
-                                              {true, Hash, undefined} ->
-                                                  create_session(
-                                                    A, U, Hash, undefined),
-                                                  {reply, true, St}
-                                          end;
-                                      false ->
-                                          ?debug("Account ~s not member of ~p~n",
-                                                 [A, AList]),
-                                          {reply, false, St}
-                                  end
-                          end
-                  end);
+            try lookup_user_info(Db, A, U, no_password) of
+                #session{} = Session ->
+                    create_session(Session),
+                    {reply, true, St};
+                false ->
+                    {reply, false, St}
+            catch error:R ->
+                    io:fwrite("ERROR ~p~n~p~n", [R,erlang:get_get_stacktrace()]),
+                    {reply, false, St}
+            end;
         [#session{} = Session] ->
             reset_timer(Session),
             {reply, true, St}
@@ -421,8 +415,8 @@ handle_cast({first_auth, Pid, Aid, User, Res}, #st{pending = Pend,
     St1 = St#st{pending = dict:erase(User, Pend),
 		procs = dict:erase(Pid, Procs)},
     case Res of
-	{true, Hash, Sha} ->
-            create_session(Aid, User, Hash, Sha),
+        #session{} = Session ->
+            create_session(Session),
 	    {noreply, process_pending(true, Waiting, Aid, User, St1)};
 	false ->
 	    {noreply, process_pending(false, Waiting, Aid, User, St1)}
@@ -493,23 +487,27 @@ pending(A, ID, [{_, P}|_] = Clients, #st{pending = Pend, procs = Procs} = St) ->
     end.
 
 first_auth(A, ID, P, Parent) ->
-    Res = first_auth_(ID, P),
+    Res = lookup_user_info(kvdb_conf, A, ID, P),
+    %% Res = first_auth_(A, ID, P),
     gen_server:cast(Parent, {first_auth, self(), A, ID, Res}).
 
-first_auth_(ID, P) ->
-    LookupRes = case ID of
-                    {did, AID, DID} ->
-                        exodm_db_device:lookup_attr(AID, DID, ?DEV_DB_PASSWORD);
-                    _ ->
-                        exodm_db_user:lookup_attr(ID, password)
-                end,
+first_auth_(A, ID, P) ->
+    {Type, LookupRes} =
+        case ID of
+            {did, AID, DID} ->
+                {device, exodm_db_device:lookup_attr(
+                           AID, DID, ?DEV_DB_PASSWORD)};
+            _ ->
+                {user, exodm_db_user:lookup_attr(ID, password)}
+        end,
     case LookupRes of
         [] ->
             ?debug("id ~p, no hash", [ID]),
             case ID of
-                {did, _, _} ->
+                {did, AID1, DID1} ->
                     ?debug("allow device ~p with no password~n", [ID]),
-                    {true, <<>>, undefined};
+                    #session{user = session_id(device, AID1, DID1),
+                             aid = AID1};
                 _ ->
                     false
             end;
@@ -520,7 +518,9 @@ first_auth_(ID, P) ->
                     %% means we're faking authentication of a system process
                     %% we can't make a sha hash, since we don't know the pwd.
                     ?debug("id ~p, no password ", [ID]),
-                    {true, Hash, undefined};
+                    #session{user = session_id(Type, A, ID),
+                             aid = A,
+                             hash = Hash};
                 _ when is_binary(P) ->
                     ?debug("id ~p, password ********", [ID]),
                     {ok, HashStr} = bcrypt:hashpw(P, Hash),
@@ -528,7 +528,10 @@ first_auth_(ID, P) ->
                     case list_to_binary(HashStr) of
                         Hash ->
                             ?debug("bcrypt hash matches for ~p~n", [ID]),
-                            {true, Hash, sha(Hash, P)};
+                            #session{user = session_id(Type, A, ID),
+                                     aid = A,
+                                     hash = Hash,
+                                     sha = sha(Hash, P)};
                         _ ->
                             ?debug("bcrypt hash doesn't match for ~p~n"
                                    "~p | ~p~n", [ID, HashStr, Hash]),
@@ -537,17 +540,18 @@ first_auth_(ID, P) ->
             end
     end.
 
-create_session(AID, User, Hash, Sha) ->
-    ?debug("aid ~p, user ~p", [AID, User]),
-    %% FIXME
-    %% User can have several roles !!
-    %% Role = max_role(exodm_db_user:list_account_roles(AID, User)),
+%% create_session(AID, User, Hash, Sha) ->
+%%     ?debug("aid ~p, user ~p", [AID, User]),
+%%     %% FIXME
+%%     %% User can have several roles !!
+%%     %% Role = max_role(exodm_db_user:list_account_roles(AID, User)),
 
-    S=#session{user = User,
-               aid = AID,
-               hash = Hash,
-               sha = Sha},
-%%               role = Role},
+%%     create_session(#session{user = User,
+%%                             aid = AID,
+%%                             hash = Hash,
+%%                             sha = Sha}).
+
+create_session(#session{user = User, sha = Sha} = S) ->
     Session =
         case ets:insert_new(?TAB, S) of
             false ->
@@ -556,6 +560,7 @@ create_session(AID, User, Hash, Sha) ->
                         ?debug("Tried creating session twice:~nS0 = ~p~n"
                                "S = ~p~n", [S0, S]),
                         if S0#session.sha == undefined ->
+                                %% Use update_element to avoid lost update issues
                                 ets:update_element(?TAB, User,
                                                    {#session.sha, Sha}),
                                 S0#session{sha = Sha};
@@ -611,3 +616,39 @@ inactivity_timer() ->
         _ ->
             ?INACTIVITY_TIMER
     end.
+
+%% lookup_user_info(Db, Aid, User) ->
+%%     lookup_user_info(Db, Aid, User, no_auth).
+
+lookup_user_info(Db0, A, U, Auth) ->
+    kvdb:in_transaction(
+      Db0, fun(Db) ->
+                   %% Check that the user has access to account
+                   case list_accounts(U) of
+                       [] ->
+                           ?debug("No accounts for user ~s~n", [U]),
+                           ?debug("User record: ~p~n",
+                                  [exodm_db_user:lookup(U)]),
+                           false;
+                       AList ->
+                           case lists:member(A, AList) of
+                               true ->
+                                   case Auth of
+                                       no_auth ->
+                                           #session{user = U,
+                                                    aid = A};
+                                       _ ->
+                                           first_auth_(A, U, Auth)
+                                   end;
+                               false ->
+                                   ?debug("Account ~s not member of ~p~n",
+                                          [A, AList]),
+                                   false
+                           end
+                   end
+           end).
+
+list_accounts({did, AID, ID}) ->
+    [AID];
+list_accounts(User) ->
+    exodm_db_user:list_accounts(User).
