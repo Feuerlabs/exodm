@@ -93,9 +93,9 @@ expand({sys, Params}, Env) ->
 		  [app_name(A) ||
 		      A <- lists:concat(
 			     [As || {rel,_,_,As} <- Ps2])]),
-    {sys, fix_lib_dirs(AllApps,
-		       Ps2 ++ [{app, A, [{incl_cond, include}]} ||
-				  A <- AllApps])};
+    {sys, fix_apps(fix_lib_dirs(AllApps,
+				Ps2 ++ [{app,A,[{incl_cond, include}]}
+					|| A <- AllApps]))};
 expand(T, _) ->
     T.
 
@@ -103,6 +103,19 @@ app_name(A) when is_tuple(A) ->
     element(1, A);
 app_name(A) when is_atom(A) ->
     A.
+
+exodm_lib_dir() ->
+    {ok, CWD} = file:get_cwd(),
+    filename:dirname(CWD).
+
+fix_apps([{app, exodm, Opts}|T]) ->
+    [{app, exodm, [{lib_dir, exodm_lib_dir()}|Opts]}|fix_apps(T)];
+fix_apps([{app, A, Opts}|T]) ->
+    [{app, A, [{lib_dir, code:lib_dir(A)}|Opts]}|fix_apps(T)];
+fix_apps([H|T]) ->
+    [H|fix_apps(T)];
+fix_apps([]) ->
+    [].
 
 fix_lib_dirs(Apps, Ps) ->
     LibDirs = [normalize_fname(filename:absname(D)) ||
@@ -114,15 +127,18 @@ fix_lib_dirs(Apps, Ps) ->
       lists:concat([filelib:wildcard(
 		      filename:join(D,"*/ebin")) || D <- LibDirs]) ++ OldPath),
     OTPLibD = otp_libdir(),
-    ActualLibs = lists:foldl(fun(A, Acc) ->
-				     case code:lib_dir(A) of
-					 {error, _} ->
-					     error({cannot_find_app, A});
-					 D ->
-					     store(filename:dirname(D), OTPLibD, Acc)
-				     end
-			     end, LibDirs, AppNames),
-    lists:keystore(lib_dirs, 1, Ps, {lib_dirs, ActualLibs}).
+    ActualLibs = lists:foldl(
+		   fun(exodm, Acc) -> Acc;
+		      (A, Acc) ->
+			   case code:lib_dir(A) of
+			       {error, _} ->
+				   error({cannot_find_app, A});
+			       D ->
+				   store(filename:dirname(D), OTPLibD, Acc)
+			   end
+		   end, LibDirs, AppNames),
+    %% lists:keystore(lib_dirs, 1, Ps, {lib_dirs, ActualLibs}).
+    lists:keystore(lib_dirs, 1, Ps, {lib_dirs, []}).
 
 normalize_fname(F) ->
     filename:join(normalize_fname_(filename:split(F))).
