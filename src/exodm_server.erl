@@ -77,7 +77,7 @@ load_plugins() ->
     load_apps(AllPlugins),
     register_protocols(AllPlugins),
     start_apps(AllPlugins),
-    {ok, [A || {A,_,_} <- AllPlugins]}.
+    {ok, [A || {A,_} <- AllPlugins]}.
 
 load_apps(AllPlugins) ->
     lists:foreach(
