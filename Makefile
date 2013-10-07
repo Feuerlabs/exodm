@@ -158,7 +158,7 @@ ck3_test:
 	mkdir -p rel/plugins
 	ln -s $(PWD)/deps/exodm_ck3 rel/plugins/
 	EPD=$(EXODM_DIR)/rel/plugins
-	(cd deps/ck3_test/test && make)
+	(cd deps/ck3_test/test && ERL_LIBS=$(EXODM_DIR)/deps make)
 	echo "starting CT run"
 	(cd deps/ck3_test/test && \
 	ERL_LIBS=$(EL) EXODM_PLUGIN_DIR=$(EPD) ct_run -config ck3.cfg -suite ck3_SUITE -erl_args -name ct -setcookie exodm -pz $(EXODM_DIR)/ebin)
