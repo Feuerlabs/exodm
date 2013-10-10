@@ -149,6 +149,9 @@ set_trusted_proc() ->
     put('$exodm_trusted_proc', true),
     ok.
 
+set_trusted_proc(true) -> set_trusted_proc();
+set_trusted_proc(false) -> ok.
+
 unset_trusted_proc() ->
     erase('$exodm_trusted_proc').
 
@@ -308,9 +311,11 @@ del_auth_() ->
 put_auth_({U, AID, Role}) -> put('$exodm_auth', {U, AID, Role}).
 
 auth_f(F) ->
-    Auth = get_auth(),  % checks if active
+    Auth = get_auth_(),  % skip if_active check
+    Trusted = is_trusted_proc(),
     fun() ->
             put_auth_(Auth),
+            set_trusted_proc(Trusted),
             F()
     end.
 
