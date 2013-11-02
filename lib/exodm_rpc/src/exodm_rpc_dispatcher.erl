@@ -62,7 +62,8 @@ init({Tab0, M, JobQ} = Arg) ->
     gproc:reg({n, l, {?MODULE, Tab}}),
     try
 	ok = kvdb_conf:add_table(Tab, [{type, fifo},
-				       {encoding, {raw,sext,sext}}]),
+				       {encoding, {raw,sext,sext}},
+				       {disk, false}]),
 	kvdb_schema_events:notify_all_queues(kvdb:db(kvdb_conf), Tab),
 	?debug("checking queues in ~p~n", [Tab]),
 	St = check_queues(kvdb:first_queue(kvdb_conf, Tab),
