@@ -302,7 +302,7 @@ do_dispatch_(Mod, Reply, Db, Tab, {_,Env,Req} = Entry, AID, DID, Pid, QK) ->
 	   [Mod, Env, AID, DID, Pid]),
     try Mod:dispatch(Tab, Req, Env, AID, exodm_db:decode_id(DID), Pid) of
 	error ->
-	    retry(Db, Tab, qK, Entry, Reply);
+	    retry(Db, Tab, QK, Entry, Reply);
 	_Result ->
 	    ?debug("Valid result (~p); deleting queue object~n",
 		   [_Result]),
