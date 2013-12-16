@@ -31,6 +31,7 @@
 -define(RPC_CREATE_ACCOUNT, <<"create-account">>).
 -define(RPC_UPDATE_ACCOUNT,  <<"update-account">>).
 -define(RPC_DELETE_ACCOUNT,  <<"delete-account">>).
+-define(RPC_LOOKUP_ACCOUNT,  <<"lookup-account">>).
 -define(RPC_LIST_ACCOUNTS,  <<"list-accounts">>).
 -define(RPC_ADD_ACCOUNT_USERS,  <<"add-account-users">>).
 -define(RPC_REMOVE_ACCOUNT_USERS,  <<"remove-account-users">>).
@@ -39,7 +40,9 @@
 
 -define(RPC_CREATE_USER,  <<"create-user">>).
 -define(RPC_DELETE_USER,  <<"delete-user">>). 
+-define(RPC_LOOKUP_USER,  <<"lookup-user">>).
 -define(RPC_LIST_USERS,  <<"list-users">>).
+-define(RPC_LIST_USER_ACCOUNTS, <<"list-user-accounts">>).
 
 -define(RPC_CREATE_CONFIG_SET, <<"create-config-set">>).
 -define(RPC_UPDATE_CONFIG_SET, <<"update-config-set">>). 
@@ -101,6 +104,7 @@
          {?RPC_UPDATE_ACCOUNT, [?ROOT]},
          {?RPC_DELETE_ACCOUNT, [?ROOT]},
          {?RPC_LIST_ACCOUNTS, [?ROOT]},
+         {?RPC_LOOKUP_ACCOUNT, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_ADD_ACCOUNT_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_REMOVE_ACCOUNT_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_LIST_ACCOUNT_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
@@ -108,8 +112,10 @@
 
          {?RPC_CREATE_USER, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_DELETE_USER, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
+         {?RPC_LOOKUP_USER, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_LIST_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
-
+	 {?RPC_LIST_USER_ACCOUNTS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
+	 
          {?RPC_CREATE_CONFIG_SET, 
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
          {?RPC_UPDATE_CONFIG_SET, 
