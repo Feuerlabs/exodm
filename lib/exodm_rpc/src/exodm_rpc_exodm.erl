@@ -165,6 +165,13 @@ json_rpc_(not_set, {call, ?EXODM, ?RPC_DELETE_ACCOUNT,
 	    {ok, result_code(?PERMISSION_DENIED)}
     end;
 
+json_rpc_(_AID, {call, _, ?RPC_LOOKUP_ACCOUNT,
+	   [{'name', Name, _}|_Tail]}, Env) ->
+    case has_root_env(Env) of
+	true -> lookup_account(Name);
+	false -> {ok, result_code(?PERMISSION_DENIED)}
+    end;
+
 json_rpc_(not_set, {call, ?EXODM, ?RPC_LIST_ACCOUNTS,
 	   [{'n', N, _},
 	    {'previous', Prev, _}]} = _RPC, Env) ->
@@ -188,6 +195,14 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_DELETE_USER,
 	   [{'uname', Name, _}|_Opts]} = _RPC, _Env) 
   when Name =/= <<"exodm-admin">> ->
     delete_user(Name);
+
+json_rpc_(_AID, {call, _, ?RPC_LOOKUP_USER,
+	   [{'uname', Name, _}|_Tail]}, _Env) ->
+    lookup_user(Name);
+    
+json_rpc_(_AID, {call, ?EXODM, ?RPC_LIST_USER_ACCOUNTS,
+	   [{'uname', Name, _}|_Tail]} = _RPC, _Env) ->
+    list_user_accounts(Name);
 
 json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_USERS,
 	   [{'n', N, _},
@@ -508,6 +523,15 @@ create_account(Name, Options) ->
 delete_account(Name) ->
     {ok, ?catch_result(exodm_db_account:delete(Name))}.
     
+lookup_account(Name) ->   
+    Res = exodm_db_account:lookup(exodm_db_account:lookup_by_name(Name)),
+    case Res of
+	[] ->
+	    {ok, result_code(?OBJECT_NOT_FOUND)};
+	[_|_] ->
+	    {ok, result_code(ok) ++
+		 [{'accounts', {array, [{struct, Res} || Res =/= []]}}]}
+    end.
 list_accounts(N, Prev) ->
     Res = lists:map(fun([{<<"id">>,_},{<<"name">>,Name}]) -> Name end,
 		    exodm_db_account:list_accounts(N, Prev)),
@@ -526,6 +550,17 @@ create_user(Name, Options) ->
 delete_user(Name) ->
     {ok, ?catch_result(exodm_db_user:delete(Name))}.
    
+lookup_user(Name) ->   
+    Res = exodm_db_user:lookup(Name),
+    case Res of
+	[] ->
+	    {ok, result_code(?OBJECT_NOT_FOUND)};
+	[_|_] ->
+	    ?debug("lookup_user: found ~p", [Res]),
+	    {ok, result_code(ok) ++
+		 [{'users', {array, [{struct, Res} || Res =/= []]}}]}
+    end.
+
 list_users(AID, N, Prev) ->
     case exodm_db_account:list_users_with_roles(AID, N, Prev) of
 	[] ->
@@ -542,6 +577,22 @@ list_users(N, Prev) ->
     Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
 		    exodm_db_user:list_users(N, Prev)),
     {ok, [{'users', {array,Res}}]}.
+
+list_user_accounts(Name) ->  
+    case exodm_db_user:list_roles(Name) of
+	[] ->
+	    {ok, [{'accounts', {array, []}}]};
+	Accounts when is_list(Accounts) ->
+	    %% Cheating with roles !!! FIXME
+	    {ok, [{'accounts', 
+		   {array, 
+		    [{struct, [{'name', exodm_db_account:lookup_name(Account)},
+			       {'roles',  [Role]}]} ||
+			{Account, Role} <- Accounts]}}]};
+	Other ->
+	    {ok, Other}
+    end.
+    
     
 create_config_set(AID, Attrs) ->
     try exodm_db_config:new_config_set(AID, kvl(Attrs)) of
