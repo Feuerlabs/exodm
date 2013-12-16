@@ -294,11 +294,13 @@ store_yang_scr() ->
 	      exodm_db:transaction(
 		fun(Db) ->
 			exodm_db_session:set_auth_as_account(?ACC2, ?ACC2ADM, Db),
-			{ok, Bin} = file:read_file(
-				      filename:join(
-					filename:dirname(
-					  filename:dirname(setup:home())),
-					"test/test.yang")),
+			File = 
+			    filename:join(
+			      filename:dirname(
+				filename:dirname(setup:home())),
+			      "test/test.yang"),
+			io:fwrite(user,"store_yang_scr: Yang file ~p", [File]),
+			{ok, Bin} = file:read_file(File),
 			exodm_db_yang:write("test.yang", Bin),
 			exodm_db_session:logout()
 		end),
@@ -565,17 +567,14 @@ basic_200_OK() ->
 %%% ==================================== JSON-RPC Tests
 
 start_http_client(Cfg) ->
-    application:start(crypto),
-    application:start(public_key),
-    ok = application:start(ssl),
+    %% R16B requires asn1 ???
+    call([crypto, asn1, public_key, ssl], start),
     ok = lhttpc:start(),
     Cfg.
 
 stop_http_client(_Cfg) ->
     ok = lhttpc:stop(),
-    ok = application:stop(ssl),
-    application:stop(public_key),
-    application:stop(crypto).
+    call([ssl, public_key, asn1, crypto], stop).
 
 json_server() ->
     {8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"}.
@@ -1267,7 +1266,20 @@ post_json_rpc({Port, User, Pwd, Path}, Method, ID, Params) ->
 
 
 %% Helpers
-
+call([], _F) ->
+    ok;
+call([App|Apps], F) ->
+    io:fwrite(user, "~p: ~p\n", [F,App]),
+    case {F, application:F(App)} of
+	{start, {error,{not_started,App1}}} ->
+	    call([App1,App|Apps], F);
+	{start, {error,{already_started,App}}} ->
+	    call(Apps, F);
+	{F, ok} ->
+	    call(Apps, F);
+	{_F, Error} ->
+	    Error
+    end.
 
 
 get_node(Cfg) ->
@@ -1283,6 +1295,7 @@ rscript(Cfg, Script) ->
     Res.
 
 try_rpc(N, T, Node, M, F, A) ->
+    io:fwrite(user, "try_rpc: waiting for exodm app at  ~p ...~n", [Node]),
     case rpc:call(Node, M, F, A) of
 	{badrpc, _} when N > 1 ->
 	    timer:sleep(T),
@@ -1294,6 +1307,7 @@ try_rpc(N, T, Node, M, F, A) ->
 try_rpc_(0, _, _, _, _, _) ->
     error(nodedown);
 try_rpc_(N, T, Node, M, F, A) when N > 0 ->
+    io:fwrite(user, "try_rpc_: waiting for exodm app at  ~p ...~n", [Node]),
     case rpc:call(Node, M, F, A) of
 	{badrpc, _} ->
 	    timer:sleep(T),
@@ -1307,12 +1321,12 @@ try_rpc_(N, T, Node, M, F, A) when N > 0 ->
 
 await_started(Cfg) ->
     Node = get_node(Cfg),
-    await_started(6, Node).
+    await_started(10, Node).
 
 await_started(0, _) ->
     error(timeout);
 await_started(N, Node) when N > 0 ->
-    case try_rpc(3, 3000, Node, application_controller, get_master, [exodm]) of
+    case try_rpc(5, 3000, Node, application_controller, get_master, [exodm]) of
 	undefined ->
 	    io:fwrite(user, "waiting for exodm app (~p)...~n", [N]),
 	    timer:sleep(2000),
