@@ -580,7 +580,7 @@ decode_id_(<<>>) ->
 
 enc_ext_key(AID, ID0) ->
     case exodm_db_account:lookup_name(AID) of
-	{ok, AName} ->
+	AName when is_binary(AName) ->
 	    ID = decode_id(ID0),
 	    Del = pick_delimiter(<<AName/binary, ID/binary>>),
 	    <<Del, AName/binary, Del, ID/binary>>;

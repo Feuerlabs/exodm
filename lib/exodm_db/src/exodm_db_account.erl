@@ -343,7 +343,7 @@ lookup_name(AID0) ->
 	[] ->
 	    {error, not_found};
 	[{_, Name}]  ->
-	    {ok, Name}
+	    Name
     end.
 
 
