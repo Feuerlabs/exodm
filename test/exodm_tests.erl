@@ -445,6 +445,7 @@ start_rpc_client(Cfg) ->
     exoport:start(Opts),
     Cfg.
 
+
 ensure_loaded(A) ->
     case application:load(A) of
 	ok -> ok;
@@ -565,8 +566,9 @@ basic_200_OK() ->
 %%% ==================================== JSON-RPC Tests
 
 start_http_client(Cfg) ->
-    application:start(crypto),
-    application:start(public_key),
+    ok = application:start(asn1),
+    ok = application:start(crypto),
+    ok = application:start(public_key),
     ok = application:start(ssl),
     ok = lhttpc:start(),
     Cfg.
