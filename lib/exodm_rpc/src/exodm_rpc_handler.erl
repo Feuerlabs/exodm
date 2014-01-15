@@ -440,7 +440,7 @@ exoport_rpc_(_Db, _InitEnv, {call, "exoport:get-messages", Args0}) ->
 		  {_, TO} ->
 		      to_int(TO)
 	      end,
-    Msgs = exoport_rpc_exoport_http:recv(ExtID, N, Timeout),
+    Msgs = exodm_rpc_exoport_http:recv(ExtID, N, Timeout),
     {true, {response, {struct, [{"result", "ok"},
 				{"messages", Msgs}]}}};
 exoport_rpc_(_Db, InitEnv, {call, FullMethod, {struct, Args}}) ->
