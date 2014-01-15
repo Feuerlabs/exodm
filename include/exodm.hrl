@@ -27,7 +27,11 @@
 -define(OBJECT_NOT_EMPTY, 'object-not-empty').
 -define(ACCOUNT_NOT_SPECIFIED, 'account-not-specified').
 
+%%--------------------------------------------------------------------
 %% Predefined rpc:s - must correspond to yang-files!!!
+%% !!! When adding an rpc make sure you put the correct
+%% !!! permissions in the sections below
+%%--------------------------------------------------------------------
 -define(RPC_CREATE_ACCOUNT, <<"create-account">>).
 -define(RPC_UPDATE_ACCOUNT,  <<"update-account">>).
 -define(RPC_DELETE_ACCOUNT,  <<"delete-account">>).
@@ -78,6 +82,7 @@
 
 -define(RPC_PROVISION_DEVICE, <<"create-device">>).
 -define(RPC_LOOKUP_DEVICE, <<"lookup-device">>).
+-define(RPC_LOOKUP_DEVICE_ATTRIBUTES, <<"lookup-device-attributes">>).
 -define(RPC_UPDATE_DEVICE, <<"update-device">>).
 -define(RPC_DEPROVISION_DEVICES, <<"delete-devices">>).
 -define(RPC_LIST_DEVICES, <<"list-devices">>).
@@ -92,13 +97,15 @@
 -define(RPC_GET_MBLOX_PARAMETERS, <<"get-mblox-parameters">>).
 -define(RPC_DELETE_MBLOX_PARAMETERS, <<"delete-mblox-parameters">>).
 
+%%--------------------------------------------------------------------
+%% Defines wich rpc:s a role can execute
+%%--------------------------------------------------------------------
 -define(ROOT_ACCESS_RPCS,
     [?RPC_CREATE_ACCOUNT, 
      ?RPC_UPDATE_ACCOUNT,
      ?RPC_DELETE_ACCOUNT, 
      ?RPC_LIST_ACCOUNTS]).
 
-%% Defines wich rpc:s a role can execute
 -define(RPC_ROLE_LIST,
         [{?RPC_CREATE_ACCOUNT, [?ROOT]},
          {?RPC_UPDATE_ACCOUNT, [?ROOT]},
@@ -175,6 +182,8 @@
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
          {?RPC_LOOKUP_DEVICE, 
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG, ?VIEW]},
+	 {?RPC_LOOKUP_DEVICE_ATTRIBUTES,
+	  [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
          {?RPC_UPDATE_DEVICE, 
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
          {?RPC_DEPROVISION_DEVICES, 

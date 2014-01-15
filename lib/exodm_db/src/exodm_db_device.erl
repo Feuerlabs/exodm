@@ -8,7 +8,8 @@
 -module(exodm_db_device).
 
 -export([init/1]).
--export([new/3, update/3, lookup/2, lookup_attr/3, list_next/3,
+-export([new/3, update/3, lookup/2, lookup_attr/3, lookup_attrs/3,
+	 list_next/3,
 	 write_attrs/3,
 	 delete/2, delete_devices/2,
 	 add_config_set/3, remove_config_set/3, list_config_sets/2,
@@ -395,7 +396,19 @@ remove_keys(L) ->
 convert_attr({K,V}) ->
     {K, decode_value(K, V)}.
 
+lookup_attrs(AID, DID, Attrs) when is_list(Attrs) ->
+    lookup_attrs(AID, DID, Attrs, []).
+
+lookup_attrs(_AID, _DID, [], Acc) ->
+    Acc;
+lookup_attrs(AID, DID, [Attr | Rest] = Attrs, Acc) ->
+    lager:debug("lookup_attrs: ~p ~p ~p ~p", [AID, DID, Attrs, Acc]),
+    %% lookup_attr/3 returns a tuple-list.
+    lookup_attrs(AID, DID, Rest, 
+		 lookup_attr(AID, DID, Attr) ++ Acc).
+
 lookup_attr(AID, DID, Attr) when is_atom(Attr); is_binary(Attr) ->
+    lager:debug("lookup_attrs: ~p ~p ~p", [AID, DID, Attr]),
     lookup_attr_(table(AID), DID, Attr).
 
 lookup_attr_(Tab, DID, Attr) when is_atom(Attr); is_binary(Attr) ->
