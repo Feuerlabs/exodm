@@ -447,6 +447,7 @@ start_rpc_client(Cfg) ->
     exoport:start(Opts),
     Cfg.
 
+
 ensure_loaded(A) ->
     case application:load(A) of
 	ok -> ok;
