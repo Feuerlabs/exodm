@@ -455,7 +455,7 @@ json_rpc_(AID, {call, _, ?RPC_LOOKUP_DEVICE,
     lookup_device(AID, I);
     
 json_rpc_(AID, {call, _, ?RPC_LOOKUP_DEVICE_ATTRIBUTES,
-	   [{'device-id', I, _}, {'attributes', Attrs}, |_Tail]}, _Env) ->
+	   [{'device-id', I, _}, {'attributes', Attrs, _} |_Tail]}, _Env) ->
     lookup_device_attributes(AID, I, Attrs);
     
 json_rpc_(AID, {call, _, ?RPC_UPDATE_DEVICE,
@@ -965,19 +965,23 @@ lookup_device(AID, I) ->
 	    {ok, result_code(?DEVICE_NOT_FOUND)};
 	[_|_] ->
 	    {ok, result_code(ok) ++
-		 [{devices, {array, [{struct, Res} || Res =/= []]}}]}
+		 [{'devices', {array, [{struct, Res} || Res =/= []]}}]}
     end.
  
 lookup_device_attributes(AID, I, Attrs) ->   
-    Res = exodm_db_device:lookup_attributes(AID, I, Attrs),
+    Res = exodm_db_device:lookup_attrs(AID, I, Attrs),
     %% Plus session state?? 
     %% exodm_rpc_handler:find_device_session(AID, DID, Protocol)
     case Res of
 	[] ->
 	    {ok, result_code(?DEVICE_NOT_FOUND)};
 	[_|_] ->
-	    {ok, result_code(ok) ++
-		 [{attributes, {array, [{struct, Res} || Res =/= []]}}]}
+	    {ok, result_code(ok) ++ 
+		 [{'attributes', 
+		   {array,
+		    [{struct, [{'name', Name},
+			       {'val', Value}]} || 
+			{Name, Value} <- Res, Res =/= []]}}]}
     end.
 
 update_device(AID, I, Opts) ->   

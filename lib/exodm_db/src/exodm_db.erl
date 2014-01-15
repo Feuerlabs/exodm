@@ -26,8 +26,8 @@
 
 -export([to_binary/1]).
 -export([list_options/2, binary_opt/2, binary_opt/3, uint32_opt/2, uint64_opt/2,
-	 all_required/2,
-	 uint32_bin/1, uint64_bin/1, required_option/2]).
+	 all_required/2, required_option/2,
+	 uint32_bin/1, uint64_bin/1, bin_to_uint64/1]).
 -export([first_child/1, first_child/2,
 	 next_child/1, next_child/2,
 	 last_child/1, last_child/2]).
@@ -744,7 +744,8 @@ uint64_bin(L) when is_list(L) ->
 uint64_bin(<<_:64>> = Bin) ->
     Bin.
 
-
+bin_to_uint64(<<I:64/big-unsigned-integer>>) ->
+    I.
 
 write(Key,Value) ->
     kvdb_conf:write({Key,[],Value}).
