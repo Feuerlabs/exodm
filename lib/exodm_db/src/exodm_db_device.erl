@@ -404,8 +404,14 @@ lookup_attrs(_AID, _DID, [], Acc) ->
 lookup_attrs(AID, DID, [Attr | Rest] = Attrs, Acc) ->
     lager:debug("lookup_attrs: ~p ~p ~p ~p", [AID, DID, Attrs, Acc]),
     %% lookup_attr/3 returns a tuple-list.
-    lookup_attrs(AID, DID, Rest, 
-		 lookup_attr(AID, DID, Attr) ++ Acc).
+    Result =
+	case lookup_attr(AID, DID, Attr) of
+	    [{Key, V}] when Key == ?DEV_DB_DEVICE_KEY;
+			    Key == ?DEV_DB_SERVER_KEY ->
+		[{Key, exodm_db:bin_to_uint64(V)}];
+	    NotKey -> NotKey
+	end,
+    lookup_attrs(AID, DID, Rest, Result ++ Acc).
 
 lookup_attr(AID, DID, Attr) when is_atom(Attr); is_binary(Attr) ->
     lager:debug("lookup_attrs: ~p ~p ~p", [AID, DID, Attr]),
