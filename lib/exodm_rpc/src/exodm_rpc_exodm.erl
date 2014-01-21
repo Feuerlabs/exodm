@@ -968,22 +968,35 @@ lookup_device(AID, I) ->
 		 [{'devices', {array, [{struct, Res} || Res =/= []]}}]}
     end.
  
+-define(IS_CONNECTED, <<"is-connected">>).
+
 lookup_device_attributes(AID, I, Attrs) ->   
-    Res = exodm_db_device:lookup_attrs(AID, I, Attrs),
-    %% Plus session state?? 
-    %% exodm_rpc_handler:find_device_session(AID, DID, Protocol)
+   ?debug("lookup_device_attributes: ~p~n", [Attrs]),
+    Res = exodm_db_device:lookup_attrs(AID, I, Attrs -- [?IS_CONNECTED]),
     case Res of
 	[] ->
 	    {ok, result_code(?DEVICE_NOT_FOUND)};
 	[_|_] ->
+	    State = case lists:member(?IS_CONNECTED, Attrs) of
+			true ->[{?IS_CONNECTED, is_connected(AID, I)}];
+			false -> []
+		    end,
+	    ?debug("lookup_device_attributes: result ~p~n", [State ++ Res]),
 	    {ok, result_code(ok) ++ 
 		 [{'attributes', 
 		   {array,
 		    [{struct, [{'name', Name},
 			       {'val', Value}]} || 
-			{Name, Value} <- Res, Res =/= []]}}]}
+			{Name, Value} <- State ++ Res, Res =/= []]}}]}
     end.
 
+is_connected(AID, I) ->
+    ?debug("is_connected: ~p~n", [I]),
+    case exodm_rpc_handler:device_sessions(AID, I) of
+	[] -> <<"false">>;
+	 _S -> <<"true">>
+    end.
+	     
 update_device(AID, I, Opts) ->   
     {ok, ?catch_result(exodm_db_device:update(AID, I, kvl(Opts)))}.
    
