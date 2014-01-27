@@ -229,6 +229,11 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USERS,
 	    {'unames', UNames, _}|_Tail]}, Env) ->
     {ok, ?catch_result(exodm_db_account:remove_users(Account, Role, UNames,
 						 has_root_env(Env)))};
+json_rpc_(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USER,
+	   [{'account', Account, _},
+	    {'uname', UName, _}|_Tail]}, Env) ->
+    {ok, ?catch_result(exodm_db_account:remove_user_access(Account, UName,
+						 has_root_env(Env)))};
 json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_ACCOUNT_USERS,
 	   [{'account', _Account, _}, %% Already parsed
 	    {'n', N, _},

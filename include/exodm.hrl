@@ -16,6 +16,7 @@
 -define(EXEC, <<"execute">>).
 -define(CONFIG, <<"config">>).
 -define(VIEW, <<"view">>).
+-define(ROLES, [?ROOT, ?INIT_ADMIN, ?ADMIN, ?EXEC, ?CONFIG, ?VIEW]). 
 
 %% Result codes
 -define(PERMISSION_DENIED, 'permission-denied').
@@ -39,6 +40,7 @@
 -define(RPC_LIST_ACCOUNTS,  <<"list-accounts">>).
 -define(RPC_ADD_ACCOUNT_USERS,  <<"add-account-users">>).
 -define(RPC_REMOVE_ACCOUNT_USERS,  <<"remove-account-users">>).
+-define(RPC_REMOVE_ACCOUNT_USER,  <<"remove-account-user">>).
 -define(RPC_LIST_ACCOUNT_USERS,  <<"list-account-users">>).
 -define(RPC_LIST_ACCOUNT_ROLES,  <<"list-account-roles">>).
 
@@ -114,6 +116,7 @@
          {?RPC_LOOKUP_ACCOUNT, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_ADD_ACCOUNT_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_REMOVE_ACCOUNT_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
+         {?RPC_REMOVE_ACCOUNT_USER, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_LIST_ACCOUNT_USERS, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
          {?RPC_LIST_ACCOUNT_ROLES, [?ROOT, ?INIT_ADMIN, ?ADMIN]},
 

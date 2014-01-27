@@ -151,21 +151,26 @@ delete(UName) ->
 	      end
       end).
 
-delete_(UID) ->
-    lager:debug("uid ~p~n", [UID]),
-    Key = exodm_db:encode_id(UID),
+delete_(UName) ->
+    lager:debug("uid ~p~n", [UName]),
+    Key = exodm_db:encode_id(UName),
     lager:debug("key ~p~n", [Key]),
-    case exist_(?TAB, Key) of
-	true ->
-	    lager:debug("uid ~p exists ~n", [UID]),
-	    kvdb_conf:delete_tree(?TAB, Key),
-	    %% Make sure no old session exists if new user
-	    %% with same name is created before session timeout.
-	    %% exodm_db_session:remove_user_session(UID),
-	    {ok, exodm_db:decode_id(Key)};
-	false ->
-	    {error, not_found}
-    end.
+    remove_account_access(UName),
+    kvdb_conf:delete_tree(?TAB, Key),
+    %% Make sure no old session exists if new user
+    %% with same name is created before session timeout.
+    %% exodm_db_session:remove_user_session(UName),
+    {ok, exodm_db:decode_id(Key)}.
+
+remove_account_access(UName) ->
+    remove_account_access(UName, list_roles(UName)).
+
+remove_account_access(_UName, []) ->
+    ok;
+remove_account_access(UName, [{AID, Role} | Rest]) ->
+    %% Hmm, should we have ISroot as true to enforce deletion ???
+    exodm_db_account:remove_users(AID, Role, [UName], false),
+    remove_account_access(UName, Rest).
 
 process_list_options(O, Key, Options) ->
     Found = exodm_db:list_options(O, Options),
@@ -429,7 +434,7 @@ list_accounts_(UID)  ->
 %% List a users roles.
 %%
 %% Can throw errors: no_such_user, no_such_account
-%% FIXME: documenation ! is this still true?
+%% FIXME: documentation ! is this still true?
 %% @end
 %%--------------------------------------------------------------------
 -spec list_roles(UName::binary()) ->

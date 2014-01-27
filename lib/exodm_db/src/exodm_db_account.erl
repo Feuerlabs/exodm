@@ -46,6 +46,7 @@
 	 list_app_ids/3]).
 -export([add_users/4,
 	 remove_users/4,
+	 remove_user_access/3,
 	 user_exists/2]).
 -export([create_role/3,
 	 role_def/2,
@@ -811,7 +812,7 @@ add_admin_user(AID, UName) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec remove_users(AName::binary(),
+-spec remove_users(Account::binary(),
 		   Role::binary(),
 		   UNames::list(binary()), 
 		   IsRoot::boolean()) ->
@@ -820,13 +821,20 @@ add_admin_user(AID, UName) ->
 
 
 
-remove_users(AName, Role, UNames, IsRoot) 
-  when is_binary(AName), is_binary(Role) ->
-    lager:debug("aname ~p, role ~p, unames ~p", [AName, Role, UNames]),
-    %% Check if account_exists
-    case lookup_by_name(AName) of
-	false -> error('object-not-found');
-	AID -> remove_users1(AID, Role, UNames, IsRoot)
+remove_users(Account, Role, UNames, IsRoot) 
+  when is_binary(Account), is_binary(Role), 
+       is_list(UNames), is_boolean(IsRoot) ->
+    lager:debug("account ~p, role ~p, unames ~p", [Account, Role, UNames]),
+    %% Are we using name ??
+    case lookup_by_name(Account) of
+	false -> 
+	    %% Are we using AID ??
+	    case exist(Account) of
+		true -> remove_users1(Account, Role, UNames, IsRoot);
+		false -> error('object-not-found')
+	    end;
+	AID -> 
+	    remove_users1(AID, Role, UNames, IsRoot)
     end.
 		     
 remove_users1(AID, Role, UNames, true) ->
@@ -841,7 +849,8 @@ remove_users1(AID, Role, UNames, false) ->
 
 remove_users2(_AID, _Role, []) ->
     ok;
-remove_users2(AID, Role, [UName | Rest]) ->
+remove_users2(AID, Role, [UName | Rest]) 
+  when is_binary(UName) ->
     lager:debug("aname ~p, role ~p, uname ~p", [AID, Role, UName]),
     case lists:any(fun({A, R}) when A == AID, R == Role -> true;
 		      ({_A, _R}) -> false
@@ -864,6 +873,33 @@ remove_user1(AID, Role, UName) ->
     %% Was it the last role ??
     kvdb_conf:delete(table(), kvdb_conf:join_key([AID, ?ACC_DB_USERS, UName])).
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Remove all account access from user
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec remove_user_access(AName::binary(),
+			 UName::binary(), 
+			 IsRoot::boolean()) ->
+				ok |
+				{error, Reason::term()}.
+
+
+
+remove_user_access(AName, UName, IsRoot) 
+  when is_binary(AName), is_binary(UName) ->
+    lager:debug("aname ~p, uname ~p", [AName, UName]),
+    %% Check if account_exists
+    case lookup_by_name(AName) of
+	false -> error('object-not-found');
+	AID -> remove_user_access(AID, ?ROLES, UName, IsRoot)
+    end.
+
+remove_user_access(AID, [Role | Rest], UName, IsRoot) ->     
+    remove_users(AID, Role, [UName], IsRoot),
+    remove_user_access(AID, Rest, UName, IsRoot).
+	
 %%--------------------------------------------------------------------
 %% @doc
 %% Check if user exsist
