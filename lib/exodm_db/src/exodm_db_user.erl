@@ -135,19 +135,14 @@ new_(UName, Options) ->
 delete(UName) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      case exist(UName) of %% FIXME! checked twice, also in delete_
+	      case exist(UName) of 
 		  false ->
 		      error('object-not-found');
 		  true ->
-                      case delete_(UName) of
-                          {ok, UserName} ->
-                              lager:debug("user ~p deleted", [UserName]),
-                              publish(delete, UserName),
-                              ok;
-                          Other ->  %% can really not found be returned ?
-                              lager:debug("delete result ~p returned", [Other]),
-                              Other
-                      end
+                      {ok, UserName} = delete_(UName),
+		      lager:debug("user ~p deleted", [UserName]),
+		      publish(delete, UserName),
+		      ok
 	      end
       end).
 

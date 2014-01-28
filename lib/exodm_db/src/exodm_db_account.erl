@@ -893,9 +893,12 @@ remove_user_access(AName, UName, IsRoot)
     %% Check if account_exists
     case lookup_by_name(AName) of
 	false -> error('object-not-found');
-	AID -> remove_user_access(AID, ?ROLES, UName, IsRoot)
+	AID -> remove_user_access(AID, 
+				  list_user_roles(AID, UName), UName, IsRoot)
     end.
 
+remove_user_access(_AID, [], _UName, _IsRoot) -> 
+    ok;
 remove_user_access(AID, [Role | Rest], UName, IsRoot) ->     
     remove_users(AID, Role, [UName], IsRoot),
     remove_user_access(AID, Rest, UName, IsRoot).

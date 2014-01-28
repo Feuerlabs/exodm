@@ -16,7 +16,6 @@
 -define(EXEC, <<"execute">>).
 -define(CONFIG, <<"config">>).
 -define(VIEW, <<"view">>).
--define(ROLES, [?ROOT, ?INIT_ADMIN, ?ADMIN, ?EXEC, ?CONFIG, ?VIEW]). 
 
 %% Result codes
 -define(PERMISSION_DENIED, 'permission-denied').
