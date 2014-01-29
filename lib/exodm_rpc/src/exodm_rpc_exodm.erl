@@ -36,7 +36,7 @@
 %%--------------------------------------------------------------------
 -spec exodm_admin(UID::binary()) -> boolean().
 
-exodm_admin(<<"exodm_admin">>) -> true;
+exodm_admin(?EXODM_ADMIN) -> true;
 exodm_admin(_Other) -> false.
     
 
@@ -193,8 +193,20 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_CREATE_USER,
 
 json_rpc_(_AID, {call, ?EXODM, ?RPC_DELETE_USER,
 	   [{'uname', Name, _}|_Opts]} = _RPC, _Env) 
-  when Name =/= <<"exodm-admin">> ->
+  when Name =/= ?EXODM_ADMIN ->
     delete_user(Name);
+
+json_rpc_(_AID, {call, ?EXODM, ?RPC_UPDATE_USER,
+	   [{'uname', Name, _Type1} | Options]}, _Env)  
+  when Name =/= ?EXODM_ADMIN ->
+    update_user(Name, Options);
+
+json_rpc_(_AID, {call, ?EXODM, ?RPC_UPDATE_USER,
+	   [{'uname', Name, _Type1} | Options]}, _Env) ->
+    case is_root(exodm_db_session:get_user()) of
+	true -> update_user(Name, Options);
+	false -> {ok, result_code(?PERMISSION_DENIED)}
+    end;
 
 json_rpc_(_AID, {call, _, ?RPC_LOOKUP_USER,
 	   [{'uname', Name, _}|_Tail]}, _Env) ->
@@ -232,7 +244,7 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USERS,
 json_rpc_(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USER,
 	   [{'account', Account, _},
 	    {'uname', UName, _}|_Tail]}, Env) ->
-    {ok, ?catch_result(exodm_db_account:remove_user_access(Account, UName,
+    {ok, ?catch_result(exodm_db_account:remove_user(Account, UName,
 						 has_root_env(Env)))};
 json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_ACCOUNT_USERS,
 	   [{'account', _Account, _}, %% Already parsed
@@ -557,7 +569,12 @@ create_user(Name, Options) ->
     {ok, ?catch_result(exodm_db_user:new(Name, Opts))}.
     
 delete_user(Name) ->
-    {ok, ?catch_result(exodm_db_user:delete(Name))}.
+    {ok, ?catch_result(exodm_db_user:delete(Name, false))}.
+   
+update_user(Name, Options) ->
+    %% Remove type info from opts
+    Opts = [{Opt, Value} || {Opt, Value, _Type} <- Options],
+    {ok, ?catch_result(exodm_db_user:update(Name, Opts))}.
    
 lookup_user(Name) ->   
     Res = exodm_db_user:lookup(Name),

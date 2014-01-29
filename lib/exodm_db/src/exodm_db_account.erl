@@ -46,7 +46,7 @@
 	 list_app_ids/3]).
 -export([add_users/4,
 	 remove_users/4,
-	 remove_user_access/3,
+	 remove_user/3,
 	 user_exists/2]).
 -export([create_role/3,
 	 role_def/2,
@@ -248,7 +248,7 @@ delete_(AID) ->
     exodm_db:in_transaction(
       fun(_Db) ->
 	      [Admin] = list_admins(AID, 2, <<"">>),
-	      exodm_db_user:delete(Admin),
+	      exodm_db_user:delete(Admin, true),
 	      kvdb_conf:delete_tree(table(), AID),
 	      publish(delete, exodm_db:account_id_value(AID)),
 	      ok
@@ -808,7 +808,7 @@ add_admin_user(AID, UName) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Remove account access from users
+%% Remove account access of type role from users
 %%
 %% @end
 %%--------------------------------------------------------------------
@@ -821,6 +821,8 @@ add_admin_user(AID, UName) ->
 
 
 
+remove_users(_Account, ?INIT_ADMIN, _UNames, false) ->
+    error('permission-denied');
 remove_users(Account, Role, UNames, IsRoot) 
   when is_binary(Account), is_binary(Role), 
        is_list(UNames), is_boolean(IsRoot) ->
@@ -856,19 +858,19 @@ remove_users2(AID, Role, [UName | Rest])
 		      ({_A, _R}) -> false
 		   end, exodm_db_user:list_roles(UName)) of
 	true -> 
-	    remove_user(AID, Role, UName),
+	    remove_user_access(AID, Role, UName),
 	    remove_users2(AID, Role, Rest);
 	false -> 
 	    error('object-not-found')
     end.
 
-remove_user(AID, ?ADMIN = Role, UName) ->
+remove_user_access(AID, ?ADMIN = Role, UName) ->
     kvdb_conf:delete(table(), kvdb_conf:join_key([AID, ?ACC_DB_ADMINS, UName])),
-    remove_user1(AID, Role, UName);
-remove_user(AID, Role, UName) ->
-    remove_user1(AID, Role, UName).
+    remove_user_access1(AID, Role, UName);
+remove_user_access(AID, Role, UName) ->
+    remove_user_access1(AID, Role, UName).
 
-remove_user1(AID, Role, UName) ->
+remove_user_access1(AID, Role, UName) ->
     exodm_db_user:remove_role(AID, UName, Role),
     %% Was it the last role ??
     kvdb_conf:delete(table(), kvdb_conf:join_key([AID, ?ACC_DB_USERS, UName])).
@@ -879,29 +881,28 @@ remove_user1(AID, Role, UName) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec remove_user_access(AName::binary(),
-			 UName::binary(), 
-			 IsRoot::boolean()) ->
-				ok |
-				{error, Reason::term()}.
+-spec remove_user(AName::binary(),
+		  UName::binary(), 
+		  IsRoot::boolean()) ->
+			 ok |
+			 {error, Reason::term()}.
 
 
 
-remove_user_access(AName, UName, IsRoot) 
+remove_user(AName, UName, IsRoot) 
   when is_binary(AName), is_binary(UName) ->
     lager:debug("aname ~p, uname ~p", [AName, UName]),
     %% Check if account_exists
     case lookup_by_name(AName) of
 	false -> error('object-not-found');
-	AID -> remove_user_access(AID, 
-				  list_user_roles(AID, UName), UName, IsRoot)
+	AID -> remove_user(AID,list_user_roles(AID, UName), UName, IsRoot)
     end.
 
-remove_user_access(_AID, [], _UName, _IsRoot) -> 
+remove_user(_AID, [], _UName, _IsRoot) -> 
     ok;
-remove_user_access(AID, [Role | Rest], UName, IsRoot) ->     
+remove_user(AID, [Role | Rest], UName, IsRoot) ->     
     remove_users(AID, Role, [UName], IsRoot),
-    remove_user_access(AID, Rest, UName, IsRoot).
+    remove_user(AID, Rest, UName, IsRoot).
 	
 %%--------------------------------------------------------------------
 %% @doc
