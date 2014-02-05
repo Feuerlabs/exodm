@@ -96,7 +96,7 @@ new(UName, Options) ->
 		      end
 	      end);
 	false ->
-	    error(invalid_name)
+	    error(?ILLEGAL_NAME)
     end.
 
 valid_name(<<C,_/binary>>) ->
@@ -107,10 +107,24 @@ valid_name(_) ->
 
 new_(UName, Options) ->
     lager:debug("uname ~p, options ~p~n", [UName, Options]),
-    [_] = exodm_db:nc_key_split(exodm_db:decode_id(UName)),  %% validation!
+    %% validation!
+    case exodm_db:nc_key_split(exodm_db:decode_id(UName)) of
+	[_] -> 
+	    %% Normal case
+	    ok; 
+	[Account, _Name] ->
+	    %% User name of type Account/Name, verify that
+	    %% Account exists
+	    case exodm_db_account:lookup_by_name(Account) of
+		AID when is_binary(AID) -> ok;
+		false -> error(?ILLEGAL_NAME)
+	    end;
+	_ -> 
+	    error(?ILLEGAL_NAME)
+    end,
     Key = exodm_db:encode_id(UName),
     case proplists:get_value(?USER_OPT_PASSWORD, Options) of
-        undefined -> error(no_password);
+        undefined -> error(?MISSING_OPTION);
         Pwd ->insert_password(Key, ?USER_DB_PASSWORD, Pwd)
     end,
     db_insert(Key,?USER_DB_NAME, UName),
@@ -217,7 +231,8 @@ add_alias_(UID0, Alias) ->
 			      db_insert(LKey, ?USER_DB_ALIAS, to_binary(Alias))
 		      end);
 		true ->
-		    error(alias_exists, [UID0, Alias])
+		    ?ei("alias_exists ~p ~p", [UID0, Alias]),
+		    error(?OBJECT_EXISTS)
 	    end;
 	false ->
 	    error(?OBJECT_NOT_FOUND, [UID0, Alias])

@@ -31,8 +31,8 @@
 
 -define(ACC1, <<"feuer">>).
 -define(ACC2, <<"wiger">>).
--define(ACC1ADM, <<"feuer-admin">>).
--define(ACC2ADM, <<"wiger-admin">>).
+-define(ACC1ADM, <<"feuer/admin">>).
+-define(ACC2ADM, <<"wiger/admin">>).
 -define(ACC2PWD, "wiger").
 -define(b2l(Bin), binary_to_list(Bin)).
 
@@ -146,13 +146,13 @@ exodm_test_() ->
 %% exodm_db_account:new(<<"test">>,[{fullname,<<"Mr T">>},{password,<<"pwd">>}]}]).
 %%
 populate(Cfg) ->
-    ok = ?rpc(exodm_db_account,new,
-		      [?ACC1,
-		       [{alias, <<"love">>},
-                        {fullname, <<"Magnus Feuer">>},
-                        {password, <<"feuerlabs">>}
-		       ]]),
-    ok = ?rpc(exodm_db_account,new,
+    {ok, _Admin1} = ?rpc(exodm_db_account,new,
+		       [?ACC1,
+		        [{alias, <<"love">>},
+                         {fullname, <<"Magnus Feuer">>},
+                         {password, <<"feuerlabs">>}
+		        ]]),
+    {ok, _Admin2} = ?rpc(exodm_db_account,new,
 		      [?ACC2,
 		       [{alias, [<<"uffe">>, <<"uwiger">>]},
                         {fullname, <<"Ulf Wiger">>},
@@ -617,23 +617,24 @@ json_list_device_types(_Cfg) ->
 					  {"previous", ""}
 					 ]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct, [{"device-types",
-				    {array,
-				     [
-				      {struct, [{"name", "devtype_1"},
-						{"protocol", "ga_ck3"}
-					       ]},
-				      {struct, [{"name", "htype"},
-						{"protocol", "exoport_http"}
-					       ]},
-				      {struct, [{"name", "type1"},
-						{"protocol", "exodm_bert"}
-					       ]}
-				     ]}}
-				  ]}},
-	      {"id", ID},
-	      {"jsonrpc", "2.0"}
-	     ]} = Reply,
+    {struct, 
+	[{"result", {struct, 
+	    [{"result","ok"},
+		{"device-types",
+		    {array,
+			[{struct, [{"name", "devtype_1"},
+			    {"protocol", "ga_ck3"}
+			]},
+			{struct, [{"name", "htype"},
+				{"protocol", "exoport_http"}
+			]},
+			{struct, [{"name", "type1"},
+				{"protocol", "exodm_bert"}
+			]}
+		]}}]}},
+	    {"id", ID},
+	    {"jsonrpc", "2.0"}
+    ]} = Reply,
     ok.
 
 json_delete_device_type(_Cfg) ->
@@ -677,14 +678,16 @@ json_list_devices(_Cfg) ->
 				{struct, [{"n", 3},
 					  {"previous", ""}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct, [{"devices",
-				    {array, [{struct,[{"device-id","hclient"}|_]},
-					     {struct,[{"device-id","hclient2"}|_]},
-					     {struct,[{"device-id","x00000001"}|_]}
-					     ]}
-				   }]}},
-	      {"id", 1},
-	      {"jsonrpc", "2.0"}]} = Reply,
+    {struct, 
+	[{"result", {struct, 
+	    [{"result","ok"},
+		{"devices",
+		    {array, [{struct,[{"device-id","hclient"}|_]},
+			{struct,[{"device-id","hclient2"}|_]},
+			{struct,[{"device-id","x00000001"}|_]}
+		    ]}}]}},
+	    {"id", 1},
+	    {"jsonrpc", "2.0"}]} = Reply,
     ok.
 
 json_list_devices2(_Cfg) ->
@@ -693,12 +696,13 @@ json_list_devices2(_Cfg) ->
 				{struct, [{"n", 1},
 					  {"previous", "x00000003"}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
-    {struct, [{"result", {struct, [{"devices",
-				    {array, [{struct,[{"device-id","y00000001"}|_]}
-					     ]}
-				   }]}},
-	      {"id", 1},
-	      {"jsonrpc", "2.0"}]} = Reply,
+    {struct, 
+	[{"result", {struct, 
+	    [{"result","ok"},
+		{"devices",
+		    {array, [{struct,[{"device-id","y00000001"}|_]}]}}]}},
+	    {"id", 1},
+	    {"jsonrpc", "2.0"}]} = Reply,
     ok.
 
 json_list_device_type_members(_Cfg) ->
@@ -709,7 +713,7 @@ json_list_device_type_members(_Cfg) ->
 					  {"previous", ""}]}),
     io:fwrite(user, "~p: Reply = ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct, [
+	       {struct, [{"result","ok"},
 			 {"device-type-members",
 			  {array, ["x00000001",
 				   "x00000002"]}}
@@ -820,7 +824,8 @@ json_list_config_sets(_Cfg) ->
 					]}),
     io:fwrite(user, "~p: list-config-sets -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct,[{"config-sets",
+	       {struct,[{"result","ok"},
+	                {"config-sets",
 			 {array, [{struct, [{"name", "test1"} | _]},
 				  {struct, [{"name", "test2"} | _]},
 				  {struct, [{"name", "test_cfg_1"} | _]}
@@ -839,7 +844,8 @@ json_list_config_sets_dev(_Cfg) ->
 					]}),
     io:fwrite(user, "~p: list-config-sets -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct,[{"config-sets",
+	       {struct,[{"result","ok"},
+	                {"config-sets",
 			 {array, [{struct, [{"name", "test1"} | _]},
 				  {struct, [{"name", "test2"} | _]}
 				  ]}
@@ -872,7 +878,8 @@ json_list_config_set_members(_Cfg) ->
 					 ]}),
     io:fwrite(user, "~p: list-config-set-members -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct,[{"config-set-members",
+	       {struct,[{"result","ok"},
+	                {"config-set-members",
 			 {array, ["x00000001", "x00000002"]}}]}},
 	      {"id",_},
 	      {"jsonrpc","2.0"}]} = Reply,
@@ -900,7 +907,8 @@ json_list_config_set_members2(_Cfg) ->
 					 ]}),
     io:fwrite(user, "~p: list-config-set-members(2) -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct,[{"config-set-members",
+	       {struct,[{"result","ok"},
+	                {"config-set-members",
 			 {array, []}}]}},
 	      {"id","2"},
 	      {"jsonrpc","2.0"}]} = Reply,
@@ -939,7 +947,8 @@ json_list_device_groups(_Cfg) ->
 					 ]}),
     io:fwrite(user, "~p: list-device-groups -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct,[{"device-groups",
+	       {struct,[{"result","ok"},
+	                {"device-groups",
 			 {array, [{struct, [{"group-id",?GID1},
 					    {"notification-url",_}]},
 				  {struct, [{"group-id",?GID3},
@@ -961,7 +970,8 @@ json_list_device_groups_dev(_Cfg) ->
 					 ]}),
     io:fwrite(user, "~p: list-device-groups -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct,[{"device-groups",
+	       {struct,[{"result","ok"},
+	                {"device-groups",
 			 {array, [{struct, [{"group-id",?GID1},
 					    {"notification-url",_}]},
 				  {struct, [{"group-id",?GID2},
@@ -996,7 +1006,8 @@ json_list_device_group_members(_Cfg) ->
 					 {"previous", ""}]}),
     io:fwrite(user, "~p: list-device-group-members -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct,[{"device-group-members",
+	       {struct,[{"result","ok"},
+	                {"device-group-members",
 			 {array, ["x00000001",
 				  "x00000002"]}}
 		       ]}},
@@ -1025,7 +1036,8 @@ json_list_device_group_members2(_Cfg) ->
 					 {"previous", ""}]}),
     io:fwrite(user, "~p: list-device-group-members -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct,[{"device-group-members",
+	       {struct,[{"result","ok"},
+	                {"device-group-members",
 			 {array, []}}
 		       ]}},
 	      {"id",_},
@@ -1052,7 +1064,8 @@ json_list_device_groups2(_Cfg) ->
 					 ]}),
     io:fwrite(user, "~p: list-device-groups2 -> ~p~n", [?LINE, Reply]),
     {struct, [{"result",
-	       {struct,[{"device-groups",
+	       {struct,[{"result","ok"},
+	                {"device-groups",
 			 {array, []}}
 			]}},
 	      {"id",_},

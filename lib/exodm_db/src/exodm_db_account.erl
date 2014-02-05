@@ -163,7 +163,7 @@ create_exodm_account_(_Db) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec new(Name::binary(), list({Option::atom(), Value::term()})) -> 
-		 {ok, AIDVal::binary()}.
+		 {ok, AIDVal::binary(), AdminUName::binary()}.
 
 new(Name, Options) when is_binary(Name), is_list(Options) ->
     case valid_name(Name) of
@@ -172,15 +172,15 @@ new(Name, Options) when is_binary(Name), is_list(Options) ->
 	      fun(_) ->
 		      case lookup_by_name(Name) of
 			  false ->
-			      {ok, AIDVal} = new1(Name, Options),
+			      {ok, AIDVal, AdminUName} = new1(Name, Options),
 			      publish(add, Name),
 			      publish(add, AIDVal),
-			      ok;
-			  _Other -> error('object-exists')
+			      {ok, AdminUName};
+			  _Other -> error(?OBJECT_EXISTS)
 		      end
 	      end);
 	false ->
-	    error('illegal-name')
+	    error(?ILLEGAL_NAME)
     end;
 new(Name, Options) when is_list(Name) ->
     new(to_binary(Name), Options).
@@ -193,8 +193,11 @@ valid_name(_) ->
 
 new1(AcctName, Options) ->
     case lists:keyfind(?USER_OPT_NAME, 1, Options) of
-        true -> error(user_name_not_allowed);
-        false -> new2(AcctName, Options)
+        true -> 
+	    ?ei("exodm_db_account: invalid option: ~p", [?USER_OPT_NAME]),
+	    error(?VALIDATION_FAILED);
+        false -> 
+	    new2(AcctName, Options)
     end.
 
 new2(AcctName, Options) ->
@@ -204,16 +207,20 @@ new2(AcctName, Options) ->
     exodm_db_device_type:init(AID),
     insert(Key, ?ACC_DB_LAST_REQ, <<0:32>>),
     insert(Key, ?ACC_DB_LAST_TID, <<0:32>>),
-    AdminUName = <<AcctName/binary, <<"-admin">>/binary>>,
     insert(Key, ?ACC_DB_NAME, AcctName),
-    exodm_db_user:new(AdminUName, Options),
+    AdminUName = case AcctName of
+	?EXODM -> ?EXODM_ADMIN;
+	<<"getaround">> -> <<"getaround-admin">>; %% FIXME ???
+	_ -> <<AcctName/binary, <<"/admin">>/binary>>
+    end,
+    exodm_db_user:new(AdminUName, Options), %% Account must be created
     create_roles(AID, AcctName),
     add_admin_user(AID, AdminUName),
     exodm_db_yang:init(AID),
     exodm_db_device:init(AID),
     exodm_db_config:init(AID),
     AIDVal = exodm_db:account_id_value(AID),
-    {ok, AIDVal}.
+    {ok, AIDVal, AdminUName}.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -235,9 +242,9 @@ delete(Name) when is_binary(Name) ->
                               publish(delete, Name),
                               publish(delete, exodm_db:account_id_value(AID)),
                               ok;
-                          false -> error('object-not-empty')
+                          false -> error(?OBJECT_NOT_EMPTY)
                       end;
-                  false -> error('object-not-found')
+                  false -> error(?OBJECT_NOT_FOUND)
               end
       end);
 delete(Name) when is_list(Name) ->
@@ -477,12 +484,12 @@ add_app_id(AID0, AppID) when is_binary(AID0), is_binary(AppID) ->
 				    [AID, ?ACC_DB_APPIDS, AppIDEnc]),
 			      kvdb_conf:write(table(), {K, [], <<>>});
 			  false ->
-			      error('object-not-found')
+			      error(?OBJECT_NOT_FOUND)
 		      end;
 		  AID ->
 		      ok;
 		  _ ->
-		      error('exists')
+		      error(?OBJECT_EXISTS)
 	      end
       end).
 
@@ -692,7 +699,9 @@ system_specs(AID0) ->
 
 add_system_spec(AID, Yang, Protocol) ->
     case exodm_rpc_protocol:module(Protocol) of
-	undefined -> error({unknown_protocol, Protocol});
+	undefined ->
+	    ?ei("exodm_db_account: unknown_protocol ~p", [Protocol]),
+	    error(?VALIDATION_FAILED);
 	_ ->
 	    add_system_spec_(AID, Yang, Protocol)
     end.
@@ -706,7 +715,7 @@ add_system_spec_(AID0, Yang0, Protocol) ->
 	      K = exodm_db:join_key([AID, ?ACC_DB_SYSTEM_SPECS, Yang]),
 	      case kvdb_conf:read(Tab, K) of
 		  {ok, _} ->
-		      error(exists);
+		      error(?OBJECT_EXISTS);
 		  {error, _} ->
 		      kvdb_conf:write(Tab, {K, [], Protocol})
 	      end
@@ -745,7 +754,7 @@ add_users(AName, Role, UNames, IsRoot)
     lager:debug("aname ~p, role ~p, unames ~p", [AName, Role, UNames]),
     %% Check if account_exists
     case lookup_by_name(AName) of
-	false -> error('object-not-found');
+	false -> error(?OBJECT_NOT_FOUND);
 	AID -> add_users1(AID, Role, UNames, IsRoot)
     end.
 		     
@@ -755,26 +764,27 @@ add_users1(AID, Role, UNames, true) ->
 add_users1(AID, Role, UNames, false) ->
     case has_admin_access(AID) of
 	true -> add_users2(AID, Role, UNames);
-	false -> error('permission-denied')
+	false -> error(?PERMISSION_DENIED)
     end.
 
 add_users2(AID, Role, UNames) ->
     case role_exists(AID, Role) of
 	true -> add_users3(AID, Role, UNames);
-	false -> error('object-not-found')
+	false -> error(?OBJECT_NOT_FOUND)
     end.
     
 add_users3(_AID, _Role, []) ->
     ok;
 add_users3(_AID, ?ROOT, _UNames) ->
-    error('permission-denied');
+    error(?PERMISSION_DENIED);
 add_users3(_AID, ?INIT_ADMIN, _UNames) ->
-    error('permission-denied');
+    error(?PERMISSION_DENIED);
 add_users3(AID, Role, [UName | Rest]) ->
     case lists:any(fun({A, R}) when A == AID, R == Role -> true;
 		      ({_A, _R}) -> false
 		   end, exodm_db_user:list_roles(UName)) of
 	true -> 
+	    %% User already has role
 	    add_users3(AID, Role, Rest);
 	false -> 
 	    add_user(AID, UName, Role),
@@ -792,6 +802,7 @@ add_user(AID, UName, Role) ->
 
 add_user1(AID, UName, Role) ->
     lager:debug("aid ~p, uname ~p, role ~p", [AID, UName, Role]),
+    account_ok(AID, UName),
     exodm_db_user:add_role(AID, UName, Role),
     case user_exists(AID, UName) of
 	true -> ok;
@@ -800,6 +811,18 @@ add_user1(AID, UName, Role) ->
 			    {exodm_db:join_key([AID,?ACC_DB_USERS,UName]), 
 			     [], <<>>})
     end.
+
+%% If user of type Account/Name it can only be added to Account
+account_ok(AID, UName) ->
+    case exodm_db:nc_key_split(exodm_db:decode_id(UName)) of
+	[Account, _Name] -> 
+	    case lookup_by_name(Account) of
+		AID -> ok;
+		_OtherA -> error(?PERMISSION_DENIED)
+	    end;
+	_OtherN -> ok
+    end.
+	    
 
 add_admin_user(AID, ?EXODM_ADMIN = UName) ->
     add_user(AID, UName, ?ROOT);
@@ -822,7 +845,7 @@ add_admin_user(AID, UName) ->
 
 
 remove_users(_Account, ?INIT_ADMIN, _UNames, false) ->
-    error('permission-denied');
+    error(?PERMISSION_DENIED);
 remove_users(Account, Role, UNames, IsRoot) 
   when is_binary(Account), is_binary(Role), 
        is_list(UNames), is_boolean(IsRoot) ->
@@ -833,7 +856,7 @@ remove_users(Account, Role, UNames, IsRoot)
 	    %% Are we using AID ??
 	    case exist(Account) of
 		true -> remove_users1(Account, Role, UNames, IsRoot);
-		false -> error('object-not-found')
+		false -> error(?OBJECT_NOT_FOUND)
 	    end;
 	AID -> 
 	    remove_users1(AID, Role, UNames, IsRoot)
@@ -845,7 +868,7 @@ remove_users1(AID, Role, UNames, true) ->
 remove_users1(AID, Role, UNames, false) ->
     case has_admin_access(AID) of
 	true -> remove_users2(AID, Role, UNames);
-	false -> error('permission-denied')
+	false -> error(?PERMISSION_DENIED)
     end.
 
 
@@ -861,7 +884,7 @@ remove_users2(AID, Role, [UName | Rest])
 	    remove_user_access(AID, Role, UName),
 	    remove_users2(AID, Role, Rest);
 	false -> 
-	    error('object-not-found')
+	    error(?OBJECT_NOT_FOUND)
     end.
 
 remove_user_access(AID, ?ADMIN = Role, UName) ->
@@ -894,7 +917,7 @@ remove_user(AName, UName, IsRoot)
     lager:debug("aname ~p, uname ~p", [AName, UName]),
     %% Check if account_exists
     case lookup_by_name(AName) of
-	false -> error('object-not-found');
+	false -> error(?OBJECT_NOT_FOUND);
 	AID -> remove_user(AID,list_user_roles(AID, UName), UName, IsRoot)
     end.
 
@@ -963,7 +986,7 @@ t_create_role_(AID, RName, Opts) ->
 		  true ->
 		      insert(AccessKey, G, Access);
 		  false ->
-		      error({no_such_group, [AID, G]})
+		      error(?OBJECT_NOT_FOUND)
 	      end
       end, proplists:get_all_values(?ROLE_OPT_ACCESS, Opts)),
     ok.
@@ -1020,7 +1043,7 @@ rpc_roles(AID, Rpc) when is_binary(AID), is_binary(Rpc) ->
         {Rpc, RoleList} -> RoleList;
         false ->
             lager:debug("Warning, unknown rpc ~p", [Rpc]),
-            {error, 'object-not-found'}
+            {error, ?OBJECT_NOT_FOUND}
     end.
                 
 %%--------------------------------------------------------------------
@@ -1154,7 +1177,7 @@ register_protocol(AID, Protocol)
   when is_binary(AID), is_binary(Protocol) ->
     case exodm_rpc_protocol:module(Protocol) of
 	undefined ->
-	    erlang:error({unknown_protocol, Protocol});
+	    error(?OBJECT_NOT_FOUND);
 	_ ->
 	    exodm_db:in_transaction(
 	      fun(_) ->
@@ -1251,7 +1274,7 @@ check_access(AID0) ->
 		{ok, _}   -> AID;
 		{error,_Error} -> 
 		    lager:debug("error ~p", [_Error]),
-		    error(not_authorized)
+		    error(?PERMISSION_DENIED)
 	    end
     end.
 
@@ -1288,10 +1311,10 @@ acct_test_() ->
      ]}.
 
 test_new() ->
-    ok = new(<<"test1">>,
-             [{alias, <<"u">>},
-              {fullname, <<"Mr U">>},
-              {password, <<"pwd">>}]),
+    {ok, _Admin} = new(<<"test1">>,
+                       [{alias, <<"u">>},
+                        {fullname, <<"Mr U">>},
+                        {password, <<"pwd">>}]),
     AllTabs = kvdb:list_tables(kvdb_conf),
     AID = lookup_by_name(<<"test1">>),
     lists:all(fun(T) ->

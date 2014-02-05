@@ -26,6 +26,8 @@
 -define(OBJECT_NOT_FOUND, 'object-not-found').
 -define(OBJECT_NOT_EMPTY, 'object-not-empty').
 -define(ACCOUNT_NOT_SPECIFIED, 'account-not-specified').
+-define(ILLEGAL_NAME, 'illegal-name').
+-define(MISSING_OPTION, 'missing-option').
 
 %%--------------------------------------------------------------------
 %% Predefined rpc:s - must correspond to yang-files!!!
@@ -102,11 +104,17 @@
 %%--------------------------------------------------------------------
 %% Defines wich rpc:s a role can execute
 %%--------------------------------------------------------------------
--define(ROOT_ACCESS_RPCS,
-    [?RPC_CREATE_ACCOUNT, 
-     ?RPC_UPDATE_ACCOUNT,
-     ?RPC_DELETE_ACCOUNT, 
-     ?RPC_LIST_ACCOUNTS]).
+%% Can only be done by root on localhost ??
+-define(ROOT_ACCESS_RPCS, 
+	[?RPC_CREATE_ACCOUNT, 
+	 ?RPC_UPDATE_ACCOUNT,
+	 ?RPC_DELETE_ACCOUNT, 
+	 ?RPC_LIST_ACCOUNTS]).
+
+%% Don't require account and can be done by specified User
+-define(USER_ADM_RPCS, 
+	[?RPC_LOOKUP_USER,
+	 ?RPC_LIST_USER_ACCOUNTS]).
 
 -define(RPC_ROLE_LIST,
         [{?RPC_CREATE_ACCOUNT, [?ROOT]},
@@ -213,3 +221,11 @@
 	 {?RPC_DELETE_MBLOX_PARAMETERS,
 	  [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]}
 	]).
+
+%% Convenience defines
+-ifndef(ee).
+-define(ee(String, List), error_logger:error_msg(String, List)).
+-endif.
+-ifndef(ei).
+-define(ei(String, List),  error_logger:info_msg(String, List)).
+-endif.

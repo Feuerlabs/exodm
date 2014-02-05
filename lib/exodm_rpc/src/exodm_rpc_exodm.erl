@@ -17,16 +17,16 @@
 -define(SYSTEM_REPOSITORY, <<"system">>).
 
 -define(catch_result(Expr),
-	result_code(try Expr
-		    catch
-			error:?PERMISSION_DENIED = E -> E;
-			error:?VALIDATION_FAILED = E -> E;
-			error:?OBJECT_EXISTS     = E -> E;
-			error:?DEVICE_NOT_FOUND  = E -> E;
-			error:?OBJECT_NOT_FOUND  = E -> E;
-			error:?OBJECT_NOT_EMPTY  = E -> E;
-                        error:?ACCOUNT_NOT_SPECIFIED = E -> E
-		    end)).
+    result_code(try Expr
+    catch
+	    error:?PERMISSION_DENIED = E -> E;
+	    error:?VALIDATION_FAILED = E -> E;
+	    error:?OBJECT_EXISTS     = E -> E;
+	    error:?DEVICE_NOT_FOUND  = E -> E;
+	    error:?OBJECT_NOT_FOUND  = E -> E;
+	    error:?OBJECT_NOT_EMPTY  = E -> E;
+	    error:?ACCOUNT_NOT_SPECIFIED = E -> E
+end)).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -62,7 +62,7 @@ json_rpc(RPC = {_, ?EXODM, Rpc, InputList}, Env) ->
     ?debug("rpc ~p~nenv~p~n", [RPC, Env]),
 
     %% Access control
-    User = exodm_db_session:get_user(),
+    User = proplists:get_value(user,Env),
     case {lists:member(Rpc, ?ROOT_ACCESS_RPCS), is_root(User)} of
         %% Account rpcs must be treated specially since there
         %% is no 'account' input attribute
@@ -71,7 +71,7 @@ json_rpc(RPC = {_, ?EXODM, Rpc, InputList}, Env) ->
             case has_root_env(Env) of
                 true ->
                     exodm_db_session:set_trusted_proc(),
-                    Res = json_rpc_(not_set, RPC, Env),
+                    Res = do_json_rpc(not_set, RPC, Env),
                     exodm_db_session:unset_trusted_proc(),
                     Res;
                 false ->
@@ -82,38 +82,68 @@ json_rpc(RPC = {_, ?EXODM, Rpc, InputList}, Env) ->
             ?debug("not root", []),
             {ok, result_code(?PERMISSION_DENIED)};
         {false, IsRoot} ->
-            %% Other rpcs needs account
-            case find_account(InputList) of
-                undefined -> 
-                    ?debug("no account", []),
-                    {ok, result_code(?ACCOUNT_NOT_SPECIFIED)};
-                AID -> 
-                    ?debug("account ~p", [AID]),
-                    %% Store AID in session
-                    exodm_db_session:set_aid(AID, User),
-                    case has_access(AID, User, Rpc, IsRoot) of
-                        true  -> 
-                            ?debug("user ~p has permission for rpc ~p", [User, Rpc]),
-                           json_rpc_(AID, RPC, Env);
-                        false ->  
-                            ?debug("no permission for user ~p", [User]),
-                            {ok, result_code(?PERMISSION_DENIED)}
-                    end
-             end
+	    case {lists:member(Rpc, ?USER_ADM_RPCS), 
+		  compare_user(InputList, Env)} of
+		{true, equal} ->
+		    %% These user rpcs don't need account
+		    %% and can be done by "yourself"
+		    do_json_rpc(not_set, RPC, Env);
+		{_, _} ->
+		    %% If not equal account is needed for access control
+		    case find_account(InputList, Env) of
+			undefined -> 
+			    ?debug("no account", []),
+			    {ok, result_code(?ACCOUNT_NOT_SPECIFIED)};
+			AID ->
+			    ?debug("account ~p", [AID]),
+			    case has_access(AID, User, Rpc, IsRoot) of
+				true  -> 
+				    ?debug("user ~p has permission for rpc ~p",
+					   [User, Rpc]),
+				    do_json_rpc(AID, RPC, Env);
+				false ->  
+				    ?debug("no permission for user ~p", [User]),
+				    {ok, result_code(?PERMISSION_DENIED)}
+			    end
+		    end
+	    end
     end.
 
-find_account(InputList) ->
+compare_user(InputList, Env) ->
+    EnvUser = proplists:get_value(user, Env, undefined),
+    case lists:keyfind('uname', 1, InputList) of
+        {'uname', EnvUser, _} -> equal;
+	_ -> not_equal
+    end.
+ 
+%% If account isn't found in InputList Env is used.
+%% But Env account is set to first of users accounts
+%% Is that OK ??
+%% Or should a user that isn't of Account/Name type
+%% always have an account where it is initial-admin
+%% and that be choosen ??
+find_account(InputList, Env) ->
     case lists:keyfind('account', 1, InputList) of
-        {'account', Account, _} ->
-            case exodm_db_account:lookup_by_name(Account) of
-                AID when is_binary(AID)-> AID;
-                false -> undefined
-            end;
-        false ->
-            case current_user_account() of
-                [AID] -> AID;
-                _Other -> undefined
-            end
+        {'account', Account, _} -> aname2aid(Account);
+        false -> find_account1(InputList, Env)
+    end.
+
+find_account1(InputList, Env) ->
+    case lists:keyfind('uname', 1, InputList) of
+	{'uname', UName, _} ->
+	    %% See if user is of Account/Name type,
+	    case exodm_db:nc_key_split(exodm_db:decode_id(UName)) of
+		[Account, _Name] -> aname2aid(Account);
+		_ -> proplists:get_value(aid, Env, undefined)
+	    end;
+	false ->
+	    proplists:get_value(aid, Env, undefined)
+    end.
+
+aname2aid(Account) ->
+    case exodm_db_account:lookup_by_name(Account) of
+	AID when is_binary(AID) -> AID;
+	false -> undefined
     end.
 
 has_access(_AID, _User, _Rpc, true) ->
@@ -131,7 +161,7 @@ has_access(AID, User, Rpc, false) ->
 %% Account
 %% Authenticated by super user 'exodm' (only allowed using SSL?)
 %% create-account
-json_rpc_(not_set, {call, ?EXODM, ?RPC_CREATE_ACCOUNT,
+do_json_rpc(not_set, {call, ?EXODM, ?RPC_CREATE_ACCOUNT,
 	   [{'name', Name, _Type1}| Opts]} = _RPC, Env) ->
     case has_root_env(Env) of
 	true ->
@@ -143,7 +173,7 @@ json_rpc_(not_set, {call, ?EXODM, ?RPC_CREATE_ACCOUNT,
 	    {ok, result_code(?PERMISSION_DENIED)}
     end;
 
-json_rpc_(not_set, {call, ?EXODM, ?RPC_UPDATE_ACCOUNT,
+do_json_rpc(not_set, {call, ?EXODM, ?RPC_UPDATE_ACCOUNT,
 	   [{'name', _Name, _}|_Opts]} = _RPC, Env) ->
     case has_root_env(Env) of
 	true ->
@@ -153,7 +183,7 @@ json_rpc_(not_set, {call, ?EXODM, ?RPC_UPDATE_ACCOUNT,
 	    {ok, result_code(?PERMISSION_DENIED)}
     end;
 
-json_rpc_(not_set, {call, ?EXODM, ?RPC_DELETE_ACCOUNT,
+do_json_rpc(not_set, {call, ?EXODM, ?RPC_DELETE_ACCOUNT,
 	   [{'name', Name, _}|_Opts]} = _RPC, Env) ->
     case has_root_env(Env) andalso (Name =/= <<"exodm">>) of
 	true ->
@@ -165,14 +195,14 @@ json_rpc_(not_set, {call, ?EXODM, ?RPC_DELETE_ACCOUNT,
 	    {ok, result_code(?PERMISSION_DENIED)}
     end;
 
-json_rpc_(_AID, {call, _, ?RPC_LOOKUP_ACCOUNT,
+do_json_rpc(_AID, {call, _, ?RPC_LOOKUP_ACCOUNT,
 	   [{'name', Name, _}|_Tail]}, Env) ->
     case has_root_env(Env) of
 	true -> lookup_account(Name);
 	false -> {ok, result_code(?PERMISSION_DENIED)}
     end;
 
-json_rpc_(not_set, {call, ?EXODM, ?RPC_LIST_ACCOUNTS,
+do_json_rpc(not_set, {call, ?EXODM, ?RPC_LIST_ACCOUNTS,
 	   [{'n', N, _},
 	    {'previous', Prev, _}]} = _RPC, Env) ->
     case has_root_env(Env) of
@@ -180,73 +210,73 @@ json_rpc_(not_set, {call, ?EXODM, ?RPC_LIST_ACCOUNTS,
 	false -> {ok, result_code(?PERMISSION_DENIED)}
     end;
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_ACCOUNT_ROLES,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_ACCOUNT_ROLES,
 	   [{'account', _Account, _}, %% Already parsed
 	    {'n', N, _},
 	    {'previous', Prev, _}|_Tail]} = _RPC, _Env) ->
     list_account_roles(AID, N, Prev);    
 
 %% User
-json_rpc_(_AID, {call, ?EXODM, ?RPC_CREATE_USER,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_CREATE_USER,
 	   [{'uname', Name, _Type1} | Options]}, _Env) ->
     create_user(Name, Options);
 
-json_rpc_(_AID, {call, ?EXODM, ?RPC_DELETE_USER,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_DELETE_USER,
 	   [{'uname', Name, _}|_Opts]} = _RPC, _Env) 
   when Name =/= ?EXODM_ADMIN ->
     delete_user(Name);
 
-json_rpc_(_AID, {call, ?EXODM, ?RPC_UPDATE_USER,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_UPDATE_USER,
 	   [{'uname', Name, _Type1} | Options]}, _Env)  
   when Name =/= ?EXODM_ADMIN ->
     update_user(Name, Options);
 
-json_rpc_(_AID, {call, ?EXODM, ?RPC_UPDATE_USER,
-	   [{'uname', Name, _Type1} | Options]}, _Env) ->
-    case is_root(exodm_db_session:get_user()) of
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_UPDATE_USER,
+	   [{'uname', Name, _Type1} | Options]}, Env) ->
+    case is_root(Env) of
 	true -> update_user(Name, Options);
 	false -> {ok, result_code(?PERMISSION_DENIED)}
     end;
 
-json_rpc_(_AID, {call, _, ?RPC_LOOKUP_USER,
+do_json_rpc(_AID, {call, _, ?RPC_LOOKUP_USER,
 	   [{'uname', Name, _}|_Tail]}, _Env) ->
     lookup_user(Name);
     
-json_rpc_(_AID, {call, ?EXODM, ?RPC_LIST_USER_ACCOUNTS,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_LIST_USER_ACCOUNTS,
 	   [{'uname', Name, _}|_Tail]} = _RPC, _Env) ->
     list_user_accounts(Name);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_USERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_USERS,
 	   [{'n', N, _},
 	    {'previous', Prev, _},
             {'account', _Account, _}]} = _RPC, _Env) ->
     %% Account users
     list_users(AID, N, Prev);
 
-json_rpc_(_AID, {call, ?EXODM, ?RPC_LIST_USERS,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_LIST_USERS,
 	   [{'n', N, _},
 	    {'previous', Prev, _}|_Tail]} = _RPC, _Env) ->
     %% All users
     list_users(N, Prev);
 
-json_rpc_(_AID, {call, ?EXODM, ?RPC_ADD_ACCOUNT_USERS,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_ADD_ACCOUNT_USERS,
 	   [{'account', Account, _},
 	    {'role', Role, _},
 	    {'unames', UNames, _}|_Tail]}, Env) ->
     {ok, ?catch_result(exodm_db_account:add_users(Account, Role, UNames,
 						 has_root_env(Env)))};
-json_rpc_(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USERS,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USERS,
 	   [{'account', Account, _},
 	    {'role', Role, _},
 	    {'unames', UNames, _}|_Tail]}, Env) ->
     {ok, ?catch_result(exodm_db_account:remove_users(Account, Role, UNames,
 						 has_root_env(Env)))};
-json_rpc_(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USER,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USER,
 	   [{'account', Account, _},
 	    {'uname', UName, _}|_Tail]}, Env) ->
     {ok, ?catch_result(exodm_db_account:remove_user(Account, UName,
 						 has_root_env(Env)))};
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_ACCOUNT_USERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_ACCOUNT_USERS,
 	   [{'account', _Account, _}, %% Already parsed
 	    {'n', N, _},
 	    {'previous', Prev, _}|_Tail]} = _RPC, _Env) ->
@@ -254,87 +284,87 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_ACCOUNT_USERS,
 
 
 %% Config set
-json_rpc_(AID, {call, ?EXODM, ?RPC_CREATE_CONFIG_SET,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_CREATE_CONFIG_SET,
 	   [{'name', _N, _},
 	    {yang, _Y, _} | _Rest] = Attrs} = _RPC, _Env) ->
     create_config_set(AID, Attrs);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_UPDATE_CONFIG_SET,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_UPDATE_CONFIG_SET,
 	   [{'name', Name, _}|Attrs]} = _RPC, _Env) ->
     update_config_set(AID, Name, Attrs);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_READ_CONFIG_SET_DATA,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_READ_CONFIG_SET_DATA,
 		[{'name', Name, _}, {'area', Area, _} | _] = _Attrs} = _RPC,
 	  _Env) ->
     read_config_set_data(AID, Name, Area);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_CONFIG_SET,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_DELETE_CONFIG_SET,
 	   [{'name', Name, _}|_Tail]} = _RPC, _Env) ->
     delete_config_set(AID, Name);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_CONFIG_SETS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_CONFIG_SETS,
 	   [{n, N, _}, 
 	    {previous, Prev, _}|Tail] = _Cfg} = _RPC, _Env) ->
     list_config_sets(AID, N, Prev, Tail);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_ADD_CONFIG_SET_MEMBERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_ADD_CONFIG_SET_MEMBERS,
 	   [{'name', CfgDataList, _},
 	    {'device-id', DevIdList, _}|_Tail]} = _RPC, _Env) ->
     add_config_set_members(AID, CfgDataList, DevIdList);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_REMOVE_CONFIG_SET_MEMBERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_REMOVE_CONFIG_SET_MEMBERS,
 	   [{'name', Names, _},
 	    {'device-id', DIDs, _}|_Tail]} = _RPC, _Env) ->
     remove_config_set_members(AID, Names, DIDs);
         
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_CONFIG_SET_MEMBERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_CONFIG_SET_MEMBERS,
 	   [{'name', Name, _}, 
 	    {'n', N, _}, 
 	    {'previous', Prev, _}|_Tail] = _Params},
 	  _Env) ->
     list_config_set_members(AID, Name, N, Prev);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_ADD_NOTIFICATION_URLS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_ADD_NOTIFICATION_URLS,
 		[{'device-id', DID, _},
 		 {'urls', URLs, _}]}, _Env) ->
     add_notification_urls(AID, DID, URLs);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_REMOVE_NOTIFICATION_URLS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_REMOVE_NOTIFICATION_URLS,
 		[{'device-id', DID, _},
 		 {'config-sets', ConfigSets, _}]}, _Env) ->
     del_notification_urls(AID, DID, ConfigSets);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_PUSH_CONFIG_SET,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_PUSH_CONFIG_SET,
 	   [{'name', Cfg, _}|_Tail]} = _RPC, Env) ->
     push_config_set(AID, Cfg, Env);
     
 
 %% Yang module
 %% User repo
-json_rpc_(AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
 	   [{repository, ?USER_REPOSITORY, _},
 	    {name, N, _},
 	    {'yang-module', Y, _}|_Tail]} = _RPC, Env) ->
     ?debug("aid ~p, n ~p", [AID, N]),
     create_yang_module(AID, N, yang_data(Y, Env));
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
 	   [{repository, ?USER_REPOSITORY, _},
 	    {name, Name, _}|_Tail]} = _RPC, _Env) ->
     delete_yang_module(AID, Name);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LOOKUP_YANG_MODULE,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LOOKUP_YANG_MODULE,
 	   [{repository, ?USER_REPOSITORY, _},
 	    {name,Name,_}|_Tail]} = _RPC, _Env) ->
     lookup_yang_module(AID, Name);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
 	   [{repository, ?USER_REPOSITORY, _},
 	    {n,N,_},
 	    {previous, Prev, _}|_Tail]} = _RPC, _Env) ->
     list_yang_modules(AID, N, Prev);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_EXEC_PERMISSION,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_EXEC_PERMISSION,
 	   [{repository, ?USER_REPOSITORY, _},
 	    {modulename, MName, _},
             {rpcname, RName, _}|_Tail]} = _RPC, _Env) ->
@@ -342,7 +372,7 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_EXEC_PERMISSION,
 
 %% Yang module
 %% System repo
-json_rpc_(_AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
 	   [{repository, ?SYSTEM_REPOSITORY, _},
 	    {name, N, _},
 	    {'yang-module', Y, _}|_Tail]} = _RPC, Env) ->
@@ -356,7 +386,7 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_CREATE_YANG_MODULE,
 	    {ok,result_code(?PERMISSION_DENIED)}
     end;
 
-json_rpc_(_AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
 	   [{repository, ?SYSTEM_REPOSITORY, _},
 	    {name, Name, _}|_Tail]} = _RPC, Env) ->
     case has_root_env(Env) of
@@ -369,7 +399,7 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_DELETE_YANG_MODULE,
 	    {ok,result_code(?PERMISSION_DENIED)}
     end;
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LOOKUP_YANG_MODULE,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LOOKUP_YANG_MODULE,
 	   [{repository, ?SYSTEM_REPOSITORY, _},
 	    {name,Name,_}|_Tail]} = _RPC, Env) ->
         case has_root_env(Env) of
@@ -382,7 +412,7 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_LOOKUP_YANG_MODULE,
 	    {ok,result_code(?PERMISSION_DENIED)}
     end;
 
-json_rpc_(_AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
+do_json_rpc(_AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
 	   [{repository, ?SYSTEM_REPOSITORY, _},
 	    {n, N, _},
 	    {previous, Prev, _}|_Tail]} = _RPC, Env) ->
@@ -397,24 +427,24 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
     end;
 
 %% Device type
-json_rpc_(AID, {call, ?EXODM, ?RPC_CREATE_DEVICE_TYPE,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_CREATE_DEVICE_TYPE,
 	   [{'name', Name, _}|Opts] = _Cfg}, _Env) ->
     create_device_type(AID, Name, Opts);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_UPDATE_DEVICE_TYPE,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_UPDATE_DEVICE_TYPE,
 	   [{'name', Name, _}|Opts] = _Cfg}, _Env) ->
     update_device_type(AID, Name, Opts);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_DEVICE_TYPE,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_DELETE_DEVICE_TYPE,
 	   [{'name', Name, _}|_Tail]}, _Env) ->
     delete_device_type(AID, Name);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_TYPES,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_TYPES,
 	   [{'n', N, _},
 	    {'previous', Prev, _}|_Tail]} = _RPC, _Env) ->
     list_device_types(AID, N, Prev);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_TYPE_MEMBERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_TYPE_MEMBERS,
 	   [{'name', Name, _}, 
 	    {'n', N, _}, 
 	    {'previous', Prev, _}|_Tail] = _Params},
@@ -422,74 +452,74 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_TYPE_MEMBERS,
     list_device_type_members(AID, Name, N, Prev);
 
 %% Device group
-json_rpc_(AID, {call, ?EXODM, ?RPC_CREATE_DEVICE_GROUP,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_CREATE_DEVICE_GROUP,
 	   [{'name', GName, _},
 	    {'notification-url', URL, _}|_Tail] = _Cfg} = _RPC, _Env) ->
     create_device_group(AID, GName, URL);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_UPDATE_DEVICE_GROUP,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_UPDATE_DEVICE_GROUP,
 	   [{'group-id', GID, _}|Values] = _Cfg} = _RPC, _Env) ->
     update_device_group(AID, GID, Values);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_DEVICE_GROUP,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_DELETE_DEVICE_GROUP,
 	   [{'group-id', GID, _}|_Tail] = _Cfg} = _RPC, _Env) ->
     delete_device_group(AID, GID);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_GROUPS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_GROUPS,
 	   [{n, N, _},
 	    {previous, Prev, _}|Tail] = _Cfg} = _RPC, _Env) ->
     list_device_groups(AID, N, Prev, Tail);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_ADD_DEVICE_GROUP_MEMBERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_ADD_DEVICE_GROUP_MEMBERS,
 	   [{'group-id', GIDs, _},
 	    {'device-id', DIDs, _}|_Tail] = _Cfg}, _Env) ->
     add_device_group_members(AID, GIDs, DIDs);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_REMOVE_DEVICE_GROUP_MEMBERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_REMOVE_DEVICE_GROUP_MEMBERS,
 	   [{'group-id', GIDs, _},
 	    {'device-id', DIDs, _}|_Tail] = _Cfg}, _Env) ->
     remove_device_group_members(AID, GIDs, DIDs);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_GROUP_MEMBERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_DEVICE_GROUP_MEMBERS,
 	   [{'group-id', GID, _}, 
 	    {'n', N, _}, 
 	    {'previous', Prev, _}|_Tail] = _Params}, _Env) ->
     list_device_group_members(AID, GID, N, Prev);
 
 %% Device
-json_rpc_(AID, {call, _, ?RPC_PROVISION_DEVICE,
+do_json_rpc(AID, {call, _, ?RPC_PROVISION_DEVICE,
 	   [{'device-id', I, _},
 	    {'device-type', T, _} |
 	    Opts]} = _RPC, _Env) ->
     provision_device(AID, I, [{'device-type', T}|kvl(Opts)]);
 
-json_rpc_(AID, {call, _, ?RPC_PROVISION_DEVICE,
+do_json_rpc(AID, {call, _, ?RPC_PROVISION_DEVICE,
 	   [{'device-id', DID, _}|Opts] = _Cfg} = _RPC, _Env) ->
     provision_device(AID, DID, kvl(Opts));
 
-json_rpc_(AID, {call, _, ?RPC_LOOKUP_DEVICE,
+do_json_rpc(AID, {call, _, ?RPC_LOOKUP_DEVICE,
 	   [{'device-id', I, _}|_Tail]}, _Env) ->
     lookup_device(AID, I);
     
-json_rpc_(AID, {call, _, ?RPC_LOOKUP_DEVICE_ATTRIBUTES,
+do_json_rpc(AID, {call, _, ?RPC_LOOKUP_DEVICE_ATTRIBUTES,
 	   [{'device-id', I, _}, {'attributes', Attrs, _} |_Tail]}, _Env) ->
     lookup_device_attributes(AID, I, Attrs);
     
-json_rpc_(AID, {call, _, ?RPC_UPDATE_DEVICE,
+do_json_rpc(AID, {call, _, ?RPC_UPDATE_DEVICE,
 	   [{'device-id', I, _} | Opts]}, _Env) ->
     update_device(AID, I, Opts);
 
-json_rpc_(AID, {call, _, ?RPC_DEPROVISION_DEVICES,
+do_json_rpc(AID, {call, _, ?RPC_DEPROVISION_DEVICES,
 	   [{'device-id', DevIdList, _}|_Tail]}, _Env) ->
     deprovision_devices(AID, DevIdList);
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_LIST_DEVICES,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_DEVICES,
 	   [{n, N, _}, 
 	    {previous, Prev, _}|_Tail] = _Cfg} = _RPC, _Env) ->
     list_devices(AID, N, Prev);
 
 %% Mblox access parameter configuration
-json_rpc_(AID, {call, ?EXODM, ?RPC_SET_MBLOX_PARAMETERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_SET_MBLOX_PARAMETERS,
 		[{account, _Acct, _},
 		 {'application-id', AppID, _},
 		 {'originating-msisdn', OrigMsisdn, _},
@@ -509,7 +539,7 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_SET_MBLOX_PARAMETERS,
     exodm_rpc_push_mblox:account_updated(AID),
     {ok, result_code(ok)};
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_GET_MBLOX_PARAMETERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_GET_MBLOX_PARAMETERS,
 		[{account, _Acct, _}]}, _Env) ->
     Key = kvdb_conf:join_key(
 	    exodm_db:account_id_key(AID), <<"mblox">>),
@@ -520,7 +550,7 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_GET_MBLOX_PARAMETERS,
 	    {ok, [result_code(ok) | [ {K, V} || {K, _, V} <- Tree]]}
     end;
 
-json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_MBLOX_PARAMETERS,
+do_json_rpc(AID, {call, ?EXODM, ?RPC_DELETE_MBLOX_PARAMETERS,
 		[{account, _Acct, _}]}, _Env) ->
     K = kvdb_conf:join_key(
 	  exodm_db:account_id_key(AID), <<"mblox">>),
@@ -528,8 +558,8 @@ json_rpc_(AID, {call, ?EXODM, ?RPC_DELETE_MBLOX_PARAMETERS,
     {ok, result_code(ok)};
 
 %% Failure case
-json_rpc_(AID, RPC, _ENV) ->
-    ?info("~p:json_rpc_() aid ~p, unknown RPC: ~p\n", [ ?MODULE, AID, RPC ]),
+do_json_rpc(AID, RPC, _ENV) ->
+    ?info("~p:do_json_rpc() aid ~p, unknown RPC: ~p\n", [ ?MODULE, AID, RPC ]),
     {ok, result_code(?VALIDATION_FAILED)}.
 
 %%--------------------------------------------------------------------
@@ -539,7 +569,11 @@ json_rpc_(AID, RPC, _ENV) ->
 %%--------------------------------------------------------------------
 create_account(Name, Options) ->
     Opts = [{Opt, Value} || {Opt, Value, _Type} <- Options],
-    {ok, ?catch_result(exodm_db_account:new(Name, Opts))}.
+    case exodm_db_account:new(Name, Opts) of
+	{ok, Admin} -> 
+	    {ok, result_code(ok) ++ [{'account-admin', Admin}]};
+	Res -> {ok, result_code(Res)}
+    end.
     
 delete_account(Name) ->
     {ok, ?catch_result(exodm_db_account:delete(Name))}.
@@ -556,12 +590,12 @@ lookup_account(Name) ->
 list_accounts(N, Prev) ->
     Res = lists:map(fun([{<<"id">>,_},{<<"name">>,Name}]) -> Name end,
 		    exodm_db_account:list_accounts(N, Prev)),
-    {ok, [{'accounts', {array, Res}}]}.
+    {ok, result_code(ok) ++ [{'accounts', {array, Res}}]}.
     
 list_account_roles(AID, N, Prev) ->
     Res = [binary_to_atom(Role, latin1) || 
               Role <- exodm_db_account:list_roles(AID, N, Prev)],
-    {ok, [{'roles', {array, Res}}]}.
+    {ok, result_code(ok) ++ [{'roles', {array, Res}}]}.
     
 create_user(Name, Options) ->
     %% Remove type info from opts
@@ -590,11 +624,12 @@ lookup_user(Name) ->
 list_users(AID, N, Prev) ->
     case exodm_db_account:list_users_with_roles(AID, N, Prev) of
 	[] ->
-	    {ok, [{'users', {array, []}}]};
+	    {ok, result_code(ok) ++ [{'users', {array, []}}]};
 	Users when is_list(Users) ->
-	    {ok, [{'users', {array, [{struct, [{'name', Name},
-                                               {'roles',  Roles}]} ||
-                                        {Name, Roles} <- Users]}}]};
+	    {ok, result_code(ok) ++ 
+		[{'users', {array, [{struct, [{'name', Name},
+		                              {'roles',  Roles}]} ||
+		    {Name, Roles} <- Users]}}]};
 	Other ->
 	    {ok, Other}
     end.
@@ -602,15 +637,16 @@ list_users(AID, N, Prev) ->
 list_users(N, Prev) ->
     Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
 		    exodm_db_user:list_users(N, Prev)),
-    {ok, [{'users', {array,Res}}]}.
+    {ok, result_code(ok) ++ [{'users', {array,Res}}]}.
 
 list_user_accounts(Name) ->  
     case exodm_db_user:list_roles(Name) of
 	[] ->
-	    {ok, [{'accounts', {array, []}}]};
+	    {ok, result_code(ok) ++ [{'accounts', {array, []}}]};
 	Accounts when is_list(Accounts) ->
 	    %% Cheating with roles !!! FIXME
-	    {ok, [{'accounts', 
+	    {ok, result_code(ok) ++
+		[{'accounts', 
 		   {array, 
 		    [{struct, [{'name', exodm_db_account:lookup_name(Account)},
 			       {'roles',  [Role]}]} ||
@@ -693,7 +729,8 @@ list_config_sets(AID, N, Prev, Tail) ->
 		  exodm_db:list_next(Tab, N, FullPrev, F)
 	  end),
     ?debug("config sets = ~p~n", [Res]),
-    {ok, [{'config-sets',
+    {ok, result_code(ok) ++
+	[{'config-sets',
 	   {array, [{struct,
 		     [{name, Nm},
 		      {yang, Y},
@@ -726,7 +763,7 @@ list_config_set_members(AID, Name, N, Prev) ->
 				     end)
 	  end),
     ?debug("config set members = ~p~n", [Res]),
-    {ok, [{'config-set-members', {array, Res}}]}.
+    {ok, result_code(ok) ++ [{'config-set-members', {array, Res}}]}.
 
 add_notification_urls(AID, DID, URLs) ->
     Res = exodm_db:in_transaction(
@@ -837,13 +874,13 @@ lookup_yang_module(AID, Name) ->
     
 list_yang_modules(AID, N, Prev) ->
     Res = exodm_db_yang:list_next(AID, N, Prev),
-    {ok, [{'yang-modules', {array, Res}}]}.
+    {ok, result_code(ok) ++ [{'yang-modules', {array, Res}}]}.
     
 list_exec_permission(AID, ?EXODM, RName) ->
     case exodm_db_account:rpc_roles(AID, RName) of
         RList when is_list(RList) ->
             Res = [binary_to_atom(Role, latin1) ||  Role <- RList],
-            {ok, [{'roles', {array, Res}}]};
+            {ok, result_code(ok) ++ [{'roles', {array, Res}}]};
         {error, Reason} ->
             {ok, result_code(Reason)}
     end;
@@ -867,37 +904,14 @@ delete_device_type(AID, Name) ->
 	    ok = exodm_db_device_type:delete(AID, Name))}.
     
 list_device_types(AID, N, Prev) ->
-   Res =
-	exodm_db:in_transaction(
-	  fun(_) ->
-		  exodm_db:list_next(exodm_db_device_type:table(AID), N, Prev,
-				     fun(Key) ->
-					     [Name|_] =
-						 kvdb_conf:split_key(Key),
-					     exodm_db_device_type:lookup(
-					       AID, Name)
-				     end)
-	  end),
-    ?debug("device types = ~p~n", [Res]),
-    {ok, [{'device-types',
-	   {array, [ {struct, DT} || DT <- Res]}
-	  }]}.
+    Res = exodm_db_device_type:list_next(AID, N, Prev), 
+    {ok, result_code(ok) ++
+	[{'device-types', {array, [ {struct, DT} || DT <- Res]}}]}.
 
 list_device_type_members(AID, Name, N, Prev) ->
-    Res =
-	exodm_db:in_transaction(
-	  fun(_) ->
-		  FullNext = kvdb_conf:join_key(
-			       [Name, <<"devices">>, Prev]),
-		  exodm_db:list_next(exodm_db_device_type:table(AID),
-				     N, FullNext,
-				     fun(Key) ->
-					     lists:last(
-					       kvdb_conf:split_key(Key))
-				     end)
-	  end),
+    Res = exodm_db_device_type:list_devices(AID, Name, N, Prev),
     ?debug("device type members (~p) = ~p~n", [Name, Res]),
-    {ok, [{'device-type-members', {array, Res}}]}.
+    {ok, result_code(ok) ++ [{'device-type-members', {array, Res}}]}.
 
 create_device_group(AID, GName, URL) ->    
     ok = exodm_db_group:new(AID, [{name, GName},
@@ -948,7 +962,8 @@ list_device_groups(AID, N, Prev0, Tail) ->
 		  exodm_db:list_next(Tab, N, FullPrev, F)
 	  end),
     ?debug("groups = ~p~n", [Res]),
-    {ok, [{'device-groups',
+    {ok, result_code(ok) ++ 
+	[{'device-groups',
 	   {array, [
 		    {struct,
 		     [{'group-id', G},
@@ -975,7 +990,7 @@ list_device_group_members(AID, GID, N, Prev) ->
 		  %% 		     end)
 	  end),
     ?debug("device group members = ~p~n", [Res]),
-    {ok, [{'device-group-members', {array, Res}}]}.
+    {ok, result_code(ok) ++ [{'device-group-members', {array, Res}}]}.
 
 provision_device(AID, I, Opts) -> 
     {ok, ?catch_result(exodm_db_device:new(AID, I, Opts))}.
@@ -1035,9 +1050,8 @@ list_devices(AID, N, Prev) ->
 		  exodm_db_device:list_next(AID, N, Prev)
 	  end),
     ?debug("devices = ~p~n", [Res]),
-    {ok, [{'devices',
-	   {array, [ {struct, D} || D <- Res ]}
-	  }]}.    
+    {ok, result_code(ok) ++ 
+	[{'devices', {array, [ {struct, D} || D <- Res ]} }]}.    
 %% 
 %% Check if current user is using ssl / from localhost
 %% 
@@ -1051,6 +1065,8 @@ has_root_env(Env) ->
 current_user_account() ->
     exodm_db_user:list_accounts(exodm_db_session:get_user()).
 
+is_root(Env) when is_list(Env)->
+    is_root(proplists:get_value(user, Env)); 
 is_root(?EXODM_ADMIN) -> true;
 is_root(root) -> true;
 is_root(_Other) -> ?debug("user ~p", [_Other]), false.

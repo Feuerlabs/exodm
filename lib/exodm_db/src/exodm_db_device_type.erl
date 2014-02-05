@@ -190,11 +190,30 @@ remove_device(AID0, Name0, DID0) ->
       end).
 
 
-list_next(_AID0, _N, _Prev) ->
-    error(nyi).
+list_next(AID, N, Prev) ->
+    exodm_db:in_transaction(
+	fun(_) ->
+	    exodm_db:list_next(exodm_db_device_type:table(AID), N, Prev,
+		fun(Key) ->
+		    [Name|_] =
+		    kvdb_conf:split_key(Key),
+		    exodm_db_device_type:lookup(
+			AID, Name)
+		end)
+	end).
 
-list_devices(_AID0, _Name0, _N, _Prev) ->
-    error(nyi).
+list_devices(AID, Name, N, Prev) ->
+    exodm_db:in_transaction(
+	fun(_) ->
+	    FullNext = kvdb_conf:join_key(
+		[Name, <<"devices">>, Prev]),
+	    exodm_db:list_next(exodm_db_device_type:table(AID),
+		N, FullNext,
+		fun(Key) ->
+		    lists:last(
+			kvdb_conf:split_key(Key))
+		end)
+	end).
 
 encode(AID, Name) ->
     {exodm_db:account_id_key(AID), exodm_db:encode_id(Name)}.

@@ -33,6 +33,7 @@
 
 -include_lib("lager/include/log.hrl").
 -include_lib("kvdb/include/kvdb_conf.hrl").
+-include("exodm.hrl").
 -include("exodm_db.hrl").
 
 -import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).
@@ -211,7 +212,8 @@ insert_device_type(_Tab, _AID, _DID, undefined) ->
 insert_device_type(Tab, AID, DID, DevType) ->
     case exodm_db_device_type:exist(AID, DevType) of
 	false ->
-	    error(unknown_device_type, [DevType]);
+	    ?ei("exodm_db_device: unknown device type ~p",  [DevType]),
+	    error(?VALIDATION_FAILED);
 	_ ->
 	    exodm_db_device_type:add_device(AID, DevType, DID),
 	    insert(Tab, DID, 'device-type', to_binary(DevType))

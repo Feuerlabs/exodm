@@ -67,6 +67,7 @@
 
 -import(lists, [reverse/1]).
 
+-include("exodm.hrl").
 -include("exodm_db.hrl").
 -include_lib("kvdb/include/kvdb_conf.hrl").
 
@@ -300,7 +301,7 @@ nc_key_split_predicate_string(<<C,Tail/binary>>, Q, RPart, As) ->
     nc_key_split_predicate_string(Tail,Q, add_char(C,RPart), As).
 
 
-%% Remeber to hint bjorng about r_list_to_binary again?
+%% Remember to hint bjorng about r_list_to_binary again?
 r_add_part(RAcc, Parts) ->
     [list_to_binary(reverse(RAcc)) | Parts].
 
@@ -464,10 +465,10 @@ insert_alias(Tab, Base, I, Alias0) when is_integer(I), I >= 0 ->
 			  [Base, list_key(alias, I), <<"__alias">>]),
 		    write(Tab, K, Alias);
 		[_|_] ->
-		    error({alias_exists, Alias})
+		    error(?OBJECT_EXISTS)
 	    end;
 	{ok, _} ->
-	    error({alias_exists, Alias})
+	    error(?OBJECT_EXISTS)
     end.
 
 %% Calculates the next unused position (following the highest pos), creates
@@ -585,7 +586,7 @@ enc_ext_key(AID, ID0) ->
 	    Del = pick_delimiter(<<AName/binary, ID/binary>>),
 	    <<Del, AName/binary, Del, ID/binary>>;
 	{error, not_found} ->
-	    error(unknown_account)
+	    error(?OBJECT_NOT_FOUND)
     end.
 
 pick_delimiter(Bin) ->
@@ -727,7 +728,7 @@ required_option(Key, Options) ->
 	{_, V} ->
 	    V;
 	false ->
-	    erlang:error({required, Key})
+	    error(?MISSING_OPTION)
     end.
 
 uint32_bin(I) when is_integer(I) ->
