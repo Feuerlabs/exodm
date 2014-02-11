@@ -90,6 +90,7 @@
 -define(RPC_UPDATE_DEVICE, <<"update-device">>).
 -define(RPC_DEPROVISION_DEVICES, <<"delete-devices">>).
 -define(RPC_LIST_DEVICES, <<"list-devices">>).
+-define(RPC_LIST_DEVICES_ATTRIBUTES, <<"list-devices-attributes">>).
 
 -define(RPC_CREATE_PACKAGE, <<"create-package">>).
 -define(RPC_ADD_PACKAGE_MEMBERS, <<"add-package-members">>).
@@ -201,6 +202,8 @@
          {?RPC_DEPROVISION_DEVICES, 
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG]},
          {?RPC_LIST_DEVICES, 
+          [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG, ?VIEW]},
+        {?RPC_LIST_DEVICES_ATTRIBUTES, 
           [?ROOT, ?INIT_ADMIN, ?ADMIN, ?CONFIG, ?VIEW]},
 
          {?RPC_CREATE_PACKAGE, 

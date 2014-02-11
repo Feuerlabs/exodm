@@ -7,11 +7,15 @@
 
 -module(exodm_rpc_exodm).
 
--export([json_rpc/2,
-	 exodm_admin/1]).
 -include_lib("lager/include/log.hrl").
 -include("exodm.hrl").
 -include_lib("kvdb/include/kvdb_conf.hrl").
+
+-export([json_rpc/2,
+	 exodm_admin/1]).
+
+%%Test
+-export([list_devices_attributes/5]).
 
 -define(USER_REPOSITORY, <<"user">>).
 -define(SYSTEM_REPOSITORY, <<"system">>).
@@ -514,9 +518,16 @@ do_json_rpc(AID, {call, _, ?RPC_DEPROVISION_DEVICES,
     deprovision_devices(AID, DevIdList);
 
 do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_DEVICES,
-	   [{n, N, _}, 
-	    {previous, Prev, _}|_Tail] = _Cfg} = _RPC, _Env) ->
+	   [{n, N, _}, {'previous', Prev, _} |_Tail] = _Cfg} = _RPC, _Env) ->
     list_devices(AID, N, Prev);
+
+do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_DEVICES_ATTRIBUTES,
+		  [{n, N, _}, 
+		   {'previous', Prev, _}, 
+		   {'attributes', Attrs, _}, 
+		   {'pattern', Pattern, _} 
+		   |_Tail] = _Cfg} = _RPC, _Env) ->
+    list_devices_attributes(AID, N, Prev, Attrs, Pattern);
 
 %% Mblox access parameter configuration
 do_json_rpc(AID, {call, ?EXODM, ?RPC_SET_MBLOX_PARAMETERS,
@@ -1014,17 +1025,16 @@ lookup_device_attributes(AID, I, Attrs) ->
 	[] ->
 	    {ok, result_code(?DEVICE_NOT_FOUND)};
 	[_|_] ->
-	    State = case lists:member(?IS_CONNECTED, Attrs) of
-			true ->[{?IS_CONNECTED, is_connected(AID, I)}];
-			false -> []
-		    end,
+	    State = device_state(AID, I, Attrs),
 	    ?debug("lookup_device_attributes: result ~p~n", [State ++ Res]),
-	    {ok, result_code(ok) ++ 
-		 [{'attributes', 
-		   {array,
-		    [{struct, [{'name', Name},
-			       {'val', Value}]} || 
-			{Name, Value} <- State ++ Res, Res =/= []]}}]}
+	    {ok, result_code(ok) ++ attrs2yang(State ++ Res)}
+    end.
+
+
+device_state(AID, I, Attrs) ->
+    case lists:member(?IS_CONNECTED, Attrs) of
+	true ->[{?IS_CONNECTED, is_connected(AID, I)}];
+	false -> []
     end.
 
 is_connected(AID, I) ->
@@ -1034,6 +1044,11 @@ is_connected(AID, I) ->
 	 _S -> <<"true">>
     end.
 	     
+attrs2yang(Res) ->
+ [{'attributes',{array, [{struct, [{'name', Name},
+				   {'val', Value}]} || 
+			    {Name, Value} <-  Res, Res =/= []]}}].
+ 
 update_device(AID, I, Opts) ->   
     {ok, ?catch_result(exodm_db_device:update(AID, I, kvl(Opts)))}.
    
@@ -1051,7 +1066,25 @@ list_devices(AID, N, Prev) ->
 	  end),
     ?debug("devices = ~p~n", [Res]),
     {ok, result_code(ok) ++ 
-	[{'devices', {array, [ {struct, D} || D <- Res ]} }]}.    
+	[{'devices', {array, [ {struct, D} || D <- Res ]} }]}.  
+  
+list_devices_attributes(AID, N, Prev, Attrs, _Pattern) ->
+    %% Pattern ignored so far
+    DeviceIds = [Id || [{'device-id', Id} | Tail] <- 
+			   exodm_db_device:list_next(AID, N, Prev)],
+    ?debug("devices = ~p~n", [DeviceIds]),
+    {ok, result_code(ok) ++ 
+	 [{'devices', 
+	   {array, 
+	    [{struct, device_attrs(AID, D, Attrs)} || D <- DeviceIds ]}}]}.
+
+
+device_attrs(AID, Id, Attrs) ->
+    As = exodm_db_device:lookup_attrs(AID, Id, Attrs -- [?IS_CONNECTED]),
+    State = device_state(AID, Id, Attrs),
+    ?debug("devices_attrs: ~p: ~p~n",  [Id, State ++ As]),
+    [{'device-id', Id} | attrs2yang(State ++ As)].
+    
 %% 
 %% Check if current user is using ssl / from localhost
 %% 
