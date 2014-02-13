@@ -14,9 +14,6 @@
 -export([json_rpc/2,
 	 exodm_admin/1]).
 
-%%Test
--export([list_devices_attributes/5]).
-
 -define(USER_REPOSITORY, <<"user">>).
 -define(SYSTEM_REPOSITORY, <<"system">>).
 
@@ -253,15 +250,17 @@ do_json_rpc(_AID, {call, ?EXODM, ?RPC_LIST_USER_ACCOUNTS,
 do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_USERS,
 	   [{'n', N, _},
 	    {'previous', Prev, _},
+	    {'direction', Dir, _},
             {'account', _Account, _}]} = _RPC, _Env) ->
     %% Account users
-    list_users(AID, N, Prev);
+    list_users(AID, N, Prev, Dir);
 
 do_json_rpc(_AID, {call, ?EXODM, ?RPC_LIST_USERS,
 	   [{'n', N, _},
-	    {'previous', Prev, _}|_Tail]} = _RPC, _Env) ->
+	    {'previous', Prev, _},
+	    {'direction', Dir, _} |_Tail]} = _RPC, _Env) ->
     %% All users
-    list_users(N, Prev);
+    list_users(N, Prev, Dir);
 
 do_json_rpc(_AID, {call, ?EXODM, ?RPC_ADD_ACCOUNT_USERS,
 	   [{'account', Account, _},
@@ -283,8 +282,9 @@ do_json_rpc(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USER,
 do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_ACCOUNT_USERS,
 	   [{'account', _Account, _}, %% Already parsed
 	    {'n', N, _},
-	    {'previous', Prev, _}|_Tail]} = _RPC, _Env) ->
-    list_users(AID, N, Prev);    
+	    {'previous', Prev, _},
+	    {'direction', Dir, _} |_Tail]} = _RPC, _Env) ->
+    list_users(AID, N, Prev, Dir);    
 
 
 %% Config set
@@ -365,8 +365,9 @@ do_json_rpc(AID, {call, ?EXODM, ?RPC_LOOKUP_YANG_MODULE,
 do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
 	   [{repository, ?USER_REPOSITORY, _},
 	    {n,N,_},
-	    {previous, Prev, _}|_Tail]} = _RPC, _Env) ->
-    list_yang_modules(AID, N, Prev);
+	    {previous, Prev, _},
+	    {'direction', Dir, _} |_Tail]} = _RPC, _Env) ->
+    list_yang_modules(AID, N, Prev, Dir);
 
 do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_EXEC_PERMISSION,
 	   [{repository, ?USER_REPOSITORY, _},
@@ -419,11 +420,12 @@ do_json_rpc(AID, {call, ?EXODM, ?RPC_LOOKUP_YANG_MODULE,
 do_json_rpc(_AID, {call, ?EXODM, ?RPC_LIST_YANG_MODULES,
 	   [{repository, ?SYSTEM_REPOSITORY, _},
 	    {n, N, _},
-	    {previous, Prev, _}|_Tail]} = _RPC, Env) ->
+	    {previous, Prev, _},
+	    {'direction', Dir, _} |_Tail]} = _RPC, Env) ->
     case has_root_env(Env) of
 	true ->
 	    exodm_db_session:set_trusted_proc(),
-	    Res = list_yang_modules(system, N, Prev),
+	    Res = list_yang_modules(system, N, Prev, Dir),
 	    exodm_db_session:unset_trusted_proc(),
 	    {ok, [{'yang-modules', {array, Res}}]};
 	false ->
@@ -525,9 +527,10 @@ do_json_rpc(AID, {call, ?EXODM, ?RPC_LIST_DEVICES_ATTRIBUTES,
 		  [{n, N, _}, 
 		   {'previous', Prev, _}, 
 		   {'attributes', Attrs, _}, 
-		   {'pattern', Pattern, _} 
+		   {'pattern', Pattern, _},
+		   {'direction', Dir, _}
 		   |_Tail] = _Cfg} = _RPC, _Env) ->
-    list_devices_attributes(AID, N, Prev, Attrs, Pattern);
+    list_devices_attributes(AID, N, Prev, Attrs, Pattern, Dir);
 
 %% Mblox access parameter configuration
 do_json_rpc(AID, {call, ?EXODM, ?RPC_SET_MBLOX_PARAMETERS,
@@ -632,7 +635,8 @@ lookup_user(Name) ->
 		 [{'users', {array, [{struct, Res} || Res =/= []]}}]}
     end.
 
-list_users(AID, N, Prev) ->
+list_users(AID, N, Prev, _Dir) ->
+    %% Dir ignored so far
     case exodm_db_account:list_users_with_roles(AID, N, Prev) of
 	[] ->
 	    {ok, result_code(ok) ++ [{'users', {array, []}}]};
@@ -645,7 +649,8 @@ list_users(AID, N, Prev) ->
 	    {ok, Other}
     end.
 
-list_users(N, Prev) ->
+list_users(N, Prev, _Dir) ->
+    %% Dir ignored so far
     Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
 		    exodm_db_user:list_users(N, Prev)),
     {ok, result_code(ok) ++ [{'users', {array,Res}}]}.
@@ -883,7 +888,8 @@ lookup_yang_module(AID, Name) ->
             {ok, result_code(?OBJECT_NOT_FOUND)}
     end.
     
-list_yang_modules(AID, N, Prev) ->
+list_yang_modules(AID, N, Prev, _Dir) ->
+    %% Dir ignored so far
     Res = exodm_db_yang:list_next(AID, N, Prev),
     {ok, result_code(ok) ++ [{'yang-modules', {array, Res}}]}.
     
@@ -1068,9 +1074,9 @@ list_devices(AID, N, Prev) ->
     {ok, result_code(ok) ++ 
 	[{'devices', {array, [ {struct, D} || D <- Res ]} }]}.  
   
-list_devices_attributes(AID, N, Prev, Attrs, _Pattern) ->
-    %% Pattern ignored so far
-    DeviceIds = [Id || [{'device-id', Id} | Tail] <- 
+list_devices_attributes(AID, N, Prev, Attrs, _Pattern, _Dir) ->
+    %% Pattern/Dir ignored so far
+    DeviceIds = [Id || [{'device-id', Id} | _Tail] <- 
 			   exodm_db_device:list_next(AID, N, Prev)],
     ?debug("devices = ~p~n", [DeviceIds]),
     {ok, result_code(ok) ++ 

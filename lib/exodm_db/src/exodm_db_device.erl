@@ -370,8 +370,8 @@ lookup_(Tab,Key) ->
     case kvdb_conf:read(Tab, kvdb_conf:join_key(Key, ?DEV_DB_DEVICE_ID)) of
 	{ok, {_, _, _}} ->
 	    [{'device-id', exodm_db:decode_id(Key)} |
-	     lookup_attr_(Tab,Key,'device-type') ++
-		 lookup_attrs(Tab, Key)];
+	     lookup_attr_(Tab,Key,'device-type') ++ %% Double info on id
+		 lookup_attrs(Tab, Key)];           %% and type. Why ????
 	{error, _} ->
 	    []
     end.
