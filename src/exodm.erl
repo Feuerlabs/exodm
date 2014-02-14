@@ -7,8 +7,15 @@
 	 add_config_data_members/2,
 	 list_groups/0,
 	 push_config/1]).
+-export([tc/1]).
 
 -include_lib("kvdb/include/kvdb_conf.hrl").
+
+tc(F) ->
+    T1 = os:timestamp(),
+    Res = F(),
+    T2 = os:timestamp(),
+    {timer:tc(T2, T1), Res}.
 
 -spec ping() -> pong.
 ping() ->

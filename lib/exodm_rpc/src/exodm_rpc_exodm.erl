@@ -19,13 +19,17 @@
 -define(catch_result(Expr),
 	result_code(try Expr
 		    catch
-			error:?PERMISSION_DENIED = E -> E;
-			error:?VALIDATION_FAILED = E -> E;
-			error:?OBJECT_EXISTS     = E -> E;
-			error:?DEVICE_NOT_FOUND  = E -> E;
-			error:?OBJECT_NOT_FOUND  = E -> E;
-			error:?OBJECT_NOT_EMPTY  = E -> E;
-                        error:?ACCOUNT_NOT_SPECIFIED = E -> E
+                        error:E when E==?PERMISSION_DENIED;
+                                     E==?VALIDATION_FAILED;
+                                     E==?OBJECT_EXISTS;
+                                     E==?DEVICE_NOT_FOUND;
+                                     E==?OBJECT_NOT_FOUND;
+                                     E==?OBJECT_NOT_EMPTY;
+                                     E==?ACCOUNT_NOT_SPECIFIED ->
+                            result_code(E);
+                        error:E ->
+                            lager:error("~p: Caught ~p~n", [?MODULE, E]),
+                            result_code(?INTERNAL_ERROR)
 		    end)).
 
 %%--------------------------------------------------------------------
@@ -40,10 +44,12 @@ exodm_admin(?EXODM_ADMIN) -> true;
 exodm_admin(_Other) -> false.
     
 
+result_code(ok) ->
+    [{result, <<"ok">>}];
 result_code(Code) when is_atom(Code) ->
-    [{result, atom_to_binary(Code, latin1)}];
+    exodm_rpc:abort_and_reply([{result, atom_to_binary(Code, latin1)}]);
 result_code(Code) when is_binary(Code) ->
-    [{result, Code}].
+    exodm_rpc:abort_and_reply([{result, Code}]).
 
 
 %%--------------------------------------------------------------------
@@ -234,13 +240,13 @@ json_rpc_(_AID, {call, ?EXODM, ?RPC_ADD_ACCOUNT_USERS,
 	    {'role', Role, _},
 	    {'unames', UNames, _}|_Tail]}, Env) ->
     {ok, ?catch_result(exodm_db_account:add_users(Account, Role, UNames,
-						 has_root_env(Env)))};
+                                                  has_root_env(Env)))};
 json_rpc_(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USERS,
 	   [{'account', Account, _},
 	    {'role', Role, _},
 	    {'unames', UNames, _}|_Tail]}, Env) ->
     {ok, ?catch_result(exodm_db_account:remove_users(Account, Role, UNames,
-						 has_root_env(Env)))};
+                                                     has_root_env(Env)))};
 json_rpc_(_AID, {call, ?EXODM, ?RPC_REMOVE_ACCOUNT_USER,
 	   [{'account', Account, _},
 	    {'uname', UName, _}|_Tail]}, Env) ->

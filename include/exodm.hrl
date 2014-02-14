@@ -5,6 +5,14 @@
 %%% @end
 %%% Created :  2013 Malotte W Lönne <malotte@malotte.net>
 
+%% For exometer updates
+-define(time(Expr), exodm:tc(fun() -> Expr end)).
+                             
+
+%% Use as throw({?EXODM_ABORT_REPLY, JSON_Response}).
+-define(EXODM_ABORT_REPLY, 'EXODM_ABORT_REPLY').
+-define(EXODM_ABORT, 'EXODM_ABORT').
+
 %% exodm admin
 -define(EXODM, <<"exodm">>). 
 -define(EXODM_ADMIN, <<"exodm-admin">>).
@@ -26,6 +34,7 @@
 -define(OBJECT_NOT_FOUND, 'object-not-found').
 -define(OBJECT_NOT_EMPTY, 'object-not-empty').
 -define(ACCOUNT_NOT_SPECIFIED, 'account-not-specified').
+-define(INTERNAL_ERROR, 'internal-error').
 
 %%--------------------------------------------------------------------
 %% Predefined rpc:s - must correspond to yang-files!!!

@@ -21,13 +21,22 @@
 	 rpc/3,
 	 do/4]).
 -export([std_specs/0]).
+-export([abort_and_reply/1,
+         abort_and_error/1]).
 
+-include("exodm.hrl").
 -include_lib("lager/include/log.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
 
 -record(st, {}).
 -define(TAB, ?MODULE).
 -define(TMP_TAB, exodm_rpc_tmp).
+
+abort_and_reply(Reply) ->
+    throw({?EXODM_ABORT_REPLY, Reply}).
+
+abort_and_error(Error) ->
+    throw({?EXODM_ABORT, Error}).
 
 ping() ->
     pong.

@@ -14,6 +14,7 @@
 %% -export([std_specs/0]).
 -export([request_timeout/6]).
 
+-include("exodm.hrl").
 -include_lib("lager/include/log.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
 -include_lib("lhttpc/include/lhttpc.hrl").
@@ -33,15 +34,17 @@
 %% This enables the rpc handler to locate the device session process.
 %% @end
 add_device_session(AID, DID, Protocol) ->
-    ExtID = exodm_db_device:enc_ext_key(AID, DID),
-    add_device_session(ExtID, Protocol).
+    %% normalize AID and DID
+    add_device_session(exodm_db_device:enc_ext_key(AID, DID), Protocol).
 
 add_device_session(ExtID, Protocol) ->
-    %% Normalize ExtID first
+    {AID, DID} = exodm_db_device:dec_ext_key(ExtID),
     ?debug("extid ~p, protocol ~p", [ExtID, Protocol]),
     rm_device_session(ExtID, Protocol), % to allow for repeated reg operations
-    gproc:reg({p,l,{exodm_rpc, active_device, ExtID, Protocol}},
-	      os:timestamp()).
+    gproc:reg({p,l,{exodm_rpc, active_device, {AID,DID}, Protocol}},
+	      os:timestamp()),
+    update_session_count(AID),
+    true.
 
 %% @spec rm_device_session(aid(), did(), protocol()) -> true.
 %% @doc Removes the session registration
@@ -53,7 +56,10 @@ rm_device_session(AID, DID, Protocol) ->
 
 rm_device_session(ExtID, Protocol) ->
     ?debug("extid ~p, protocol ~p", [ExtID, Protocol]),
-    catch gproc:unreg({p,l,{exodm_rpc, active_device, ExtID, Protocol}}),
+    {AID, DID} = exodm_db_device:dec_ext_key(ExtID),
+    catch gproc:unreg(
+            {p,l,{exodm_rpc, active_device, {AID, DID}, Protocol}}),
+    update_session_count(AID),
     true.
 
 %% @spec device_sessions(aid(), did()) -> [{pid(), protocol()}].
@@ -67,11 +73,22 @@ device_sessions(AID, DID) ->
 %% (ExtID) -> [{Pid, Protocol}]
 %%
 device_sessions(ExtID) when is_binary(ExtID) ->
-    Res = gproc:select(p, [{ {{p,l,{exodm_rpc, active_device, ExtID, '$2'}},
-			      '$1', '$3'},
-			     [], [{{'$1', '$2', '$3'}}] }]),
+    Res = all_device_sessions(ExtID),
     ?debug("extid ~p -> ~p~n", [ExtID, Res]),
     [{A,B} || {A,B,_} <- lists:reverse(lists:keysort(3, Res))].
+
+update_session_count(AID) ->
+    Count = gproc:select_count(
+              p, [{{{p,l,{exodm_rpc, active_device, {AID,'_'},'_'}},'_','_'},
+                   true}]),
+    exometer:update([exodm,account,AID,stats,active_sessions], Count).
+
+
+all_device_sessions(ExtID) when is_binary(ExtID) ->
+    {AID, DID} = exodm_db_device:dec_ext_key(ExtID),
+    gproc:select(p, [{ {{p,l,{exodm_rpc, active_device, {AID,DID}, '$2'}},
+                        '$1', '$3'},
+                       [], [{{'$1', '$2', '$3'}}] }]).
 
 find_device_session(AID, DID, Protocol) ->
     case find_device_session(
@@ -256,7 +273,8 @@ int_json_rpc(Req) ->
 		  case web_rpc_(Db, [{client, erlang_json}], Req) of
 		      {true, {response, Resp}} ->
 			  {true, Resp};
-		      Other -> Other
+                      {false, Error} ->
+                          exodm_rpc:abort_and_error(Error)
 		  end
 	  end)
     catch
@@ -267,6 +285,10 @@ int_json_rpc(Req) ->
 		   [?MODULE, Req, E, erlang:get_stacktrace()]),
 	    {false, error_response({internal_error,
 				    lists:flatten(io_lib:format("~p", [E]))})};
+        throw:{?EXODM_ABORT_REPLY, Response} ->
+            {true, Response};
+        throw:{?EXODM_ABORT, Error} ->
+            {false, error_response(Error)};
 	throw:{error_response, Err, Data} ->
 	    {false, error_response({Err, Data})}
     end.
@@ -275,9 +297,13 @@ web_rpc(St, Req, Session) ->
     ?debug("web_rpc(~p, ~p, ~p)~n", [St, Req, Session]),
     try kvdb_conf:in_transaction(
 	  fun(Db) ->
-		  case web_rpc_(Db, St, Req) of
-		      {true, Response} -> {true, 0, Session, Response};
-		      Other -> Other
+		  case ?time(web_rpc_(Db, St, Req)) of
+		      {T, {true, Response}} ->
+                          exometer:update([exodm,rpc,web,time], T),
+                          exometer:update([exodm,rpc,web,success], 1),
+                          {true, 0, Session, Response};
+		      Other ->
+                          Other
 		  end
 	  end)
     catch
@@ -288,6 +314,10 @@ web_rpc(St, Req, Session) ->
 		   [?MODULE, St, Req, Session, E, erlang:get_stacktrace()]),
 	    {false, error_response({internal_error,
 				    lists:flatten(io_lib:format("~p", [E]))})};
+        throw:{?EXODM_ABORT_REPLY, Response} ->
+            {true, Response};
+        throw:{?EXODM_ABORT, Error} ->
+            {false, error_response(Error)};
 	throw:{error_response, Err, Data} ->
 	    {false, error_response({Err, Data})}
     end.
@@ -338,9 +368,7 @@ web_rpc_(Db, InitEnv, {call, Method, Request} = RPC0) ->
 			    end;
 			{error, Reason} ->
 			    ?debug("request NOT verified: ~p~n", [Reason]),
-			    Response = error_response(
-					 {validation_error, Reason}),
-			    {false, Response}
+                            exodm_rpc:abort_and_error({validation_error, Reason})
 		    end;
 		error ->
 		    web_rpc_system_(Db, AID, Env0, RPC0)
@@ -440,7 +468,7 @@ exoport_rpc_(_Db, _InitEnv, {call, "exoport:get-messages", Args0}) ->
 		  {_, TO} ->
 		      to_int(TO)
 	      end,
-    Msgs = exodm_rpc_exoport_http:recv(ExtID, N, Timeout),
+    Msgs = exoport_rpc_exoport_http:recv(ExtID, N, Timeout),
     {true, {response, {struct, [{"result", "ok"},
 				{"messages", Msgs}]}}};
 exoport_rpc_(_Db, InitEnv, {call, FullMethod, {struct, Args}}) ->
@@ -505,7 +533,11 @@ handle_direct_rpc(Protocol, Env, RPC, Spec) ->
     catch error:E ->
 	    ?debug("~p:json_rpc(...) -> *ERROR*:~p~n",
 		   [?MODULE, {E, erlang:get_stacktrace()}]),
-	    {false, error_response(convert_error(E, RPC))}
+	    {false, error_response(convert_error(E, RPC))};
+          throw:{?EXODM_ABORT_REPLY, Reply} ->
+            ?debug("Abort_Reply = ~p~n", [Reply]),
+            throw({?EXODM_ABORT_REPLY,
+                   {response, success_response(Reply, Env, RPC, Spec)}})
     end.
 
 notification(Method, Elems, Env, _Req, AID, DID) ->
