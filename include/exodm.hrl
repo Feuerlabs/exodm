@@ -17,6 +17,10 @@
 -define(CONFIG, <<"config">>).
 -define(VIEW, <<"view">>).
 
+%% Predefined directions
+-define(ASC, <<"ascending">>).
+-define(DESC, <<"descending">>).
+
 %% Result codes
 -define(PERMISSION_DENIED, 'permission-denied').
 -define(VALIDATION_FAILED, 'validation-failed').

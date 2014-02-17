@@ -635,9 +635,8 @@ lookup_user(Name) ->
 		 [{'users', {array, [{struct, Res} || Res =/= []]}}]}
     end.
 
-list_users(AID, N, Prev, _Dir) ->
-    %% Dir ignored so far
-    case exodm_db_account:list_users_with_roles(AID, N, Prev) of
+list_users(AID, N, Prev, Dir) ->
+    case exodm_db_account:list_users_with_roles(AID, N, Prev, Dir) of
 	[] ->
 	    {ok, result_code(ok) ++ [{'users', {array, []}}]};
 	Users when is_list(Users) ->
@@ -649,10 +648,9 @@ list_users(AID, N, Prev, _Dir) ->
 	    {ok, Other}
     end.
 
-list_users(N, Prev, _Dir) ->
-    %% Dir ignored so far
+list_users(N, Prev, Dir) ->
     Res = lists:map(fun(User) -> proplists:get_value(name, User) end,
-		    exodm_db_user:list_users(N, Prev)),
+		    exodm_db_user:list_users(N, Prev, Dir)),
     {ok, result_code(ok) ++ [{'users', {array,Res}}]}.
 
 list_user_accounts(Name) ->  
@@ -888,9 +886,11 @@ lookup_yang_module(AID, Name) ->
             {ok, result_code(?OBJECT_NOT_FOUND)}
     end.
     
-list_yang_modules(AID, N, Prev, _Dir) ->
-    %% Dir ignored so far
+list_yang_modules(AID, N, Prev, ?ASC) ->
     Res = exodm_db_yang:list_next(AID, N, Prev),
+    {ok, result_code(ok) ++ [{'yang-modules', {array, Res}}]};
+list_yang_modules(AID, N, Prev, ?DESC) ->
+    Res = exodm_db_yang:list_prev(AID, N, Prev),
     {ok, result_code(ok) ++ [{'yang-modules', {array, Res}}]}.
     
 list_exec_permission(AID, ?EXODM, RName) ->
@@ -1074,16 +1074,26 @@ list_devices(AID, N, Prev) ->
     {ok, result_code(ok) ++ 
 	[{'devices', {array, [ {struct, D} || D <- Res ]} }]}.  
   
-list_devices_attributes(AID, N, Prev, Attrs, _Pattern, _Dir) ->
-    %% Pattern/Dir ignored so far
+list_devices_attributes(AID, N, Prev, Attrs, _Pattern, ?ASC) ->
+    ?debug("list devices ascending ~n", []),
+    %% Pattern ignored so far
     DeviceIds = [Id || [{'device-id', Id} | _Tail] <- 
-			   exodm_db_device:list_next(AID, N, Prev)],
+			   exodm_db_device:list_next(AID, N, Prev)], 
+    
+    list_devices_attributes_cont(AID, DeviceIds, Attrs);	
+list_devices_attributes(AID, N, Next, Attrs, _Pattern, ?DESC) ->
+    ?debug("list devices descending ~n", []),
+    %% Pattern ignored so far
+    DeviceIds = [Id || [{'device-id', Id} | _Tail] <- 
+			   exodm_db_device:list_prev(AID, N, Next)],
+    list_devices_attributes_cont(AID, DeviceIds, Attrs).
+
+list_devices_attributes_cont(AID, DeviceIds, Attrs) ->
     ?debug("devices = ~p~n", [DeviceIds]),
     {ok, result_code(ok) ++ 
 	 [{'devices', 
 	   {array, 
 	    [{struct, device_attrs(AID, D, Attrs)} || D <- DeviceIds ]}}]}.
-
 
 device_attrs(AID, Id, Attrs) ->
     As = exodm_db_device:lookup_attrs(AID, Id, Attrs -- [?IS_CONNECTED]),

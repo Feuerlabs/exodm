@@ -36,6 +36,7 @@
 	 list_roles/3,
 	 list_user_roles/2,
 	 list_users_with_roles/3,
+	 list_users_with_roles/4,
 	 list_groups/1,
 	 list_groups/2,
 	 system_specs/1,
@@ -567,22 +568,42 @@ list_users(AID,  N, Prev) when is_binary(AID) ->
                                    {error, Reason::term()}.
 
 list_users_with_roles(AID,  N, Prev) when is_binary(AID) ->
-    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_USERS, 
-                                   exodm_db:to_binary(Prev)]),
+    list_users_with_roles(AID,  N, Prev, ?ASC).
+
+-spec list_users_with_roles(AID::binary(),
+                            N::integer(),
+                            Prev::binary(),
+			    Direction::binary()) ->
+                                   list({UName::binary(), 
+                                         list(Roles::binary())}) |
+                                   {error, Reason::term()}.
+
+list_users_with_roles(AID, N, Key, Dir) when is_binary(AID) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      Users = 
-                  exodm_db:list_next(
-                    table(),
-                    N, FullPrev,
-                    fun(Key) ->
-                            lists:last(kvdb_conf:split_key(Key))
-                    end),
-              lists:map(fun(User) ->
+	      FullKey = kvdb_conf:join_key([AID, ?ACC_DB_USERS, 
+					     exodm_db:to_binary(Key)]),
+	      Users = list_users_with_roles_cont(N, FullKey, Dir),
+	      lists:map(fun(User) ->
                                 Roles = list_user_roles(AID, User),
                                 {User, Roles}
                         end, Users)
       end).
+
+
+list_users_with_roles_cont(N, FullKey, ?ASC) ->
+    exodm_db:list_next(table(),
+		       N, FullKey,
+		       fun(Key) ->
+			       lists:last(kvdb_conf:split_key(Key))
+		       end);
+list_users_with_roles_cont(N, FullKey, ?DESC) ->
+    exodm_db:list_prev(table(),
+		       N, FullKey,
+		       fun(Key) ->
+			       lists:last(kvdb_conf:split_key(Key))
+		       end).
+    
 
 %%--------------------------------------------------------------------
 %% @doc

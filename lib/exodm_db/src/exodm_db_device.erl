@@ -8,10 +8,16 @@
 -module(exodm_db_device).
 
 -export([init/1]).
--export([new/3, update/3, lookup/2, lookup_attr/3, lookup_attrs/3,
+-export([new/3, 
+	 update/3, 
+	 lookup/2, 
+	 lookup_attr/3, 
+	 lookup_attrs/3,
 	 list_next/3,
+	 list_prev/3,
 	 write_attrs/3,
-	 delete/2, delete_devices/2,
+	 delete/2, 
+	 delete_devices/2,
 	 add_config_set/3, remove_config_set/3, list_config_sets/2,
 	 yang_modules/2,
 	 protocol/2,
@@ -355,6 +361,13 @@ push_protocol(AID, DID) when is_binary(AID), is_binary(DID) ->
 
 list_next(AID, N, Prev) when is_binary(AID), is_binary(Prev) ->
     exodm_db:list_next(table(AID), N, Prev,
+		       fun(Key) ->
+			       [DID|_] = kvdb_conf:split_key(Key),
+			       lookup(AID, DID)
+		       end).
+
+list_prev(AID, N, Next) when is_binary(AID), is_binary(Next) ->
+    exodm_db:list_prev(table(AID), N, Next,
 		       fun(Key) ->
 			       [DID|_] = kvdb_conf:split_key(Key),
 			       lookup(AID, DID)

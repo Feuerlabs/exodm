@@ -31,7 +31,7 @@
 -export([first_child/1, first_child/2,
 	 next_child/1, next_child/2,
 	 last_child/1, last_child/2]).
--export([list_next/4, n_children/4, list_cont/4]).
+-export([list_next/4, list_prev/4, n_children/4]).
 -export([fold_children/3, fold_children/4]).
 -export([fold_list/3, fold_list/4]).   % ([Tab,] Fun, Acc, Key)
 -export([fold_list2/4, fold_list2/5]). % ([Tab,] Fun, Acc, Key, ListItem)
@@ -348,10 +348,19 @@ last_child(Tab, K) ->
 
 list_next(_, 0, _, _) -> [];
 list_next(Tab, N, Prev, F) when is_integer(N), N > 0 ->
-    case list_cont(Tab, N, Prev, F) of
+    case list_next_cont(Tab, N, Prev, F) of
 	{L, _} -> L;
 	done   -> []
     end.
+
+list_prev(_, 0, _, _) -> [];
+list_prev(Tab, N, Next, F) when is_integer(N), N > 0 ->
+    case list_prev_cont(Tab, N, Next, F) of
+	{L, _} -> L;
+	done   -> []
+    end.
+
+
 
 n_children(_, 0, _, _) -> [];
 n_children(Tab, N, Parent, F) when is_integer(N), N > 0 ->
@@ -366,13 +375,13 @@ n_children(Tab, N, Parent, F) when is_integer(N), N > 0 ->
 	      end
       end).
 
-list_cont(Tab, N, Prev, F) when is_integer(N) ->
+list_next_cont(Tab, N, Prev, F) when is_integer(N) ->
     in_transaction(fun(_Db) ->
 			   Next = kvdb_conf:next_at_level(Tab, Prev),
-			   list_cont_(Next, Tab, N, N, F, [])
+			   list_next_cont_(Next, Tab, N, N, F, [])
 		   end).
 
-list_cont_({ok, Key}, Tab, N, N0, F, Acc) when N > 0 ->
+list_next_cont_({ok, Key}, Tab, N, N0, F, Acc) when N > 0 ->
     NewAcc = [F(Key) | Acc],
     case decr(N) of
 	0 ->
@@ -381,24 +390,41 @@ list_cont_({ok, Key}, Tab, N, N0, F, Acc) when N > 0 ->
 		     in_transaction(
 		       fun(_) ->
 			       Next = kvdb_conf:next_at_level(Tab, Key),
-			       list_cont_(Next, Tab, N0, N0, F, [])
+			       list_next_cont_(Next, Tab, N0, N0, F, [])
 		       end)
 	     end};
 	NewN ->
 	    Next = kvdb_conf:next_at_level(Tab, Key),
-	    list_cont_(Next, Tab, NewN, N0, F, NewAcc)
+	    list_next_cont_(Next, Tab, NewN, N0, F, NewAcc)
     end;
-list_cont_(_, _, _, _, _, Acc) ->
+list_next_cont_(_, _, _, _, _, Acc) ->
     {lists:reverse(Acc), fun() -> done end}.
 
-%% next_at_level(Tab, Key, Level) ->
-%%     if Level == 0 ->
-%% 	    kvdb_conf:next_at_level(Tab, Key);
-%%        true ->
-%% 	    kvdb_conf:next_at_level(
-%% 	      Tab, kvdb_conf:join_key(
-%% 		     lists:sublist(kvdb_conf:split_key(Key), 1, Level)))
-%%     end.
+list_prev_cont(Tab, N, Next, F) when is_integer(N) ->
+    in_transaction(fun(_Db) ->
+			   Prev = kvdb_conf:prev_at_level(Tab, Next),
+			   list_prev_cont_(Prev, Tab, N, N, F, [])
+		   end).
+
+list_prev_cont_({ok, Key}, Tab, N, N0, F, Acc) when N > 0 ->
+    NewAcc = [F(Key) | Acc],
+    case decr(N) of
+	0 ->
+	    {lists:reverse(NewAcc),
+	     fun() ->
+		     in_transaction(
+		       fun(_) ->
+			       Prev = kvdb_conf:prev_at_level(Tab, Key),
+			       list_prev_cont_(Prev, Tab, N0, N0, F, [])
+		       end)
+	     end};
+	NewN ->
+	    Prev = kvdb_conf:prev_at_level(Tab, Key),
+	    list_prev_cont_(Prev, Tab, NewN, N0, F, NewAcc)
+    end;
+list_prev_cont_(_, _, _, _, _, Acc) ->
+    {lists:reverse(Acc), fun() -> done end}.
+
 
 all_children(K) ->
     all_children(<<"data">>, K).

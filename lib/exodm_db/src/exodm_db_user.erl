@@ -14,7 +14,8 @@
 	 update/2, 
 	 lookup/1, 
 	 lookup_attr/2,
-	 list_users/2,    %% (N, Prev)
+	 list_users/2,  
+	 list_users/3,  
 	 list_user_keys/0,
 	 exist/1,
 	 fold_users/2,
@@ -328,7 +329,15 @@ exist_(Tab, UID) ->
 	_ -> true
     end.
 
+list_users(N, Prev, ?ASC) ->
+    list_next_users(N, Prev);
+list_users(N, Next, ?DESC) ->
+    list_prev_users(N, Next).
+    
 list_users(N, Prev) ->
+    list_next_users(N, Prev).
+    
+list_next_users(N, Prev) ->
     exodm_db:in_transaction(
       fun(_) ->
 	      exodm_db:list_next(table(),
@@ -338,6 +347,15 @@ list_users(N, Prev) ->
 				 end)
       end).
 
+list_prev_users(N, Next) ->
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_prev(table(),
+				 N, exodm_db:to_binary(Next),
+				 fun(Key) ->
+					 lookup(Key)
+				 end)
+      end).
 
 list_user_keys() ->
     lists:reverse(fold_users(fun(UID, Acc) ->

@@ -28,7 +28,8 @@
          write_system/2
         ]).
 -export([table/1,
-         list_next/3]).
+         list_next/3,
+         list_prev/3]).
 
 -include_lib("lager/include/log.hrl").
 -define(DB, kvdb_conf).
@@ -95,6 +96,18 @@ list_next(AID, N, Prev) ->
       fun(_) ->
 	      exodm_db:list_next(Tab,
 				 N, exodm_db:to_binary(Prev),
+				 fun(Key) ->
+                                         Key
+                                             %% lookup(Key)
+				 end)
+      end).
+
+list_prev(AID, N, Next) ->
+    Tab = table(AID),
+    exodm_db:in_transaction(
+      fun(_) ->
+	      exodm_db:list_prev(Tab,
+				 N, exodm_db:to_binary(Next),
 				 fun(Key) ->
                                          Key
                                              %% lookup(Key)
