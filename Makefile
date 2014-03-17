@@ -1,12 +1,9 @@
 RELNAME=exodm
-#REBAR=$(shell which rebar || echo ./rebar)
-#PREBAR=$(shell which rebar || echo ../rebar)
-REBAR=./rebar
-PREBAR=../rebar
 
 ESL="$(PWD)/rel/plugins"
 EXODM_DIR=$(PWD)
-EL=$(EXODM_DIR)/deps
+ED=$(EXODM_DIR)/deps
+REBAR=$(EXODM_DIR)/rebar
 
 .PHONY: all compile clean release upgrade test node console start attach tar \
 	recompile dev devrun
@@ -24,12 +21,12 @@ recompile:
 	$(REBAR) compile
 
 release: compile
-	cd rel; $(PREBAR) create-node skip_deps=true nodeid=$(RELNAME)
+	cd rel; $(REBAR) create-node skip_deps=true nodeid=$(RELNAME)
 
 generate:
 	rm -f ./rel/exodm
 	rm -f rel/exodm rel/lib/exodm
-	(cd rel && $(PREBAR) generate -f skip_deps=true)
+	(cd rel && $(REBAR) generate -f skip_deps=true)
 	./exorel current `./exorel last_build` -root $(PWD)
 
 dev:
@@ -126,7 +123,7 @@ endif
 
 appup:
 ifneq ($(strip $(PREV)),)
-	(cd rel; $(PREBAR) -vvv generate-appup skip_deps=true previous_release=$(PREV))
+	(cd rel; $(REBAR) -vvv generate-appup skip_deps=true previous_release=$(PREV))
 else
 	echo "no PREV set"
 	exit 2
@@ -134,7 +131,7 @@ endif
 
 upgrade:
 ifneq ($(strip $(PREV)),)
-	(cd rel; $(PREBAR) -vvv generate-upgrade skip_deps=true previous_release=$(PREV))
+	(cd rel; $(REBAR) -vvv generate-upgrade skip_deps=true previous_release=$(PREV))
 else
 	echo "no PREV set"
 	exit 2
@@ -152,17 +149,36 @@ retest:
 test_console:
 	cd .eunit/exodm_tmp; ERL_SETUP_LIBS=$(ESL) ../../rel/exodm/bin/exodm console
 
+# Note: only works if install=false in ck3_test/test/ck3.cfg
+# Use this if you don't have REBAR_DEPS, ERL_LIBS and EXODM_PLUGIN_DIR set 
 ck3_test:
-	CK3_TEST=true EXO_TEST=true $(REBAR) get-deps compile
-	rm -r rel/plugins
+	CK3_TEST=true $(REBAR) get-deps compile
+	rm -rf rel/plugins
 	mkdir -p rel/plugins
 	ln -s $(PWD)/deps/exodm_ck3 rel/plugins/
-	EPD=$(EXODM_DIR)/rel/plugins
 	(cd deps/ck3_test/test && ERL_LIBS=$(EXODM_DIR)/deps make)
 	echo "starting CT run"
 	(cd deps/ck3_test/test && \
-	ERL_LIBS=$(EL) EXODM_PLUGIN_DIR=$(EPD) ct_run -config ck3.cfg -suite ck3_SUITE -erl_args -name ct -setcookie exodm -pz $(EXODM_DIR)/ebin)
+	ERL_LIBS=$(ED) ct_run -config ck3.cfg -suite ck3_SUITE -erl_args -name ct -setcookie exodm -pz $(EXODM_DIR)/ebin)
+	rm -rf rel/plugins
 
+# Use this if you have REBAR_DEPS, ERL_LIBS and EXODM_PLUGIN_DIR set 
+# and all repos cloned
+ck3_test_local:
+ifdef EXODM_PLUGIN_DIR
+	$(REBAR) get-deps compile
+	rm -rf rel/plugins
+	mkdir -p rel/plugins
+	ln -s $(EXODM_PLUGIN_DIR)/exodm_ck3 rel/plugins/
+	echo "starting CT run"
+	(cd $(ERL_LIBS)/ck3_test/test && \
+	 ct_run -config ck3.cfg -suite ck3_SUITE -erl_args -name ct -setcookie exodm)
+	rm -rf rel/plugins
+else
+	echo "no EXODM_PLUGIN_DIR set"
+	$(error no EXODM_PLUGIN_DIR set)
+	exit 2
+endif	
 
 clean:
 	$(REBAR) clean
