@@ -6,6 +6,8 @@
 -include_lib("lager/include/log.hrl").
 -include("exodm.hrl").
 
+auth(#arg{req = {http_request, 'GET', {abs_path, "/exoport/get_port"},_}}, _) ->
+    true;
 auth(#arg{headers = Hdrs} = Arg, _RequestBody) ->
     io:requests([{put_chars,
 		  [io_lib:format("~p:auth(", [?MODULE]),

@@ -129,8 +129,8 @@ handler_session_(#arg{headers = #headers{content_type = "multipart" ++ _},
 		    error(no_jsonrpc);
 		{value, {_, JSON}, NewEnv} ->
 		    Env0 = env(Arg),
-		    io:fwrite("Calling handler session. setting clidata =~n~s~n",
-			      [JSON]),
+		    ?debug("Calling handler session. setting clidata =~n~s~n",
+                           [JSON]),
 		    yaws_rpc:handler_session(
 		      Arg#arg{state = Env0 ++ NewEnv,
 			      clidata = JSON}, {?MODULE, web_rpc})
