@@ -30,7 +30,7 @@ auth(#arg{headers = Hdrs} = Arg, _RequestBody) ->
 			    false -> false
 			end;
 		    {device, Aid, DID} ->
-			?debug("find_account(~p, ~p) -> ~p~n",
+			?debug("find_account(~p, Req) -> ~p~n",
 			       [User, {device,Aid,DID}]),
 			case exodm_db_session:authenticate(
 			       device, Aid, DID, Pwd) of

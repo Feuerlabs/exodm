@@ -5,6 +5,9 @@
 %%% @end
 %%% Created :  2013 Malotte W Lönne <malotte@malotte.net>
 
+-define(EXODM_ABORT_REPLY, exodm_abort_reply).
+-define(time(Expr), exodm:tc(os:timestamp(), fun() -> Expr end)).
+                                                            
 %% exodm admin
 -define(EXODM, <<"exodm">>). 
 -define(EXODM_ADMIN, <<"exodm-admin">>).

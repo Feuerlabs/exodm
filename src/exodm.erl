@@ -7,6 +7,7 @@
 	 add_config_data_members/2,
 	 list_groups/0,
 	 push_config/1]).
+-export([tc/2]).
 
 -include_lib("kvdb/include/kvdb_conf.hrl").
 
@@ -85,3 +86,8 @@ queue_push_data_request(_DID, _Values) ->
 t(F) ->
     AID = exodm_db_session:get_aid(),
     exodm_db:in_transaction(fun(Db) -> F(AID, Db) end).
+
+tc(T1, F) ->
+    Res = F(),
+    T2 = os:timestamp(),
+    {timer:now_diff(T2, T1), Res}.

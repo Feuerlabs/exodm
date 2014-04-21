@@ -6,8 +6,8 @@
 -include("exodm.hrl").
 
 json_rpc({call, _Mod, 'device-register', Args}, Env) ->
-    DevID0 = get_opt('device-id', Args, Env),
-    [DevType, OSVsn, AppID] =
+    _DevID0 = get_opt('device-id', Args, Env),
+    [_DevType, _OSVsn, _AppID] =
 	[get_opt(K, Args, Env) ||
 	    K <- [device_type, os_version, vendorAppIdentifier]],
     foo.

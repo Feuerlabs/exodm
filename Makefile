@@ -141,7 +141,7 @@ else
 endif
 
 test:
-	EXO_TEST=true $(REBAR) skip_deps=true eunit
+	EXO_TEST=true ERL_LIBS=deps:$(ERL_LIBS) $(REBAR) skip_deps=true eunit
 
 retest:
 	EXO_TEST=true EXODM_SKIP_MAKE=true $(REBAR) skip_deps=true eunit

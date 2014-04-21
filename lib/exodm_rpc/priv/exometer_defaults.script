@@ -1,0 +1,6 @@
+%% -*- erlang-indent-level: 4; indent-tabs-mode: nil -*-
+[
+ {[exodm,rpc,queues,to_device,'_'], histogram, []},
+ {[exodm,rpc,queues,from_device,'_'], histogram, []},
+ {[exodm,account,'_',stats,active_sessions], histogram, []}
+].

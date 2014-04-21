@@ -85,7 +85,13 @@
 	 {push_servers,
 	  [{ios_push_server, {exodm_rpc_push_ios,start_link,[]}},
 	   {http_push_server, {exodm_rpc_push_http, start_link, []}},
-	   {mblox_push_server, {exodm_rpc_push_mblox, start_link, []}}]}
+	   {mblox_push_server, {exodm_rpc_push_mblox, start_link, []}}]},
+         %%
+         %% Exometer
+         %%
+         {exometer_defaults, {script, "$PRIV_DIR/exometer_defaults.script"}},
+         {exometer_predefined, {script, "$PRIV_DIR/exometer_predefined.script"}}
+         %%
          %% {bert_servers, [{exodm_rpc,
          %%                    [
 	 %% 		     {port, 9900}
