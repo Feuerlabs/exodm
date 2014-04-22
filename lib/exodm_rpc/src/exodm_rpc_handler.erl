@@ -35,6 +35,7 @@
 %% @end
 add_device_session(AID, DID, Protocol) ->
     %% normalize AID and DID
+    lager:debug("add_device_session(~p, ~p, ~p)~n", [AID, DID, Protocol]),
     add_device_session(exodm_db_device:enc_ext_key(AID, DID), Protocol).
 
 add_device_session(ExtID, Protocol) ->
@@ -52,6 +53,7 @@ add_device_session(ExtID, Protocol) ->
 %% This does not need to be done if the process will terminate anyway.
 %% @end
 rm_device_session(AID, DID, Protocol) ->
+    lager:debug("rm_device_session(~p, ~p, ~p)~n", [AID, DID, Protocol]),
     rm_device_session(exodm_db_device:enc_ext_key(AID, DID), Protocol).
 
 rm_device_session(ExtID, Protocol) ->
@@ -81,7 +83,7 @@ update_session_count(AID) ->
     Count = gproc:select_count(
               p, [{{{p,l,{exodm_rpc, active_device, {AID,'_'}, '_'}},'_','_'},
                    [], [true]}]),
-    exometer:update_or_create([exodm,account,AID,stats,active_sessions], Count).
+    exometer:update_or_create([exodm,aid,AID,active_sessions], Count).
 
 
 all_device_sessions(ExtID) when is_binary(ExtID) ->
@@ -91,6 +93,7 @@ all_device_sessions(ExtID) when is_binary(ExtID) ->
                        [], [{{'$1', '$2', '$3'}}] }]).
 
 find_device_session(AID, DID, Protocol) ->
+    lager:debug("find_device_session(~p, ~p, ~p)~n", [AID, DID, Protocol]),
     case find_device_session(
 	   exodm_db_device:enc_ext_key(AID, DID), Protocol) of
 	{ok,_} = Ok ->
@@ -101,7 +104,9 @@ find_device_session(AID, DID, Protocol) ->
     end.
 
 find_device_session(ExtID, Protocol) when is_binary(ExtID) ->
-    case lists:keyfind(Protocol, 2, device_sessions(ExtID)) of
+    Sessions = device_sessions(ExtID),
+    lager:debug("device_sessions(ExtID) -> ~p~n", [ExtID]),
+    case lists:keyfind(Protocol, 2, Sessions) of
 	{Pid, _} ->
 	    {ok, Pid};
 	false ->
@@ -849,6 +854,7 @@ queue_message_(Db, AID, Tab, Attrs, Env0, Msg) ->
     Ret = case kvdb:push(Db, Tab, Q,
 			 Obj = {<<>>, Env, Msg}) of
 	      {ok, AbsKey} ->
+                  update_queue_metric(AID, DeviceID, Db, Tab, Q),
 		  maybe_start_timer(Msg, Db, Tab, TimerID, AbsKey, Obj),
 		  {ok, Q, AbsKey};
 	      Error ->
@@ -859,6 +865,9 @@ queue_message_(Db, AID, Tab, Attrs, Env0, Msg) ->
     attempt_dispatch(Ret, Db, Tab, Q),
     Ret.
 
+update_queue_metric(AID, DID, Db, Tab, Q) ->
+    E = [exodm, aid, AID, did, DID, queue, Tab, size],
+    exometer:update_or_create(E, kvdb_queue:size(Db, Tab, Q)).
 
 maybe_start_timer({call,_,_,Args}, Db, Tab, TimerID, Key, Obj) ->
     case lists:keyfind('timeout', 1, Args) of

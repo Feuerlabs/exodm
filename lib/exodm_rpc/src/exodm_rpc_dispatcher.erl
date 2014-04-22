@@ -292,8 +292,7 @@ do_dispatch(Reply, Db, <<"to_device">> = Tab, Q, Sessions,
 	    Mod = exodm_rpc_protocol:module(Protocol),
 	    do_dispatch_(Mod, Reply, Db, Tab, Entry, AID, DID, Pid, QK);
 	error ->
-	    ?error("No matching protocol session for ~p (~p)~n"
-		   "Entry now blocking queue~n",
+	    ?error("No matching protocol session for ~p (~p)~n",
 		   [{Env, Entry}, Sessions]),
 	    done(Reply)
     end.
