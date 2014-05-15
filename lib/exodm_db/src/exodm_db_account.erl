@@ -11,22 +11,23 @@
 -include("exodm.hrl").
 -include("exodm_db.hrl").
 
-%% Gproc 
+%% Gproc
 -export([subscribe/1,
 	 unsubscribe/1]).
 %% Startup
 -export([create_exodm_account/0]).
 -export([table/0]).
--export([init/0]).
+-export([init/0,
+	 init_accounts/0]).
 
 %% Account handling
 -export([new/2,
-	 delete/1, 
-	 update/2, 
+	 delete/1,
+	 update/2,
 	 lookup/1,
 	 lookup_attr/2,
 	 lookup_name/1,
-	 lookup_by_name/1, 
+	 lookup_by_name/1,
 	 exist/1,
 	 is_empty/1]).
 -export([list_accounts/2,
@@ -96,6 +97,12 @@ init() ->
 	      exodm_db:add_table(?TAB, [name,appid])
       end).
 
+init_accounts() ->
+    kvdb_conf:fold_children(
+      ?TAB, fun(AID, _) ->
+		    exodm_db_device:init(AID)
+	    end, ok, <<>>).
+
 
 %% Gproc pub/sub ----------------------
 subscribe(Event) when Event==add; Event==delete ->
@@ -144,7 +151,7 @@ create_exodm_account_(_Db) ->
 	    ]),
     exodm_db_session:unset_trusted_proc(),
     R.
-    
+
 
 %%--------------------------------------------------------------------
 %% Account handling
@@ -161,7 +168,7 @@ create_exodm_account_(_Db) ->
 %% FIXME option validation
 %% @end
 %%--------------------------------------------------------------------
--spec new(Name::binary(), list({Option::atom(), Value::term()})) -> 
+-spec new(Name::binary(), list({Option::atom(), Value::term()})) ->
 		 {ok, AIDVal::binary()}.
 
 new(Name, Options) when is_binary(Name), is_list(Options) ->
@@ -229,7 +236,7 @@ delete(Name) when is_binary(Name) ->
               case lookup_by_name(Name) of
 		  AID when is_binary(AID) ->
                       case is_empty(AID) of
-                          true -> 
+                          true ->
                               ok = delete_(AID),
                               publish(delete, Name),
                               publish(delete, exodm_db:account_id_value(AID)),
@@ -260,7 +267,7 @@ delete_(AID) ->
 %% FIXME validate every item BEFORE insert!
 %% @end
 %%--------------------------------------------------------------------
--spec update(AID::binary(), 
+-spec update(AID::binary(),
 	     list({Option::atom(), Value::term()})) ->
 		    ok.
 
@@ -447,7 +454,7 @@ list_accounts(N, Prev) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec list_account_keys() -> list(AID::binary()).
-			       
+
 list_account_keys() ->
     lists:reverse(fold_accounts(fun(AID, Acc) ->
 					[AID|Acc]
@@ -506,7 +513,7 @@ remove_app_id(AID0, AppID0) ->
 %% @end
 %%--------------------------------------------------------------------
 list_app_ids(AID, N, Prev) when is_binary(AID) ->
-    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_APPIDS, 
+    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_APPIDS,
                                    exodm_db:to_binary(Prev)]),
     exodm_db:in_transaction(
       fun(_) ->
@@ -532,7 +539,7 @@ list_app_ids(AID, N, Prev) when is_binary(AID) ->
 			  {error, Reason::term()}.
 
 list_users(AID,  N, Prev) when is_binary(AID) ->
-    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_USERS, 
+    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_USERS,
                                    exodm_db:to_binary(Prev)]),
     exodm_db:in_transaction(
       fun(_) ->
@@ -554,16 +561,16 @@ list_users(AID,  N, Prev) when is_binary(AID) ->
 -spec list_users_with_roles(AID::binary(),
                             N::integer(),
                             Prev::binary()) ->
-                                   list({UName::binary(), 
+                                   list({UName::binary(),
                                          list(Roles::binary())}) |
                                    {error, Reason::term()}.
 
 list_users_with_roles(AID,  N, Prev) when is_binary(AID) ->
-    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_USERS, 
+    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_USERS,
                                    exodm_db:to_binary(Prev)]),
     exodm_db:in_transaction(
       fun(_) ->
-	      Users = 
+	      Users =
                   exodm_db:list_next(
                     table(),
                     N, FullPrev,
@@ -585,13 +592,13 @@ list_users_with_roles(AID,  N, Prev) when is_binary(AID) ->
 -spec list_user_roles(AID::binary(), UName::binary()) ->
 				list({AID::binary(), Role::binary()}).
 
-list_user_roles(AID, UName) 
+list_user_roles(AID, UName)
   when is_binary(AID), is_binary(UName) ->
     [R || {_A, R} <-
               lists:filter(fun({A, _R}) when A == AID -> true;
                               ({_OtherAID, _R}) -> false
                            end, exodm_db_user:list_roles(UName))].
-    
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -607,7 +614,7 @@ list_user_roles(AID, UName)
 
 list_admins(AID0, N, Prev) when is_binary(AID0) ->
     AID = exodm_db:account_id_key(AID0),
-    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_ADMINS, 
+    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_ADMINS,
 				   exodm_db:to_binary(Prev)]),
     exodm_db:in_transaction(
       fun(_) ->
@@ -633,7 +640,7 @@ list_admins(AID0, N, Prev) when is_binary(AID0) ->
 			  {error, Reason::term()}.
 
 list_roles(AID, N, Prev) when is_binary(AID) ->
-    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_ROLES, 
+    FullPrev = kvdb_conf:join_key([AID, ?ACC_DB_ROLES,
 				   exodm_db:to_binary(Prev)]),
     exodm_db:in_transaction(
       fun(_) ->
@@ -732,14 +739,14 @@ remove_system_spec(AID0, Yang0) ->
 %%--------------------------------------------------------------------
 -spec add_users(AName::binary(),
 		Role::binary(),
-		UNames::list(binary()), 
+		UNames::list(binary()),
 		IsRoot::boolean()) ->
 		       ok |
 		       {error, Reason::term()}.
 
 
 
-add_users(AName, Role, UNames, IsRoot) 
+add_users(AName, Role, UNames, IsRoot)
   when is_binary(AName), is_binary(Role) ->
     lager:debug("aname ~p, role ~p, unames ~p", [AName, Role, UNames]),
     %% Check if account_exists
@@ -747,7 +754,7 @@ add_users(AName, Role, UNames, IsRoot)
 	false -> error('object-not-found');
 	AID -> add_users1(AID, Role, UNames, IsRoot)
     end.
-		     
+
 add_users1(AID, Role, UNames, true) ->
     %% Root - access is ok
     add_users2(AID, Role, UNames);
@@ -762,7 +769,7 @@ add_users2(AID, Role, UNames) ->
 	true -> add_users3(AID, Role, UNames);
 	false -> error('object-not-found')
     end.
-    
+
 add_users3(_AID, _Role, []) ->
     ok;
 add_users3(_AID, ?ROOT, _UNames) ->
@@ -773,14 +780,14 @@ add_users3(AID, Role, [UName | Rest]) ->
     case lists:any(fun({A, R}) when A == AID, R == Role -> true;
 		      ({_A, _R}) -> false
 		   end, exodm_db_user:list_roles(UName)) of
-	true -> 
+	true ->
 	    add_users3(AID, Role, Rest);
-	false -> 
+	false ->
 	    add_user(AID, UName, Role),
 	    add_users3(AID, Role, Rest)
     end.
 
-add_user(AID, UName, Role) 
+add_user(AID, UName, Role)
   when Role == ?ADMIN;
        Role == ?INIT_ADMIN;
        Role == ?ROOT ->
@@ -795,8 +802,8 @@ add_user1(AID, UName, Role) ->
     case user_exists(AID, UName) of
 	true -> ok;
 	false ->
-	    kvdb_conf:write(table(), 
-			    {exodm_db:join_key([AID,?ACC_DB_USERS,UName]), 
+	    kvdb_conf:write(table(),
+			    {exodm_db:join_key([AID,?ACC_DB_USERS,UName]),
 			     [], <<>>})
     end.
 
@@ -813,14 +820,14 @@ add_admin_user(AID, UName) ->
 %%--------------------------------------------------------------------
 -spec remove_users(AName::binary(),
 		   Role::binary(),
-		   UNames::list(binary()), 
+		   UNames::list(binary()),
 		   IsRoot::boolean()) ->
 			  ok |
 			  {error, Reason::term()}.
 
 
 
-remove_users(AName, Role, UNames, IsRoot) 
+remove_users(AName, Role, UNames, IsRoot)
   when is_binary(AName), is_binary(Role) ->
     lager:debug("aname ~p, role ~p, unames ~p", [AName, Role, UNames]),
     %% Check if account_exists
@@ -828,7 +835,7 @@ remove_users(AName, Role, UNames, IsRoot)
 	false -> error('object-not-found');
 	AID -> remove_users1(AID, Role, UNames, IsRoot)
     end.
-		     
+
 remove_users1(AID, Role, UNames, true) ->
     %% Root - access is ok
     remove_users2(AID, Role, UNames);
@@ -846,10 +853,10 @@ remove_users2(AID, Role, [UName | Rest]) ->
     case lists:any(fun({A, R}) when A == AID, R == Role -> true;
 		      ({_A, _R}) -> false
 		   end, exodm_db_user:list_roles(UName)) of
-	true -> 
+	true ->
 	    remove_user(AID, Role, UName),
 	    remove_users2(AID, Role, Rest);
-	false -> 
+	false ->
 	    error('object-not-found')
     end.
 
@@ -878,7 +885,7 @@ user_exists(AID, UName) when is_binary(AID), is_binary(UName) ->
 	{ok, _User} -> true;
 	{error, not_found} -> false
     end.
-	    
+
 %%--------------------------------------------------------------------
 %% Account role handling
 %%--------------------------------------------------------------------
@@ -895,7 +902,7 @@ user_exists(AID, UName) when is_binary(AID), is_binary(UName) ->
 -spec create_role(AID::binary(), RName::binary(), Opts::list()) ->
 			 ok.
 
-create_role(AID, RName, Opts) 
+create_role(AID, RName, Opts)
   when is_binary(AID), is_binary(RName), is_list(Opts) ->
     exodm_db:in_transaction(
       fun(_) ->
@@ -982,7 +989,7 @@ rpc_roles(AID, Rpc) when is_binary(AID), is_binary(Rpc) ->
             lager:debug("Warning, unknown rpc ~p", [Rpc]),
             {error, 'object-not-found'}
     end.
-                
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Check if role has permission to execute rpc.
@@ -1011,8 +1018,8 @@ rpc_permission(Rpc, Role) when is_binary(Rpc) ->
             lager:debug("Warning, unknown rpc ~p", binary_to_atom(Rpc,latin1)),
             false
     end.
-                
-     
+
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Returns the list of predefined role rpc permissions..
@@ -1023,7 +1030,7 @@ rpc_permission(Rpc, Role) when is_binary(Rpc) ->
 %%--------------------------------------------------------------------
 -spec rpc_role_list() -> list({Rpc::binary(), list(Role::binary())}).
 
-rpc_role_list() ->   
+rpc_role_list() ->
     ?RPC_ROLE_LIST.
 
 %%--------------------------------------------------------------------
@@ -1038,7 +1045,7 @@ create_roles(AID, _Other) ->
 
 create_admin_role(AID, RName) ->
     t_create_role_(AID, RName, initial_role_opts(RName)).
- 
+
 configurable_roles() ->
     %% Later add user defined roles??
     [?ADMIN, ?EXEC, ?CONFIG, ?VIEW].
@@ -1110,7 +1117,7 @@ group_exists(AID, GID) when is_binary(AID), is_binary(GID) ->
 -spec register_protocol(AID::binary(), Protocol::binary()) ->
 			       ok.
 
-register_protocol(AID, Protocol) 
+register_protocol(AID, Protocol)
   when is_binary(AID), is_binary(Protocol) ->
     case exodm_rpc_protocol:module(Protocol) of
 	undefined ->
@@ -1133,7 +1140,7 @@ register_protocol(AID, Protocol)
 -spec is_protocol_registered(AID::binary(), Protocol::binary()) ->
 			       Registered::boolean().
 
-is_protocol_registered(AID, Protocol) 
+is_protocol_registered(AID, Protocol)
   when is_binary(AID), is_binary(Protocol) ->
     exodm_db:in_transaction(
       fun(_) ->
@@ -1162,7 +1169,7 @@ is_protocol_registered(AID, Protocol)
 
 incr_request_id(AID0) ->
     AID = exodm_db:account_id_key(AID0),
-    kvdb_conf:update_counter(?TAB, 
+    kvdb_conf:update_counter(?TAB,
 			     exodm_db:join_key(AID, ?ACC_DB_LAST_REQ), 1).
 
 %%--------------------------------------------------------------------
@@ -1209,7 +1216,7 @@ check_access(AID0) ->
 		   ?TAB,exodm_db:join_key([AID, ?ACC_DB_ADMINS,
 					   exodm_db:encode_id(UName)])) of
 		{ok, _}   -> AID;
-		{error,_Error} -> 
+		{error,_Error} ->
 		    lager:debug("error ~p", [_Error]),
 		    error(not_authorized)
 	    end
@@ -1232,12 +1239,14 @@ acct_test_() ->
 	     ?debugVal(application:start(gproc)),
 	     ?debugVal(application:start(crypto)),
 	     ?debugVal(application:start(bcrypt)),
+	     ?debugVal(application:start(locks)),
 	     ?debugVal(application:start(kvdb)),
 	     ?debugVal(kvdb_conf:open(undefined, [{backend, ets}])),
 	     ?debugVal(exodm_db:init())
      end,
      fun(_) ->
 	     application:stop(kvdb),   application:unload(kvdb),
+	     application:stop(locks),  application:unload(locks),
 	     application:stop(gproc),  application:unload(gproc),
 	     application:stop(bcrypt), application:unload(bcrypt),
 	     application:stop(crypto), application:unload(crypto)

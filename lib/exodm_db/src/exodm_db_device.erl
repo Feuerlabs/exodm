@@ -40,7 +40,12 @@
 init(AID) ->
     exodm_db:in_transaction(
       fun(_) ->
-	      kvdb_conf:add_table(table(AID), [])
+	      Tab = table(AID),
+	      kvdb_conf:add_table(Tab, []),
+	      kvdb_conf:fold_children(
+		Tab, fun(DID, _) ->
+			     create_metrics(AID, DID)
+		     end, ok, <<>>)
       end).
 
 table(AID0) ->
@@ -59,7 +64,9 @@ new_(AID0, ID0, Options) ->
     DID = exodm_db:encode_id(ID0),
     exodm_db:all_required(['device-type'], Options),
     Tab = table(AID),
-    insert_(Tab, AID, DID, Options).
+    insert_(Tab, AID, DID, Options),
+    create_metrics(AID, DID),
+    ok.
 
 %% Called at both new() and update(). Device-type and protocol are not required
 %% at update, but presence verified in new_/3 above. Thus, below, they are
@@ -94,6 +101,7 @@ delete_device(AID0, DID0) ->
     Tab = table(AID),
     remove_devtype(Tab, AID, DID),
     kvdb_conf:delete_tree(Tab, DID),
+    delete_metrics(AID, DID),
     ConfigSets = list_config_sets(AID, DID),
     exodm_db_config:device_is_deleted(AID, DID, ConfigSets),
     Groups = lookup_groups(AID, DID),
@@ -125,7 +133,7 @@ write_attrs(AID0, DID0, Attrs) ->
 	true ->
 	    lists:foreach(
 	      fun({K, V}) ->
-		      insert_attr(Tab, DID, K, V) 
+		      insert_attr(Tab, DID, K, V)
 	      end, Attrs);
 	false ->
 	    error(device_not_found)
@@ -710,7 +718,7 @@ read_value(Tab, Key, Item) when is_binary(Item) ->
 	{ok,{_,_,Value}} -> Value;
 	{error,not_found} -> false
     end.
-    
+
 attr_key(Key, <<"did">>        ) -> [Key, ?DEV_DB_DEVICE_ID];
 attr_key(Key, <<"device-id">>     ) -> [Key, ?DEV_DB_DEVICE_ID];
 attr_key(Key, A) -> [Key, A].
@@ -780,3 +788,16 @@ rename_did(#conf_tree{tree = T} = CT) ->
 		(X) -> X
 	     end, T),
     CT#conf_tree{tree = NewT}.
+
+create_metrics(AID, DID) ->
+    lager:debug("create_metrics(~p, ~p)~n", [AID, DID]),
+    %% Abstract code for [{value, length(Value)}]
+    Exprs = [{l, [{t, [value, {call, length, [{v, 'Value'}]}]}]}],
+    exometer:new(
+      [exodm, aid, AID, did, exodm_db:decode_id(DID), active_sessions],
+      {function, exodm_rpc_handler, device_session_count,
+       [AID, exodm_db:encode_id(DID)],
+       match, value}, []).
+
+delete_metrics(AID, DID) ->
+    exometer:delete([exodm, aid, AID, did, DID, active_sessions]).

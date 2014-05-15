@@ -8,6 +8,7 @@
 -export([int_json_rpc/1]).
 
 -export([device_sessions/1, device_sessions/2]).
+-export([device_session_count/2]).
 -export([find_device_session/2, find_device_session/3]).
 -export([add_device_session/2, add_device_session/3]).
 -export([rm_device_session/2, rm_device_session/3]).
@@ -70,6 +71,9 @@ rm_device_session(ExtID, Protocol) ->
 device_sessions(AID, DID) ->
     ExtID = exodm_db_device:enc_ext_key(AID, DID),
     device_sessions(ExtID).
+
+device_session_count(AID, DID) ->
+    length(device_sessions(AID, DID)).
 
 -spec device_sessions(binary()) -> [{pid(), binary()}].
 %% (ExtID) -> [{Pid, Protocol}]
@@ -568,7 +572,7 @@ notification(Method, Elems, Env, AID, DID) ->
             ?debug("rpc not found~n", []),
 	    error(method_not_found);
 	{ok, {_, _, {notification,_,_,SubSpec}}} ->
-	    ?debug("notification, sub spec = ~p~n", 
+	    ?debug("notification, sub spec = ~p~n",
                    [lists:sublist(SubSpec,1,2)]),
 	    FullMethod = json_method(Method, Module, SubSpec),
 	    Params = data_to_json(SubSpec, Env, Elems),

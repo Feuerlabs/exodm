@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 4; indent-tabs-mode: nil -*-
 [
- {[exodm,aid,'_',did,'_',queue,'_','_'], histogram, []},
- {[exodm,aid,'_',active_sessions], histogram, []}
+ {[exodm,aid,'_',did,'_',queue,'_','_'], gauge, []},
+ {[exodm,aid,'_',active_sessions], gauge, []}
 ].
