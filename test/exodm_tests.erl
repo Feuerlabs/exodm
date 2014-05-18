@@ -1318,6 +1318,7 @@ await_started(N, Node) when N > 0 ->
 	    timer:sleep(2000),
 	    await_started(N-1, Node);
 	P when is_pid(P) ->
+	    io:fwrite(user, "exodm started (~p)~n", [N]),
 	    ok
     end.
 
