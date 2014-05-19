@@ -1,3 +1,4 @@
+%%% -*- coding: latin-1 -*-
 %%% @author Malotte W Lönne <malotte@malotte.net>
 %%% @copyright (C) 2012, Tony Rogvall
 %%% @doc
