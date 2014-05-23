@@ -306,7 +306,7 @@ do_dispatch_(Mod, Reply, Db, Tab, {_,Env,Req} = Entry, AID, DID, Pid, QK) ->
 	_Result ->
 	    ?debug("Valid result (~p); deleting queue object~n",
 		   [_Result]),
-	    _DeleteRes = kvdb:queue_delete(Db, Tab, QK),
+	    _DeleteRes = kvdb:extract(Db, Tab, QK),
 	    ?debug("Delete (~p) -> ~p~n", [QK, _DeleteRes]),
 	    %% done(Reply),
 	    next
@@ -321,7 +321,7 @@ notify_device(AID, DID) ->
 retry(Db, Table, QK, {_, _Env, _} = _Req, _Reply) ->
     %% for now, simply delete the entry; try the next one
     ?error("retry dispatch: For now, just delete ~p~n", [_Req]),
-    kvdb:queue_delete(Db, Table, QK),
+    _ = kvdb:extract(Db, Table, QK),
     next.
 
 set_user(Env, Db) ->
