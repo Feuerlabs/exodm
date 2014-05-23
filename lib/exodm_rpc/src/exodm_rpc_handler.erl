@@ -414,8 +414,8 @@ web_rpc_system_(_Db, AID, Env0, {call, Method, Request}) ->
     ?debug("no device-id~n", []),
     case is_exodm_method(Method, AID) of
 	{ok, Yang, Module, ShortMeth, Protocol, URL, Spec} ->
-	    ?debug("ExoDM method: ~p; Module = ~p; ShortM = ~p~n",
-		   [Method, Module, ShortMeth]),
+	    ?debug("ExoDM method: ~p; Module = ~p; ShortM = ~p; URL = ~p~n",
+		   [Method, Module, ShortMeth, URL]),
 	    Env1 = [{yang, Yang},
 		    {protocol, Protocol}]
 		++ [{'notification-url', URL} || URL =/= <<>>] ++ Env0,
@@ -697,7 +697,8 @@ is_exodm_method(Method, AID) ->
 	[MethodBin] ->
 	    Mod = <<"exodm">>,
 	    ?debug("Mod = ~p; MethodBin = ~p~n", [Mod, MethodBin]),
-	    find_method_spec_(Mod, [<<"exodm">>], MethodBin, <<"exodm">>);
+	    find_method_spec_(Mod, annotate_specs([<<"exodm">>]),
+			      MethodBin, <<"exodm">>);
 	[Mod, MethodBin] ->
 	    ?debug("Mod = ~p; MethodBin = ~p~n", [Mod, MethodBin]),
 	    SystemSpecs = exodm_db_account:system_specs(AID),
@@ -750,12 +751,13 @@ find_method_spec(Method, AID, DevID) ->
 	    ?debug("yang specs mapped to device (~p/~p): ~p~n",
 		   [AID, DID, YangSpecs]),
 	    Protocol = exodm_db_device:protocol(AID, DID),
+	    YangSpecs1 = [{N,Y,Protocol,U} || {N,Y,U} <- YangSpecs],
 	    case binary:split(to_binary(Method), <<":">>) of
 		[MethodBin] ->
 		    Mod = get_default_module(AID, DID),
-		    find_method_spec_(Mod, YangSpecs, MethodBin, Protocol);
+		    find_method_spec_(Mod, YangSpecs1, MethodBin, Protocol);
 		[Mod, MethodBin] ->
-		    find_method_spec_(Mod, YangSpecs, MethodBin, Protocol)
+		    find_method_spec_(Mod, YangSpecs1, MethodBin, Protocol)
 	    end
     end.
 
@@ -766,9 +768,12 @@ find_method_spec_(Module, Specs, Method, Protocol) ->
 	{_CfgName, _Y} = _Found ->
 	    ?debug("found spec in = ~p~n", [_CfgName]),
 	    find_method_(Yang, Module, Method, Protocol, <<>>);
-	{_CfgName, _Y, URL} = _Found ->
+	{_CfgName, _Y, Proto1} = _Found ->
 	    ?debug("found spec in = ~p~n", [_CfgName]),
-	    find_method_(Yang, Module, Method, Protocol, URL);
+	    find_method_(Yang, Module, Method, Proto1, <<>>);
+	{_CfgName, _Y, Proto1, URL} = _Found ->
+	    ?debug("found spec in = ~p~n", [_CfgName]),
+	    find_method_(Yang, Module, Method, Proto1, URL);
 	false ->
 	    error
     end.
