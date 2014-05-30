@@ -330,7 +330,7 @@ delete_config_set(AID, Name) ->
     NameKey = exodm_db:encode_id(to_binary(Name)),
     exodm_db:transaction(
       fun(_) ->
-	      kvdb_conf:delete_all(Tab, NameKey)
+	      kvdb_conf:delete_tree(Tab, NameKey)
       end).
 
 create_yang_module(AID, Repository0, File, Yang0) ->

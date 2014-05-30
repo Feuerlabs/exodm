@@ -100,7 +100,7 @@ delete_(AID, Name) ->
     {Tab, GID} = tab_and_gid(AID, Name),
     case kvdb_conf:read(Tab, GID) of
 	{ok, _} ->
-	    kvdb_conf:delete_all(Tab, GID);
+	    kvdb_conf:delete_all(Tab, GID);  %% delete_tree?
 	{error, not_found} ->
 	    {error, not_found}
     end.
