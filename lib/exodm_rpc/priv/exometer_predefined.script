@@ -1,6 +1,6 @@
 %% -*- erlang-indent-level: 4; indent-tabs-mode: nil -*-
 [
- {[exodm,rpc,web,time], gauge, []},
+ {[exodm,rpc,web,time], histogram, []},
  {[exodm,rpc,web,success], spiral, []},
  {[exodm,rpc,web,failure], spiral, []}
 ].
