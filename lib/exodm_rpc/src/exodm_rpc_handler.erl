@@ -725,10 +725,10 @@ find_method_spec(Method, AID, DevID) ->
 find_method_spec_(Module, Specs, Method, Protocol) ->
     ?debug("find_method_spec_(~p, ~p, ~p)~n", [Module, Specs, Method]),
     Yang = case binary:split(Module, <<"@">>) of
-	       [Name] -> <<Name/binary, "@.yang">>;
+	       [Name, <<>>] -> <<Name/binary, "@.yang">>;
 	       _ -> <<Module/binary, ".yang">>
 	   end,
-    %% Yang = <<Module/binary, ".yang">>,
+    Yang = <<Module/binary, ".yang">>,
     case lists:keyfind(Yang, 2, Specs) of
 	{_CfgName, _Y} = _Found ->
 	    ?debug("found spec in = ~p~n", [_CfgName]),
