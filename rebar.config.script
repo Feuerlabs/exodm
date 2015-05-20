@@ -14,7 +14,7 @@ case os:getenv("EXO_TEST") of
 	  {deps,
 	   Deps ++
 	       [{exoport, ".*",
-		 {git, "git@github.com:Feuerlabs/exoport.git", "1.1"}}]});
+		 {git, "git@github.com:Feuerlabs/exoport.git", "1.2"}}]});
     _ ->
 	CONFIG1
 end.
@@ -26,11 +26,11 @@ case os:getenv("CK3_TEST") of
 	  {deps,
 	   Deps2 ++
 	       [{exodm_ck3, ".*",
-		 {git, "git@github.com:Feuerlabs/exodm_ck3.git", "HEAD"}},
+		 {git, "git@github.com:Feuerlabs/exodm_ck3.git", {tag,"1.4"}}},
 		{ck3_test, ".*",
-		 {git, "git@github.com:Feuerlabs/ck3_test.git", "1.0"}},
+		 {git, "git@github.com:Feuerlabs/ck3_test.git", {tag,"1.0"}}},
 		{ck3_sim, ".*",
-		{git, "git@github.com:Feuerlabs/ck3_sim.git", "HEAD"}}]});
+		{git, "git@github.com:Feuerlabs/ck3_sim.git", {tag,"0.3"}}}]});
     _ ->
 	CONFIG2
 end.
