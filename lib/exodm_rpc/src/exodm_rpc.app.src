@@ -90,11 +90,7 @@
          %% Exometer
          %%
          {exometer_defaults, {script, "$PRIV_DIR/exometer_defaults.script"}},
-         {exometer_predefined, {script, "$PRIV_DIR/exometer_predefined.script"}},
-         {exometer_reporters, [{exodm_rpc_report_lager,
-                                [{module, exometer_report_lager}]}]},
-         {exometer_subscribers, [{exodm_rpc_report_lager,
-                                  {find,['_']}, default, 10000, true}]}
+         {exometer_predefined, {script, "$PRIV_DIR/exometer_predefined.script"}}
          %%
          %% {bert_servers, [{exodm_rpc,
          %%                    [

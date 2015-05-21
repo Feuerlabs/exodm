@@ -836,6 +836,7 @@ prepare_transform() ->
     io:fwrite("exodm_db:prepare_transform()~n", []),
     backup_before_transform(),
     application:start(gproc, permanent),
+    exometer_util:ensure_all_started(exometer),
     application:start(kvdb, permanent),
     application:start(exodm_db, permanent),
     try _ = get_db_version(_Update = true)
@@ -876,6 +877,11 @@ make_backup(TarFname, Dir) ->
 transform_db() ->
     io:fwrite("exodm_db:transform_db()~n", []),
     exodm_db_yang:load_yang_specs(),
+    kvdb_queue:clear_queues(kvdb_conf, <<"to_device">>),
+    kvdb_queue:clear_queues(kvdb_conf, <<"from_device">>),
+    kvdb:schema_write(kvdb_conf,property,{<<"from_device">>,disk},false),
+    kvdb:schema_write(kvdb_conf,property,{<<"to_device">>,disk},false),
+    io:fwrite("Queues cleared and made non-persistent.~n", []),
     ok.
 
 finish_transform() ->
