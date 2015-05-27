@@ -37,10 +37,12 @@ make_node(#state{target = T, rel = R, vm_args = As,
     RelDir = filename:join([R, "releases", Vsn]),
     VmArgsF = filename:join(RelDir, "vm.args"),
     SysConfigF = filename:join(RelDir, "sys.config"),
+    BackupDir = make_backup_dir(T),
     case file:read_file(VmArgsF) of
 	{ok, Bin} ->
 	    Bin1 = substitute_args(As, Bin),
 	    OutF = filename:join(T, "vm.args"),
+	    backup_file(OutF, BackupDir),
 	    ok = filelib:ensure_dir(OutF),
 	    file:write_file(OutF, Bin1);
 	Error ->
@@ -49,7 +51,9 @@ make_node(#state{target = T, rel = R, vm_args = As,
     case file:consult(SysConfigF) of
 	{ok, [Env]} ->
 	    NewEnv = localize_env(T, Env),
-	    {ok, Fd} = file:open(filename:join(T, "sys.config"), [write]),
+	    TSysConfig = filename:join(T, "sys.config"),
+	    backup_file(TSysConfig, BackupDir),
+	    {ok, Fd} = file:open(TSysConfig, [write]),
 	    try
 		io:fwrite(Fd, "~p.~n", [NewEnv])
 	    after
@@ -58,7 +62,9 @@ make_node(#state{target = T, rel = R, vm_args = As,
 	{error,_} = E ->
 	    error({could_not_consult, [SysConfigF, E]})
     end,
-    _CpR = file:copy(filename:join(R, "ctl"), TCtl = filename:join(T, "ctl")),
+    TCtl = filename:join(T, "ctl"),
+    backup_file(TCtl, BackupDir),
+    _CpR = file:copy(filename:join(R, "ctl"), TCtl),
     set_x_bit(TCtl),
     write_env(R, T, NodeLocal).
 
@@ -177,3 +183,45 @@ merge_env([{App, Vars}|T], Env) ->
 merge_env([], Env) ->
     Env.
 
+make_backup_dir(Parent) ->
+    case need_backup(Parent) of
+	true ->
+	    {{Y,Mo,D},{H,Mi,S}} = erlang:localtime(),
+	    DStr = "config_backup-"
+		++ numstr([Y,Mo,D]) ++ "-" ++ numstr([H,Mi,S]),
+	    Dir = filename:join(Parent, DStr),
+	    ok = filelib:ensure_dir(filename:join(Dir, "foo")),
+	    Dir;
+	false ->
+	    none
+    end.
+
+need_backup(Dir) ->
+    case file:list_dir(Dir) of
+	{ok, Fs} ->
+	    [] =/= [F || F <- Fs,
+			 lists:member(F, ["vm.args", "sys.config", "ctl"])];
+	_ ->
+	    false
+    end.
+
+backup_file(_, none) ->
+    ok;
+backup_file(F, Dir) ->
+    case file:read_file(F) of
+	{ok, Bin} ->
+	    Out = filename:join(Dir, filename:basename(F)),
+	    io:fwrite("Out = ~p~n", [Out]),
+	    file:write_file(Out, Bin);
+	_ ->
+	    ok
+    end.
+
+numstr([H|T]) ->
+    case integer_to_list(H) of
+	[A] -> [$0,A|numstr(T)];
+	[A,B] -> [A,B|numstr(T)];
+	[_,_,C,D] -> [C,D|numstr(T)]
+    end;
+numstr([]) ->
+    [].
