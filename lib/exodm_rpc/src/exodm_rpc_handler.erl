@@ -8,7 +8,8 @@
 -export([int_json_rpc/1]).
 
 -export([device_sessions/1, device_sessions/2]).
--export([device_session_count/2]).
+-export([device_session_count/2,
+	 update_session_counts/0]).
 -export([find_device_session/2, find_device_session/3]).
 -export([add_device_session/2, add_device_session/3]).
 -export([rm_device_session/2, rm_device_session/3]).
@@ -82,6 +83,16 @@ device_sessions(ExtID) when is_binary(ExtID) ->
     Res = all_device_sessions(ExtID),
     ?debug("extid ~p -> ~p~n", [ExtID, Res]),
     [{A,B} || {A,B,_} <- lists:reverse(lists:keysort(3, Res))].
+
+update_session_counts() ->
+    kvdb_conf:in_transaction(
+      fun(_) ->
+	      kvdb_conf:fold_children(
+		<<"acct">>,
+		fun(AID, _) ->
+			update_session_count(AID)
+		end, ok, <<>>)
+      end).
 
 update_session_count(AID) ->
     Count = gproc:select_count(

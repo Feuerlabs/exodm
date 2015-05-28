@@ -12,7 +12,7 @@
 		  exodm_http
                  ]},
   {mod, { exodm_rpc_app, []}},
-  %% {start_phases, [{init, []}]},
+  {start_phases, [{init, []}]},
   {env, [
 	 %% {kvdb_databases, [{exodm_rpc_queues,
 	 %% 		    [{file, "$DATA_DIR/$APP/exodm_rpc_queues.db"},
