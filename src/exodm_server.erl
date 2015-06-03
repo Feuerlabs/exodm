@@ -135,7 +135,13 @@ maybe_start(App) ->
     case application:get_key(App, mod) of
 	{ok, {_, _}} ->
 	    %% Can be started
-	    application:start(App);
+	    case application:start(App) of
+		ok ->
+		    exometer:register_application(App),
+		    ok;
+		Other ->
+		    Other
+	    end;
 	_ ->
 	    ok
     end.
