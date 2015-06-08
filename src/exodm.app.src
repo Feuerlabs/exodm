@@ -9,6 +9,8 @@
   {applications, [
                   kernel,
                   stdlib,
+                  eper,
+                  recon,
 		  gproc,
 		  exodm_db,
 		  exodm_http,
