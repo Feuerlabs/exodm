@@ -9,7 +9,7 @@ EXODM_DIR=$(PWD)
 EL=$(EXODM_DIR)/deps
 
 .PHONY: all compile clean release upgrade test node console start attach tar \
-	recompile dev devrun
+	recompile dev devrun test_compile
 
 all: compile
 
@@ -140,7 +140,10 @@ else
 	exit 2
 endif
 
-test:
+test_compile:
+	EXO_TEST=true $(REBAR) get-deps compile
+
+test: test_compile
 	EXO_TEST=true $(REBAR) skip_deps=true eunit
 
 retest:
@@ -154,7 +157,7 @@ test_console:
 
 ck3_test:
 	CK3_TEST=true EXO_TEST=true $(REBAR) get-deps compile
-	rm -r rel/plugins
+	rm -rf rel/plugins
 	mkdir -p rel/plugins
 	ln -s $(PWD)/deps/exodm_ck3 rel/plugins/
 	EPD=$(EXODM_DIR)/rel/plugins
