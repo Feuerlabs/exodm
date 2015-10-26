@@ -31,7 +31,7 @@
          list_next/3,
          list_prev/3]).
 
--include_lib("lager/include/log.hrl").
+-include("log.hrl").
 -define(DB, kvdb_conf).
 
 init() ->

@@ -20,8 +20,6 @@
 	 code_change/3,
 	 terminate/2]).
 
--include_lib("lager/include/log.hrl").
-
 -record(st, {plugins = []}).
 
 start_link() ->
@@ -63,11 +61,11 @@ transform_plugins() ->
     setup:run_hooks(convert_plugin, [A || {A,_} <- AllPlugins]).
 
 find_plugins() ->
-    ?debug("ERL_SETUP_LIBS = ~p~n", [os:getenv("ERL_SETUP_LIBS")]),
+    lager:debug("ERL_SETUP_LIBS = ~p~n", [os:getenv("ERL_SETUP_LIBS")]),
     LibDirs = setup:lib_dirs("ERL_SETUP_LIBS"),
-    ?debug("LibDirs = ~p~n", [LibDirs]),
+    lager:debug("LibDirs = ~p~n", [LibDirs]),
     AppNames = app_names(LibDirs),
-    ?debug("AppNames = ~p~n", [AppNames]),
+    lager:debug("AppNames = ~p~n", [AppNames]),
     [{A,setup:pick_vsn(A, setup:find_app(A, LibDirs), latest)} ||
 	A <- AppNames].
 
@@ -84,14 +82,14 @@ load_apps(AllPlugins) ->
       fun({A,{V,D}}) ->
 	      true = setup:patch_app(A, V, [D]),
 	      ReloadRes = setup:reload_app(A, V, [D]),
-	      ?debug("reload_app(~p, ~p, ~p) -> ~p~n", [A,V,[D], ReloadRes])
+	      lager:debug("reload_app(~p, ~p, ~p) -> ~p~n", [A,V,[D], ReloadRes])
       end, AllPlugins).
 
 register_protocols(AllPlugins) ->
     lists:foreach(
       fun({A, _}) ->
 	      RegisterRes = register_protocol(A),
-	      ?debug("register_protocol(~p) -> ~p~n", [A, RegisterRes])
+	      lager:debug("register_protocol(~p) -> ~p~n", [A, RegisterRes])
       end, AllPlugins).
 
 start_apps(AllPlugins) ->

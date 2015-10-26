@@ -22,8 +22,8 @@
 	 do/4]).
 -export([std_specs/0]).
 
--include_lib("lager/include/log.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
+-include("log.hrl").
 
 -record(st, {}).
 -define(TAB, ?MODULE).

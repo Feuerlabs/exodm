@@ -3,8 +3,8 @@
 -export([auth/2]).
 
 -include_lib("yaws/include/yaws_api.hrl").
--include_lib("lager/include/log.hrl").
 -include("exodm.hrl").
+-include("log.hrl").
 
 auth(#arg{headers = Hdrs} = Arg, _RequestBody) ->
     io:requests([{put_chars,
@@ -37,7 +37,9 @@ auth(#arg{headers = Hdrs} = Arg, _RequestBody) ->
 			    true -> {true, DID};
 			    false -> false
 			end;
-		    {error, _Reason} ->
+		    {error, _Reason} = _E ->
+			?debug("find_account(~p, ~p) -> ~p~n",
+			       [User, _E]),
 			false
 		end
 	    catch

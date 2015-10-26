@@ -14,9 +14,9 @@
 %% -export([std_specs/0]).
 -export([request_timeout/6]).
 
--include_lib("lager/include/log.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
 -include_lib("lhttpc/include/lhttpc.hrl").
+-include("log.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

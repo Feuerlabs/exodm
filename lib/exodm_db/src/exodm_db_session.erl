@@ -46,8 +46,8 @@
 
 -define(INACTIVITY_TIMER, 20*60000).  % should be configurable?
 
+-include("log.hrl").
 -include("exodm_db.hrl").
--include_lib("lager/include/log.hrl").
 -define(dbg(F,A), ?debug("~p " ++ F, [self()|A])).
 
 %% @spec authenticate(Username, Password) -> {true, AID} | false

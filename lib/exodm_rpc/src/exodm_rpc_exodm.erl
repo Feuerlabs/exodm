@@ -7,8 +7,8 @@
 
 -module(exodm_rpc_exodm).
 
--include_lib("lager/include/log.hrl").
 -include("exodm.hrl").
+-include("log.hrl").
 -include_lib("kvdb/include/kvdb_conf.hrl").
 
 -export([json_rpc/2,

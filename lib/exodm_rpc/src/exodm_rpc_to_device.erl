@@ -2,7 +2,7 @@
 
 -export([dispatch/3]).
 
--include_lib("lager/include/log.hrl").
+-include("log.hrl").
 
 -define(dbg(F,A), ?debug("~p " ++ F, [self()|A])).
 

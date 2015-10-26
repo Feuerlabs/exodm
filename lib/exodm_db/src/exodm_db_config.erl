@@ -40,7 +40,7 @@
 -import(exodm_db, [binary_opt/2]).
 
 -include_lib("kvdb/include/kvdb_conf.hrl").
--include_lib("lager/include/log.hrl").
+-include("log.hrl").
 
 %%
 %% /u<UID>/devices/x<DID>/config/<target>/<tree>

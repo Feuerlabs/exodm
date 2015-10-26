@@ -2,7 +2,6 @@
 
 -export([json_rpc/2]).
 
--include_lib("lager/include/log.hrl").
 -include("exodm.hrl").
 
 json_rpc({call, _Mod, 'device-register', Args}, Env) ->

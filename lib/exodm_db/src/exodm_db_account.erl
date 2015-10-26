@@ -7,7 +7,7 @@
 
 -module(exodm_db_account).
 
--include_lib("lager/include/log.hrl").
+-include("log.hrl").
 -include("exodm.hrl").
 -include("exodm_db.hrl").
 

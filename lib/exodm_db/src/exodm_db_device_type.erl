@@ -15,7 +15,7 @@
 	]).
 
 -include_lib("kvdb/include/kvdb_conf.hrl").
--include_lib("lager/include/log.hrl").
+-include("log.hrl").
 -include("exodm_db.hrl").
 
 init(AID0) ->

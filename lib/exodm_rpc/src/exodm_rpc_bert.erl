@@ -4,7 +4,7 @@
 	 json_rpc/2,           % direct RPC
 	 request_timeout/1]).
 
--include_lib("lager/include/log.hrl").
+-include("log.hrl").
 
 dispatch(<<"to_device">>, Req, Env, AID, DID, Pid) ->
     ?debug("~p:dispatch(~p, ~p, ..., ~p)~n", [?MODULE, Req, Env, Pid]),

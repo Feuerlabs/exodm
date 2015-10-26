@@ -35,8 +35,8 @@
 
 -define(TAB, <<"user">>).
 
--include_lib("lager/include/log.hrl").
 -include("exodm.hrl").
+-include("log.hrl").
 -include("exodm_db.hrl").
 
 

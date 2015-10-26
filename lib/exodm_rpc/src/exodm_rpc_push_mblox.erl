@@ -12,7 +12,7 @@
 -compile(export_all).
 
 -include_lib("kvdb/include/kvdb_conf.hrl").
--include_lib("lager/include/log.hrl").
+-include("log.hrl").
 
 -record(st, {tokens = dict:new()}).
 

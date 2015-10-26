@@ -25,7 +25,7 @@
 	 list_groups/3]).
 -import(exodm_db, [write/2, binary_opt/2, to_binary/1]).
 
--include_lib("lager/include/log.hrl").
+-include("log.hrl").
 
 %%
 %% /<aid>/groups/<gid>/name  = <DeviceName>

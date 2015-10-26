@@ -37,9 +37,9 @@
 -export([transform/0]).
 -export([code_change/2]).
 
--include_lib("lager/include/log.hrl").
 -include_lib("kvdb/include/kvdb_conf.hrl").
 -include("exodm.hrl").
+-include("log.hrl").
 -include("exodm_db.hrl").
 
 -import(exodm_db, [write/2, binary_opt/2, uint32_opt/2, to_binary/1]).

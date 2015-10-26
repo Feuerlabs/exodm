@@ -2,7 +2,7 @@
 -compile(export_all).
 
 -include_lib("yaws/include/yaws_api.hrl").
--include_lib("lager/include/log.hrl").
+-include("log.hrl").
 
 -define(GA_CUSTOMER_ID, 16#00000001).
 
