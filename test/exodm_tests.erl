@@ -565,17 +565,15 @@ basic_200_OK() ->
 %%% ==================================== JSON-RPC Tests
 
 start_http_client(Cfg) ->
-    application:start(crypto),
-    application:start(public_key),
-    ok = application:start(ssl),
+    {ok, Apps} = application:ensure_all_started(ssl),
     ok = lhttpc:start(),
-    Cfg.
+    [{ssl_apps, Apps}|Cfg].
 
-stop_http_client(_Cfg) ->
+stop_http_client(Cfg) ->
+    {_, SSLApps} = lists:keyfind(ssl_apps, 1, Cfg),
     ok = lhttpc:stop(),
-    ok = application:stop(ssl),
-    application:stop(public_key),
-    application:stop(crypto).
+    [ok = application:stop(A) || A <- SSLApps],
+    ok.
 
 json_server() ->
     {8000, ?b2l(?ACC2ADM), ?ACC2PWD, "/exodm/rpc"}.

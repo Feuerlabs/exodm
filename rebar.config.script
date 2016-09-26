@@ -14,7 +14,8 @@ case os:getenv("EXO_TEST") of
 	  {deps,
 	   Deps ++
 	       [{exoport, ".*",
-		 {git, "git@github.com:Feuerlabs/exoport.git", "HEAD"}}]});
+		 {git, "git@github.com:Feuerlabs/exoport.git",
+		  {branch, "uw-fix-dbg-macro"}}}]});
     _ ->
 	CONFIG1
 end.
